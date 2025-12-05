@@ -676,35 +676,79 @@ function LoolibConfigCmdMixin:ParseInput(input)
 
     -- Split by whitespace, respecting quotes
     local pos = 1
-    while pos <= #input do
+    local len = #input
+    
+    while pos <= len do
         -- Skip whitespace
         local wsEnd = input:match("^%s+()", pos)
         if wsEnd then
             pos = wsEnd
         end
 
-        if pos > #input then break end
+        if pos > len then break end
 
         -- Check for quoted string
         local char = input:sub(pos, pos)
         if char == '"' or char == "'" then
-            local closePos = input:find(char, pos + 1, true)
-            if closePos then
-                parts[#parts + 1] = input:sub(pos + 1, closePos - 1)
-                pos = closePos + 1
-            else
-                -- No closing quote, take rest
-                parts[#parts + 1] = input:sub(pos + 1)
-                break
+            local quote = char
+            local startPos = pos + 1
+            local part = ""
+            local current = startPos
+            
+            -- Look for closing quote, respecting escapes
+            while current <= len do
+                local c = input:sub(current, current)
+                if c == "\\" then
+                    -- Escape next char
+                    current = current + 1
+                    if current <= len then
+                        part = part .. input:sub(current, current)
+                        current = current + 1
+                    end
+                elseif c == quote then
+                    -- Closing quote found
+                    parts[#parts + 1] = part
+                    pos = current + 1
+                    break
+                else
+                    part = part .. c
+                    current = current + 1
+                end
+            end
+            
+            if current > len then
+                 -- No closing quote, just take what we found (or the rest)
+                 -- This differs from previous behavior which took raw substring
+                 -- Here we processed escapes, so we use 'part'
+                 parts[#parts + 1] = part
+                 pos = len + 1
             end
         else
             -- Unquoted, read until whitespace
-            local nextSpace = input:find("%s", pos) or (#input + 1)
-            local part = input:sub(pos, nextSpace - 1)
+            -- But also need to handle escaped spaces? 
+            -- Let's support backslash escaping in unquoted strings too for consistency
+            local part = ""
+            local current = pos
+            
+            while current <= len do
+                 local c = input:sub(current, current)
+                 if c:match("%s") then
+                     break
+                 elseif c == "\\" then
+                     current = current + 1
+                     if current <= len then
+                         part = part .. input:sub(current, current)
+                     end
+                 else
+                     part = part .. c
+                 end
+                 current = current + 1
+            end
+            
             if part ~= "" then
                 parts[#parts + 1] = part
             end
-            pos = nextSpace
+            pos = current
         end
     end
 
@@ -714,6 +758,10 @@ end
 --- Print a message to chat
 -- @param msg string - Message to print
 function LoolibConfigCmdMixin:Print(msg)
+    if Loolib.Print then
+        local ok = pcall(Loolib.Print, Loolib, msg)
+        if ok then return end
+    end
     DEFAULT_CHAT_FRAME:AddMessage(msg)
 end
 

@@ -99,6 +99,16 @@ UI\Templates\Dialog.lua
 UI\Templates\Dropdown.lua
 
 # ============================================================
+# Config - Configuration system (AceConfig equivalent)
+# ============================================================
+Config\ConfigTypes.lua
+Config\ConfigRegistry.lua
+Config\ConfigCmd.lua
+Config\ProfileOptions.lua
+Config\ConfigDialog.lua
+Config\Config.lua
+
+# ============================================================
 # Debug - Debugging and inspection tools
 # ============================================================
 Debug\Logger.lua

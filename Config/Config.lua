@@ -45,6 +45,37 @@ function LoolibConfig:Initialize()
 end
 
 --[[--------------------------------------------------------------------
+    Localization Support
+----------------------------------------------------------------------]]
+
+--- Get a localized string
+-- @param key string - The key to look up
+-- @param ... - Formatting arguments
+-- @return string - Localized string
+function LoolibConfig:GetLocaleString(key, ...)
+    -- Placeholder for actual localization system
+    -- In a real implementation, this would look up in Loolib.Locale
+    local strings = {
+        ["VALIDATION_ERROR"] = "Validation failed: %s",
+        ["REQUIRED_ERROR"] = "Value is required",
+        ["RANGE_ERROR"] = "Value must be between %s and %s",
+        -- Add more defaults as needed
+    }
+    
+    local str = strings[key] or key
+    if select("#", ...) > 0 then
+        -- Use pcall to safely handle formatting errors
+        local success, result = pcall(string.format, str, ...)
+        if success then
+            return result
+        end
+        -- If formatting fails, return unformatted string
+        return str
+    end
+    return str
+end
+
+--[[--------------------------------------------------------------------
     Convenience Registration
 ----------------------------------------------------------------------]]
 

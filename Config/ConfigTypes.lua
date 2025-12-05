@@ -207,6 +207,34 @@ LoolibConfigTypes.types = {
             fontSize = "medium",
         },
     },
+
+    --[[----------------------------------------------------------------
+        Texture Type: texture
+        
+        Select or display a texture.
+    ------------------------------------------------------------------]]
+    texture = {
+        description = "Texture selector or display",
+        properties = {
+            image = "string",            -- Texture path
+            imageCoords = "table",       -- {l, r, t, b}
+            imageWidth = "number",
+            imageHeight = "number",
+            values = "table|function",   -- Optional selection values
+        },
+    },
+
+    --[[----------------------------------------------------------------
+        Font Type: font
+        
+        Select a font (integrates with LibSharedMedia if available).
+    ------------------------------------------------------------------]]
+    font = {
+        description = "Font selector",
+        properties = {
+            values = "table|function",   -- Optional override values
+        },
+    },
 }
 
 --[[--------------------------------------------------------------------
@@ -352,7 +380,22 @@ function LoolibConfigTypes:SupportsGetSet(optionType)
         execute = true,
         header = true,
         description = true,
+        texture = true, -- Texture acts like description unless it has values/selection
     }
+    
+    -- Special case: texture can be a selector if it has 'values' or 'set'
+    if optionType == "texture" then
+         -- We don't have the option instance here to check properties easily
+         -- But generally 'texture' is for display. If used for selection, 
+         -- it should probably be a 'select' with a custom widget/control?
+         -- Or we allow texture to be a value type if needed.
+         -- Let's assume it's NOT a value type by default unless we check more deep.
+         -- Actually, LoolibConfigTypes:SupportsGetSet is called with just type.
+         -- So we have to decide globally.
+         -- Let's stick to texture being display-only for now, similar to description.
+         return false
+    end
+    
     return not noGetSet[optionType]
 end
 

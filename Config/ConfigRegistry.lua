@@ -32,7 +32,7 @@ function LoolibConfigRegistryMixin:Init()
     self:GenerateCallbackEvents(REGISTRY_EVENTS)
 
     self.tables = {}           -- appName -> options table or function
-    self.cachedTables = {}     -- appName -> evaluated options table (if function-based)
+    self.cachedTables = {}     -- appName -> { [cacheKey] = evaluated options table }
     self.cacheTime = {}        -- appName -> last cache time
     self.cacheInvalid = {}     -- appName -> true if cache needs refresh
 end
@@ -66,7 +66,7 @@ function LoolibConfigRegistryMixin:RegisterOptionsTable(appName, options, skipVa
     end
 
     self.tables[appName] = options
-    self.cachedTables[appName] = nil
+    self.cachedTables[appName] = {}
     self.cacheInvalid[appName] = true
 
     self:TriggerEvent("OnConfigTableRegistered", appName)
@@ -111,16 +111,35 @@ function LoolibConfigRegistryMixin:GetOptionsTable(appName, uiType, uiName)
 
     -- Evaluate function if needed
     if type(registered) == "function" then
+        -- Generate a cache key based on arguments
+        local cacheKey = (uiType or "") .. ":" .. (uiName or "")
+        
+        -- Initialize cache for this app if needed
+        if not self.cachedTables[appName] then
+            self.cachedTables[appName] = {}
+        end
+
         -- Check cache
-        if self.cachedTables[appName] and not self.cacheInvalid[appName] then
-            options = self.cachedTables[appName]
+        if self.cachedTables[appName][cacheKey] and not self.cacheInvalid[appName] then
+            options = self.cachedTables[appName][cacheKey]
         else
             local success, result = pcall(registered, uiType, uiName)
             if success then
                 options = result
-                self.cachedTables[appName] = options
+                self.cachedTables[appName][cacheKey] = options
                 self.cacheTime[appName] = GetTime()
-                self.cacheInvalid[appName] = false
+                -- Note: cacheInvalid remains true until explicitly cleared or managed
+                -- But for now, we treat invalidation as a signal to rebuild, 
+                -- and we just rebuilt this specific key.
+                -- To avoid constant rebuilding if the invalid flag is sticky, 
+                -- we should probably clear it if we've rebuilt "enough" or manage it better.
+                -- However, simpler is to treat cacheInvalid as "next read must refresh".
+                -- So we should clear it for at least this read? 
+                -- If we clear it for the app, other keys might be stale.
+                -- Let's rely on NotifyChange clearing the table, so checking for existence is enough.
+                if self.cacheInvalid[appName] then
+                     self.cacheInvalid[appName] = false
+                end
             else
                 Loolib:Error("Error generating options table for '" .. appName .. "': " .. tostring(result))
                 return nil
@@ -179,11 +198,18 @@ end
 function LoolibConfigRegistryMixin:NotifyChange(appName)
     if appName then
         self.cacheInvalid[appName] = true
+        -- We clear the cache table so next GetOptionsTable rebuilds it
+        if self.cachedTables[appName] then
+             wipe(self.cachedTables[appName])
+        end
         self:TriggerEvent("OnConfigTableChange", appName)
     else
         -- Invalidate all
         for name in pairs(self.tables) do
             self.cacheInvalid[name] = true
+            if self.cachedTables[name] then
+                wipe(self.cachedTables[name])
+            end
         end
         self:TriggerEvent("OnConfigTableChange", nil)
     end
@@ -193,7 +219,7 @@ end
 -- @param appName string - The addon name (or nil for all)
 function LoolibConfigRegistryMixin:ClearCache(appName)
     if appName then
-        self.cachedTables[appName] = nil
+        self.cachedTables[appName] = {}
         self.cacheTime[appName] = nil
         self.cacheInvalid[appName] = true
     else
@@ -201,6 +227,7 @@ function LoolibConfigRegistryMixin:ClearCache(appName)
         wipe(self.cacheTime)
         for name in pairs(self.tables) do
             self.cacheInvalid[name] = true
+            self.cachedTables[name] = {} -- Ensure table exists
         end
     end
 end
@@ -214,10 +241,17 @@ end
 -- @param name string - Name for error messages
 -- @param path string - Current path (for recursion)
 -- @return boolean, table - isValid, array of error strings
-function LoolibConfigRegistryMixin:ValidateOptionsTable(options, name, path)
+function LoolibConfigRegistryMixin:ValidateOptionsTable(options, name, path, visited)
     local errors = {}
     path = path or ""
     local fullPath = path == "" and name or (name .. "." .. path)
+    
+    -- Cycle detection
+    visited = visited or {}
+    if visited[options] then
+        return false, { string.format("Circular reference detected at '%s'", fullPath) }
+    end
+    visited[options] = true
 
     -- Check if options is a table
     if type(options) ~= "table" then
@@ -260,7 +294,7 @@ function LoolibConfigRegistryMixin:ValidateOptionsTable(options, name, path)
             for key, childOption in pairs(options.args) do
                 if type(childOption) == "table" then
                     local childPath = path == "" and key or (path .. "." .. key)
-                    local childValid, childErrors = self:ValidateOptionsTable(childOption, name, childPath)
+                    local childValid, childErrors = self:ValidateOptionsTable(childOption, name, childPath, visited)
                     if not childValid then
                         for _, err in ipairs(childErrors) do
                             errors[#errors + 1] = err
@@ -403,13 +437,23 @@ function LoolibConfigRegistryMixin:CallMethod(option, info, methodOrFunc, ...)
     if type(methodOrFunc) == "string" then
         -- It's a method name
         if handler and handler[methodOrFunc] then
-            return handler[methodOrFunc](handler, info, ...)
+            local success, result = pcall(handler[methodOrFunc], handler, info, ...)
+            if not success then
+                Loolib:Error("Error calling method '" .. methodOrFunc .. "': " .. tostring(result))
+                return nil
+            end
+            return result
         else
             Loolib:Error("Method '" .. methodOrFunc .. "' not found on handler")
             return nil
         end
     elseif type(methodOrFunc) == "function" then
-        return methodOrFunc(info, ...)
+        local success, result = pcall(methodOrFunc, info, ...)
+        if not success then
+            Loolib:Error("Error calling function: " .. tostring(result))
+            return nil
+        end
+        return result
     end
 
     return nil
