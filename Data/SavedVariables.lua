@@ -695,19 +695,23 @@ end
 -- @return string
 function LoolibSavedVariablesMixin:Export()
     local data = self:GetData()
-    -- Simple serialization - could be enhanced
-    return LoolibTableUtil.Serialize and LoolibTableUtil.Serialize(data) or ""
+    local Comm = Loolib:GetModule("Comm")
+    if Comm and Comm.Serializer then
+        return Comm.Serializer:Serialize(data)
+    end
+    return ""
 end
 
 --- Import data from a string
 -- @param str string - Serialized data
 -- @return boolean - Success
 function LoolibSavedVariablesMixin:Import(str)
-    if not LoolibTableUtil.Deserialize then
+    local Comm = Loolib:GetModule("Comm")
+    if not Comm or not Comm.Serializer then
         return false
     end
 
-    local success, imported = pcall(LoolibTableUtil.Deserialize, str)
+    local success, imported = Comm.Serializer:Deserialize(str)
     if success and type(imported) == "table" then
         local data = self:GetData()
         wipe(data)

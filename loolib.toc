@@ -71,6 +71,13 @@ UI\Layout\FlowLayout.lua
 UI\Layout\LayoutBuilder.lua
 
 # ============================================================
+# Comm - Communication and Serialization
+# ============================================================
+Comm\Compressor.lua
+Comm\Serializer.lua
+Comm\AddonMessage.lua
+
+# ============================================================
 # Data - Data persistence and providers
 # ============================================================
 Data\DataProvider.lua
