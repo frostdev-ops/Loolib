@@ -1,0 +1,415 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.blizzard.com/wow/ui/ https://raw.githubusercontent.com/Gethe/wow-ui-source/live/Interface/FrameXML/UI_shared.xsd">
+
+    <!-- ================================================================
+        Loolib - WoW 12.0+ Addon Library
+        Templates.xml - XML Templates for UI Components
+    ================================================================= -->
+
+    <!-- ================================================================
+        Base Panel Template
+        A simple panel with backdrop support
+    ================================================================= -->
+    <Frame name="LoolibPanelTemplate" virtual="true" inherits="BackdropTemplate">
+        <Size x="300" y="200"/>
+        <Layers>
+            <Layer level="OVERLAY">
+                <FontString name="$parentTitle" inherits="GameFontNormalLarge" justifyH="CENTER">
+                    <Anchors>
+                        <Anchor point="TOP" x="0" y="-10"/>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+        <Scripts>
+            <OnLoad>
+                self:SetBackdrop(BACKDROP_DIALOG_32_32)
+                self:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+                self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+            </OnLoad>
+        </Scripts>
+    </Frame>
+
+    <!-- ================================================================
+        Close Button Template
+    ================================================================= -->
+    <Button name="LoolibCloseButtonTemplate" virtual="true" inherits="UIPanelCloseButton">
+        <Size x="24" y="24"/>
+    </Button>
+
+    <!-- ================================================================
+        Simple Button Template
+    ================================================================= -->
+    <Button name="LoolibButtonTemplate" virtual="true" inherits="UIPanelButtonTemplate">
+        <Size x="100" y="22"/>
+    </Button>
+
+    <!-- ================================================================
+        List Item Template
+        Base template for scrollable list items
+    ================================================================= -->
+    <Button name="LoolibListItemTemplate" virtual="true">
+        <Size x="200" y="24"/>
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentBackground" setAllPoints="true">
+                    <Color r="0.1" g="0.1" b="0.1" a="0"/>
+                </Texture>
+            </Layer>
+            <Layer level="HIGHLIGHT">
+                <Texture name="$parentHighlight" setAllPoints="true">
+                    <Color r="0.3" g="0.3" b="0.3" a="0.5"/>
+                </Texture>
+            </Layer>
+            <Layer level="OVERLAY">
+                <FontString name="$parentText" inherits="GameFontNormal" justifyH="LEFT">
+                    <Anchors>
+                        <Anchor point="LEFT" x="8" y="0"/>
+                        <Anchor point="RIGHT" x="-8" y="0"/>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+        <Scripts>
+            <OnEnter>
+                self.Highlight:Show()
+            </OnEnter>
+            <OnLeave>
+                if not self.selected then
+                    self.Highlight:Hide()
+                end
+            </OnLeave>
+        </Scripts>
+    </Button>
+
+    <!-- ================================================================
+        Scrollable List Container Template
+    ================================================================= -->
+    <Frame name="LoolibScrollableListTemplate" virtual="true" inherits="BackdropTemplate">
+        <Size x="250" y="300"/>
+        <Frames>
+            <ScrollFrame name="$parentScrollFrame" inherits="ScrollFrameTemplate">
+                <Anchors>
+                    <Anchor point="TOPLEFT" x="4" y="-4"/>
+                    <Anchor point="BOTTOMRIGHT" x="-22" y="4"/>
+                </Anchors>
+                <Frames>
+                    <Frame name="$parentContent" parentKey="Content">
+                        <Size x="1" y="1"/>
+                        <Anchors>
+                            <Anchor point="TOPLEFT"/>
+                        </Anchors>
+                    </Frame>
+                </Frames>
+                <Scripts>
+                    <OnLoad>
+                        self:SetScrollChild(self.Content)
+                    </OnLoad>
+                </Scripts>
+            </ScrollFrame>
+        </Frames>
+        <Scripts>
+            <OnLoad>
+                self:SetBackdrop(BACKDROP_DIALOG_32_32)
+                self:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+                self:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+            </OnLoad>
+        </Scripts>
+    </Frame>
+
+    <!-- ================================================================
+        Tab Button Template
+    ================================================================= -->
+    <Button name="LoolibTabButtonTemplate" virtual="true">
+        <Size x="80" y="28"/>
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentBackground" setAllPoints="true">
+                    <Color r="0.15" g="0.15" b="0.15" a="0.9"/>
+                </Texture>
+            </Layer>
+            <Layer level="BORDER">
+                <Texture name="$parentLeftBorder">
+                    <Size x="1"/>
+                    <Anchors>
+                        <Anchor point="TOPLEFT"/>
+                        <Anchor point="BOTTOMLEFT"/>
+                    </Anchors>
+                    <Color r="0.4" g="0.4" b="0.4" a="1"/>
+                </Texture>
+                <Texture name="$parentRightBorder">
+                    <Size x="1"/>
+                    <Anchors>
+                        <Anchor point="TOPRIGHT"/>
+                        <Anchor point="BOTTOMRIGHT"/>
+                    </Anchors>
+                    <Color r="0.4" g="0.4" b="0.4" a="1"/>
+                </Texture>
+                <Texture name="$parentTopBorder">
+                    <Size y="1"/>
+                    <Anchors>
+                        <Anchor point="TOPLEFT"/>
+                        <Anchor point="TOPRIGHT"/>
+                    </Anchors>
+                    <Color r="0.4" g="0.4" b="0.4" a="1"/>
+                </Texture>
+            </Layer>
+            <Layer level="OVERLAY">
+                <FontString name="$parentText" inherits="GameFontNormal" justifyH="CENTER">
+                    <Anchors>
+                        <Anchor point="CENTER"/>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+        <HighlightTexture setAllPoints="true" alphaMode="ADD">
+            <Color r="0.2" g="0.2" b="0.2" a="0.3"/>
+        </HighlightTexture>
+    </Button>
+
+    <!-- ================================================================
+        Tabbed Panel Template
+    ================================================================= -->
+    <Frame name="LoolibTabbedPanelTemplate" virtual="true" inherits="BackdropTemplate">
+        <Size x="400" y="300"/>
+        <Frames>
+            <!-- Tab button container -->
+            <Frame name="$parentTabBar" parentKey="TabBar">
+                <Size x="1" y="28"/>
+                <Anchors>
+                    <Anchor point="TOPLEFT"/>
+                    <Anchor point="TOPRIGHT"/>
+                </Anchors>
+            </Frame>
+            <!-- Content area -->
+            <Frame name="$parentContentFrame" parentKey="ContentFrame" inherits="BackdropTemplate">
+                <Anchors>
+                    <Anchor point="TOPLEFT" relativeKey="$parent.TabBar" relativePoint="BOTTOMLEFT"/>
+                    <Anchor point="BOTTOMRIGHT"/>
+                </Anchors>
+                <Scripts>
+                    <OnLoad>
+                        self:SetBackdrop(BACKDROP_DIALOG_32_32)
+                        self:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+                        self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+                    </OnLoad>
+                </Scripts>
+            </Frame>
+        </Frames>
+    </Frame>
+
+    <!-- ================================================================
+        Tooltip Template
+    ================================================================= -->
+    <Frame name="LoolibTooltipTemplate" virtual="true" inherits="BackdropTemplate" frameStrata="TOOLTIP">
+        <Size x="200" y="50"/>
+        <Layers>
+            <Layer level="OVERLAY">
+                <FontString name="$parentTitle" inherits="GameFontNormal" justifyH="LEFT">
+                    <Anchors>
+                        <Anchor point="TOPLEFT" x="10" y="-10"/>
+                        <Anchor point="TOPRIGHT" x="-10" y="-10"/>
+                    </Anchors>
+                </FontString>
+                <FontString name="$parentText" inherits="GameFontNormalSmall" justifyH="LEFT" justifyV="TOP">
+                    <Anchors>
+                        <Anchor point="TOPLEFT" relativeKey="$parent.Title" relativePoint="BOTTOMLEFT" y="-4"/>
+                        <Anchor point="RIGHT" x="-10"/>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+        <Scripts>
+            <OnLoad>
+                self:SetBackdrop(BACKDROP_TOOLTIP_16_16_5555)
+                self:SetBackdropColor(0, 0, 0, 0.9)
+                self:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+            </OnLoad>
+        </Scripts>
+    </Frame>
+
+    <!-- ================================================================
+        Dialog Template
+    ================================================================= -->
+    <Frame name="LoolibDialogTemplate" virtual="true" inherits="BackdropTemplate" frameStrata="DIALOG" enableMouse="true">
+        <Size x="320" y="160"/>
+        <Layers>
+            <Layer level="OVERLAY">
+                <FontString name="$parentTitle" inherits="GameFontNormalLarge" justifyH="CENTER">
+                    <Anchors>
+                        <Anchor point="TOP" x="0" y="-15"/>
+                    </Anchors>
+                </FontString>
+                <FontString name="$parentMessage" inherits="GameFontNormal" justifyH="CENTER" justifyV="TOP">
+                    <Size x="280" y="0"/>
+                    <Anchors>
+                        <Anchor point="TOP" relativeKey="$parent.Title" relativePoint="BOTTOM" y="-10"/>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+        <Frames>
+            <Button name="$parentCloseButton" inherits="UIPanelCloseButton">
+                <Anchors>
+                    <Anchor point="TOPRIGHT" x="-3" y="-3"/>
+                </Anchors>
+            </Button>
+            <!-- Button container -->
+            <Frame name="$parentButtonContainer" parentKey="ButtonContainer">
+                <Size x="1" y="30"/>
+                <Anchors>
+                    <Anchor point="BOTTOMLEFT" x="20" y="15"/>
+                    <Anchor point="BOTTOMRIGHT" x="-20" y="15"/>
+                </Anchors>
+            </Frame>
+        </Frames>
+        <Scripts>
+            <OnLoad>
+                self:SetBackdrop(BACKDROP_DIALOG_32_32)
+                self:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+                self:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+            </OnLoad>
+        </Scripts>
+    </Frame>
+
+    <!-- ================================================================
+        Modal Overlay Template
+    ================================================================= -->
+    <Frame name="LoolibModalOverlayTemplate" virtual="true" frameStrata="DIALOG" enableMouse="true">
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture setAllPoints="true">
+                    <Color r="0" g="0" b="0" a="0.5"/>
+                </Texture>
+            </Layer>
+        </Layers>
+    </Frame>
+
+    <!-- ================================================================
+        Dropdown Template
+    ================================================================= -->
+    <Frame name="LoolibDropdownTemplate" virtual="true" inherits="BackdropTemplate" enableMouse="true">
+        <Size x="150" y="24"/>
+        <Frames>
+            <Button name="$parentButton" parentKey="Button">
+                <Size x="24" y="24"/>
+                <Anchors>
+                    <Anchor point="RIGHT" x="-2" y="0"/>
+                </Anchors>
+                <NormalTexture file="Interface\ChatFrame\UI-ChatIcon-ScrollDown-Up"/>
+                <PushedTexture file="Interface\ChatFrame\UI-ChatIcon-ScrollDown-Down"/>
+                <HighlightTexture file="Interface\Buttons\UI-Common-MouseHilight" alphaMode="ADD"/>
+            </Button>
+        </Frames>
+        <Layers>
+            <Layer level="OVERLAY">
+                <FontString name="$parentText" parentKey="Text" inherits="GameFontNormal" justifyH="LEFT">
+                    <Anchors>
+                        <Anchor point="LEFT" x="8" y="0"/>
+                        <Anchor point="RIGHT" relativeKey="$parent.Button" relativePoint="LEFT" x="-4"/>
+                    </Anchors>
+                </FontString>
+            </Layer>
+        </Layers>
+        <Scripts>
+            <OnLoad>
+                self:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = 1,
+                })
+                self:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+                self:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+            </OnLoad>
+        </Scripts>
+    </Frame>
+
+    <!-- ================================================================
+        Dropdown Menu Template
+    ================================================================= -->
+    <Frame name="LoolibDropdownMenuTemplate" virtual="true" inherits="BackdropTemplate" frameStrata="FULLSCREEN_DIALOG" enableMouse="true">
+        <Size x="150" y="100"/>
+        <Frames>
+            <ScrollFrame name="$parentScrollFrame" parentKey="ScrollFrame">
+                <Anchors>
+                    <Anchor point="TOPLEFT" x="4" y="-4"/>
+                    <Anchor point="BOTTOMRIGHT" x="-4" y="4"/>
+                </Anchors>
+                <Frames>
+                    <Frame name="$parentContent" parentKey="Content">
+                        <Size x="1" y="1"/>
+                        <Anchors>
+                            <Anchor point="TOPLEFT"/>
+                        </Anchors>
+                    </Frame>
+                </Frames>
+                <Scripts>
+                    <OnLoad>
+                        self:SetScrollChild(self.Content)
+                    </OnLoad>
+                </Scripts>
+            </ScrollFrame>
+        </Frames>
+        <Scripts>
+            <OnLoad>
+                self:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = 1,
+                })
+                self:SetBackdropColor(0.12, 0.12, 0.12, 0.95)
+                self:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+            </OnLoad>
+        </Scripts>
+    </Frame>
+
+    <!-- ================================================================
+        Dropdown Menu Item Template
+    ================================================================= -->
+    <Button name="LoolibDropdownMenuItemTemplate" virtual="true">
+        <Size x="140" y="20"/>
+        <Layers>
+            <Layer level="HIGHLIGHT">
+                <Texture name="$parentHighlight" setAllPoints="true">
+                    <Color r="0.2" g="0.4" b="0.6" a="0.5"/>
+                </Texture>
+            </Layer>
+            <Layer level="OVERLAY">
+                <FontString name="$parentText" parentKey="Text" inherits="GameFontNormalSmall" justifyH="LEFT">
+                    <Anchors>
+                        <Anchor point="LEFT" x="8" y="0"/>
+                        <Anchor point="RIGHT" x="-8" y="0"/>
+                    </Anchors>
+                </FontString>
+                <Texture name="$parentCheck" parentKey="Check" hidden="true">
+                    <Size x="14" y="14"/>
+                    <Anchors>
+                        <Anchor point="LEFT" x="4" y="0"/>
+                    </Anchors>
+                </Texture>
+            </Layer>
+        </Layers>
+    </Button>
+
+    <!-- ================================================================
+        Input Dialog Template
+    ================================================================= -->
+    <Frame name="LoolibInputDialogTemplate" virtual="true" inherits="LoolibDialogTemplate">
+        <Size x="320" y="140"/>
+        <Frames>
+            <EditBox name="$parentEditBox" parentKey="EditBox" autoFocus="false" inherits="InputBoxTemplate">
+                <Size x="260" y="24"/>
+                <Anchors>
+                    <Anchor point="TOP" relativeKey="$parent.Message" relativePoint="BOTTOM" y="-10"/>
+                </Anchors>
+                <Scripts>
+                    <OnEscapePressed>
+                        self:ClearFocus()
+                    </OnEscapePressed>
+                </Scripts>
+            </EditBox>
+        </Frames>
+    </Frame>
+
+</Ui>

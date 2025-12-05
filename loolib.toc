@@ -1,0 +1,93 @@
+## Interface: 120000
+## Title: Loolib
+## Notes: Comprehensive addon library for WoW 12.0+ (Midnight expansion)
+## Author: James Kueller
+## Version: 1.0.0
+## X-Category: Library
+## X-License: MIT
+
+# ============================================================
+# LibStub - Library versioning and distribution
+# ============================================================
+LibStub\LibStub.lua
+
+# ============================================================
+# Core - Foundation utilities
+# ============================================================
+Core\Loolib.lua
+Core\Mixin.lua
+Core\TableUtil.lua
+Core\FunctionUtil.lua
+Core\Constants.lua
+
+# ============================================================
+# Events - Callback and event system
+# ============================================================
+Events\CallbackRegistry.lua
+Events\EventRegistry.lua
+Events\EventFrame.lua
+
+# ============================================================
+# UI Core - Frame and region utilities
+# ============================================================
+UI\Core\AnchorUtil.lua
+UI\Core\FrameUtil.lua
+UI\Core\RegionUtil.lua
+
+# ============================================================
+# UI Pool - Object and frame pooling
+# ============================================================
+UI\Pool\PoolResetters.lua
+UI\Pool\ObjectPool.lua
+UI\Pool\FramePool.lua
+UI\Pool\PoolCollection.lua
+
+# ============================================================
+# UI Theme - Theme system
+# ============================================================
+UI\Theme\ThemeManager.lua
+UI\Theme\ThemeDefault.lua
+UI\Theme\ThemeDark.lua
+UI\Theme\ThemeMinimal.lua
+
+# ============================================================
+# UI Factory - Frame creation
+# ============================================================
+UI\Factory\FrameFactory.lua
+UI\Factory\WidgetBuilder.lua
+
+# ============================================================
+# UI Layout - Layout managers
+# ============================================================
+UI\Layout\LayoutBase.lua
+UI\Layout\VerticalLayout.lua
+UI\Layout\HorizontalLayout.lua
+UI\Layout\GridLayout.lua
+UI\Layout\FlowLayout.lua
+UI\Layout\LayoutBuilder.lua
+
+# ============================================================
+# Data - Data persistence and providers
+# ============================================================
+Data\DataProvider.lua
+Data\SavedVariables.lua
+
+# ============================================================
+# UI Templates - XML templates (must load before Lua)
+# ============================================================
+UI\Templates\Templates.xml
+
+# ============================================================
+# UI Templates - Component implementations
+# ============================================================
+UI\Templates\ScrollableList.lua
+UI\Templates\TabbedPanel.lua
+UI\Templates\Tooltip.lua
+UI\Templates\Dialog.lua
+UI\Templates\Dropdown.lua
+
+# ============================================================
+# Debug - Debugging and inspection tools
+# ============================================================
+Debug\Logger.lua
+Debug\Dump.lua
