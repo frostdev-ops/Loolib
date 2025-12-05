@@ -60,6 +60,32 @@ local UNESCAPE_MAP = {
     ["\005"] = "^",
 }
 
+-- Byte constants for zero-garbage parsing
+local MARKER_BYTE = string.byte("^")  -- 94
+local ESCAPE_BYTE = 1  -- \001
+
+-- Tag bytes for comparison (avoids string creation)
+local TAG_STRING_BYTE = string.byte("S")
+local TAG_NUMBER_BYTE = string.byte("N")
+local TAG_FLOAT_BYTE = string.byte("F")
+local TAG_FLOAT_END_BYTE = string.byte("f")
+local TAG_TABLE_START_BYTE = string.byte("T")
+local TAG_TABLE_END_BYTE = string.byte("t")
+local TAG_BOOL_TRUE_BYTE = string.byte("B")
+local TAG_BOOL_FALSE_BYTE = string.byte("b")
+local TAG_NIL_BYTE = string.byte("Z")
+local TAG_INF_BYTE = string.byte("I")
+local TAG_NINF_BYTE = string.byte("i")
+
+-- Byte-based unescape lookup (indexed by second byte after \001)
+local UNESCAPE_BYTES = {
+    [1] = 1,     -- \001\001 -> \001
+    [2] = 2,     -- \001\002 -> \002
+    [3] = 3,     -- \001\003 -> \003
+    [4] = 4,     -- \001\004 -> \004
+    [5] = 94,    -- \001\005 -> ^
+}
+
 --[[--------------------------------------------------------------------
     Escaping Functions
 ----------------------------------------------------------------------]]
@@ -85,36 +111,59 @@ local SerializeValue
 -- Track tables being serialized to detect circular references
 local serializingTables = {}
 
-local function SerializeString(value)
-    return MARKER .. TAG_STRING .. EscapeString(value)
+-- Append string directly to output table (avoids intermediate concatenation)
+local function SerializeString(value, output)
+    local n = #output
+    output[n + 1] = MARKER
+    output[n + 2] = TAG_STRING
+    output[n + 3] = EscapeString(value)
 end
 
-local function SerializeNumber(value)
+-- Append number directly to output table
+local function SerializeNumber(value, output)
+    local n = #output
+    
     -- Handle special cases
     if value == math.huge then
-        return MARKER .. TAG_INF
+        output[n + 1] = MARKER
+        output[n + 2] = TAG_INF
+        return
     elseif value == -math.huge then
-        return MARKER .. TAG_NINF
+        output[n + 1] = MARKER
+        output[n + 2] = TAG_NINF
+        return
     end
 
     -- Check if it's an integer
     local intPart = math.floor(value)
     if value == intPart and value >= -2147483648 and value <= 2147483647 then
-        return MARKER .. TAG_NUMBER .. tostring(intPart)
+        output[n + 1] = MARKER
+        output[n + 2] = TAG_NUMBER
+        output[n + 3] = tostring(intPart)
+        return
     end
 
     -- Float: use format that preserves precision
-    -- Format: ^F<integer>^f<fractional>
-    local str = string.format("%.17g", value)
-    return MARKER .. TAG_FLOAT .. str .. MARKER .. TAG_FLOAT_END
+    -- Format: ^F<value>^f
+    output[n + 1] = MARKER
+    output[n + 2] = TAG_FLOAT
+    output[n + 3] = string.format("%.17g", value)
+    output[n + 4] = MARKER
+    output[n + 5] = TAG_FLOAT_END
 end
 
-local function SerializeBoolean(value)
-    return MARKER .. (value and TAG_BOOL_TRUE or TAG_BOOL_FALSE)
+-- Append boolean directly to output table
+local function SerializeBoolean(value, output)
+    local n = #output
+    output[n + 1] = MARKER
+    output[n + 2] = value and TAG_BOOL_TRUE or TAG_BOOL_FALSE
 end
 
-local function SerializeNil()
-    return MARKER .. TAG_NIL
+-- Append nil marker directly to output table
+local function SerializeNil(output)
+    local n = #output
+    output[n + 1] = MARKER
+    output[n + 2] = TAG_NIL
 end
 
 local function SerializeTable(tbl, output)
@@ -124,7 +173,9 @@ local function SerializeTable(tbl, output)
     end
 
     serializingTables[tbl] = true
-    output[#output + 1] = MARKER .. TAG_TABLE_START
+    local n = #output
+    output[n + 1] = MARKER
+    output[n + 2] = TAG_TABLE_START
 
     -- Serialize key-value pairs
     for key, val in pairs(tbl) do
@@ -132,7 +183,9 @@ local function SerializeTable(tbl, output)
         SerializeValue(val, output)
     end
 
-    output[#output + 1] = MARKER .. TAG_TABLE_END
+    n = #output
+    output[n + 1] = MARKER
+    output[n + 2] = TAG_TABLE_END
     serializingTables[tbl] = nil
 end
 
@@ -140,13 +193,13 @@ function SerializeValue(value, output)
     local valueType = type(value)
 
     if valueType == "string" then
-        output[#output + 1] = SerializeString(value)
+        SerializeString(value, output)
     elseif valueType == "number" then
-        output[#output + 1] = SerializeNumber(value)
+        SerializeNumber(value, output)
     elseif valueType == "boolean" then
-        output[#output + 1] = SerializeBoolean(value)
+        SerializeBoolean(value, output)
     elseif valueType == "nil" then
-        output[#output + 1] = SerializeNil()
+        SerializeNil(output)
     elseif valueType == "table" then
         SerializeTable(value, output)
     else
@@ -163,46 +216,56 @@ local parseStr
 local parsePos
 local parseLen
 
-local function ParseChar()
+-- Read and consume a byte (returns number, zero garbage)
+local function ParseByte()
     if parsePos > parseLen then
         return nil
     end
-    local c = parseStr:sub(parsePos, parsePos)
+    local b = parseStr:byte(parsePos)
     parsePos = parsePos + 1
-    return c
+    return b
 end
 
-local function PeekChar()
+-- Peek at current byte without consuming (returns number, zero garbage)
+local function PeekByte()
     if parsePos > parseLen then
         return nil
     end
-    return parseStr:sub(parsePos, parsePos)
+    return parseStr:byte(parsePos)
 end
 
--- Read until next ^ marker or end
+-- Read until next ^ marker or end, handling escape sequences
+-- Returns string (only creates one string at the end)
 local function ReadUntilMarker()
-    local start = parsePos
     local result = {}
+    local resultLen = 0
 
     while parsePos <= parseLen do
-        local c = parseStr:sub(parsePos, parsePos)
-        if c == MARKER then
+        local b = parseStr:byte(parsePos)
+        if b == MARKER_BYTE then
             break
-        elseif c == "\001" then
-            -- Escape sequence
+        elseif b == ESCAPE_BYTE then
+            -- Escape sequence: \001X
             parsePos = parsePos + 1
             if parsePos <= parseLen then
-                local escaped = parseStr:sub(parsePos, parsePos)
-                result[#result + 1] = UNESCAPE_MAP[escaped] or escaped
+                local escapedByte = parseStr:byte(parsePos)
+                local unescaped = UNESCAPE_BYTES[escapedByte]
+                resultLen = resultLen + 1
+                result[resultLen] = unescaped or escapedByte
                 parsePos = parsePos + 1
             end
         else
-            result[#result + 1] = c
+            resultLen = resultLen + 1
+            result[resultLen] = b
             parsePos = parsePos + 1
         end
     end
 
-    return table.concat(result)
+    -- Convert accumulated bytes to string (single allocation)
+    if resultLen == 0 then
+        return ""
+    end
+    return string.char(unpack(result, 1, resultLen))
 end
 
 -- Forward declaration
@@ -220,9 +283,9 @@ end
 local function ParseFloat()
     local numStr = ReadUntilMarker()
     -- Expect closing ^f
-    local marker = ParseChar()
-    local tag = ParseChar()
-    if marker ~= MARKER or tag ~= TAG_FLOAT_END then
+    local marker = ParseByte()
+    local tag = ParseByte()
+    if marker ~= MARKER_BYTE or tag ~= TAG_FLOAT_END_BYTE then
         return nil, "Invalid float format"
     end
     return tonumber(numStr)
@@ -232,22 +295,26 @@ local function ParseTable()
     local tbl = {}
 
     while true do
-        local marker = PeekChar()
+        local marker = PeekByte()
         if not marker then
             return nil, "Unexpected end of input in table"
         end
 
-        if marker ~= MARKER then
+        if marker ~= MARKER_BYTE then
             return nil, "Expected marker in table"
         end
 
         parsePos = parsePos + 1
-        local tag = PeekChar()
+        local tag = PeekByte()
 
-        if tag == TAG_TABLE_END then
+        if tag == TAG_TABLE_END_BYTE then
             parsePos = parsePos + 1
             return tbl
         end
+
+        -- Not end of table, so the marker we consumed belongs to the key.
+        -- Step back so ParseValue can consume it correctly.
+        parsePos = parsePos - 1
 
         -- Parse key
         local key, err = ParseValue()
@@ -267,36 +334,36 @@ local function ParseTable()
 end
 
 function ParseValue()
-    local marker = ParseChar()
-    if marker ~= MARKER then
+    local marker = ParseByte()
+    if marker ~= MARKER_BYTE then
         return nil, "Expected marker"
     end
 
-    local tag = ParseChar()
+    local tag = ParseByte()
     if not tag then
         return nil, "Unexpected end of input"
     end
 
-    if tag == TAG_STRING then
+    if tag == TAG_STRING_BYTE then
         return ParseString()
-    elseif tag == TAG_NUMBER then
+    elseif tag == TAG_NUMBER_BYTE then
         return ParseNumber()
-    elseif tag == TAG_FLOAT then
+    elseif tag == TAG_FLOAT_BYTE then
         return ParseFloat()
-    elseif tag == TAG_TABLE_START then
+    elseif tag == TAG_TABLE_START_BYTE then
         return ParseTable()
-    elseif tag == TAG_BOOL_TRUE then
+    elseif tag == TAG_BOOL_TRUE_BYTE then
         return true
-    elseif tag == TAG_BOOL_FALSE then
+    elseif tag == TAG_BOOL_FALSE_BYTE then
         return false
-    elseif tag == TAG_NIL then
+    elseif tag == TAG_NIL_BYTE then
         return nil
-    elseif tag == TAG_INF then
+    elseif tag == TAG_INF_BYTE then
         return math.huge
-    elseif tag == TAG_NINF then
+    elseif tag == TAG_NINF_BYTE then
         return -math.huge
     else
-        return nil, "Unknown type tag: " .. tag
+        return nil, "Unknown type tag: " .. string.char(tag)
     end
 end
 

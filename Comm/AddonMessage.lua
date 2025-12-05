@@ -76,10 +76,11 @@ local commFrame = nil
 
 local function GenerateMessageID()
     messageIDCounter = messageIDCounter + 1
-    if messageIDCounter > 999 then
+    if messageIDCounter > 65535 then
         messageIDCounter = 1
     end
-    return string.format("%03d", messageIDCounter)
+    -- 4 hex chars: same size header, but 65K IDs instead of 999
+    return string.format("%04X", messageIDCounter)
 end
 
 local function GetThrottleAllowance()
@@ -110,7 +111,7 @@ local function SplitMessage(text, prefix)
     local msgID = GenerateMessageID()
 
     -- Reserve space for control byte and message ID in first/middle/last parts
-    local headerSize = 1 + 3  -- control byte + 3-digit ID
+    local headerSize = 1 + 4  -- control byte + 4-char hex ID
     local chunkSize = MAX_MESSAGE_SIZE - headerSize
 
     local pos = 1
@@ -193,12 +194,12 @@ local function ProcessReceivedMessage(prefix, text, distribution, sender)
     if ctrlByte == CTRL_SINGLE then
         content = text:sub(2)
     else
-        -- Multi-part: extract message ID (3 chars) and content
-        if #text < 4 then
+        -- Multi-part: extract message ID (4 hex chars) and content
+        if #text < 5 then
             return
         end
-        local msgID = text:sub(2, 4)
-        local msgContent = text:sub(5)
+        local msgID = text:sub(2, 5)
+        local msgContent = text:sub(6)
 
         local assembled, complete = AssembleMessage(sender, prefix, ctrlByte, msgID, msgContent)
         if not complete then

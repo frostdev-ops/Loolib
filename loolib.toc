@@ -20,6 +20,7 @@ Core\TableUtil.lua
 Core\FunctionUtil.lua
 Core\Constants.lua
 Core\Timer.lua
+Core\Addon.lua
 
 # ============================================================
 # Events - Callback and event system
@@ -35,6 +36,7 @@ Events\Bucket.lua
 UI\Core\AnchorUtil.lua
 UI\Core\FrameUtil.lua
 UI\Core\RegionUtil.lua
+UI\Core\WindowUtil.lua
 
 # ============================================================
 # UI Pool - Object and frame pooling
@@ -73,6 +75,7 @@ UI\Layout\LayoutBuilder.lua
 # ============================================================
 Data\DataProvider.lua
 Data\SavedVariables.lua
+Data\ProfileManager.lua
 
 # ============================================================
 # UI Templates - XML templates (must load before Lua)

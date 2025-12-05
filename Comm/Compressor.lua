@@ -312,15 +312,23 @@ local function FindLongestMatch(data, pos, windowStart, maxLen)
         return 0, 0
     end
 
-    -- Hash-based matching for faster search
-    local current = data:sub(pos, pos + 2)
-    if #current < 3 then
+    -- Get bytes for 3-byte prefix match (avoids substring creation)
+    local b1 = data:byte(pos)
+    local b2 = data:byte(pos + 1)
+    local b3 = data:byte(pos + 2)
+
+    -- Need at least 3 bytes for minimum match
+    if not b3 then
         return 0, 0
     end
 
     for searchPos = pos - 1, searchStart, -1 do
-        local candidate = data:sub(searchPos, searchPos + 2)
-        if candidate == current then
+        -- Compare 3-byte prefix using bytes (zero garbage)
+        local sb1 = data:byte(searchPos)
+        local sb2 = data:byte(searchPos + 1)
+        local sb3 = data:byte(searchPos + 2)
+
+        if sb1 == b1 and sb2 == b2 and sb3 == b3 then
             -- Found potential match, extend it
             local length = 3
             while length < maxSearchLen do
@@ -490,6 +498,9 @@ local function InflateBlockStored(reader, output)
 end
 
 local function InflateBlockHuffman(reader, litTable, distTable, output)
+    -- Track output length separately to avoid repeated #output calls
+    local outLen = #output
+    
     while true do
         local symbol = DecodeSymbol(reader, litTable, MAX_BITS)
         if symbol == nil then
@@ -497,8 +508,9 @@ local function InflateBlockHuffman(reader, litTable, distTable, output)
         end
 
         if symbol < 256 then
-            -- Literal byte
-            output[#output + 1] = string.char(symbol)
+            -- Literal byte - each output entry is a single char
+            outLen = outLen + 1
+            output[outLen] = string.char(symbol)
         elseif symbol == 256 then
             -- End of block
             return true
@@ -522,14 +534,14 @@ local function InflateBlockHuffman(reader, litTable, distTable, output)
                 distance = distance + reader:ReadBits(distExtraBits)
             end
 
-            -- Copy from output buffer
-            local outLen = #table.concat(output)
+            -- Copy from output buffer using direct table indexing
+            -- Each output[i] is a single character, so we can index directly
             local copyStart = outLen - distance + 1
 
             for i = 0, length - 1 do
                 local srcIdx = copyStart + (i % distance)
-                local srcChar = table.concat(output):sub(srcIdx, srcIdx)
-                output[#output + 1] = srcChar
+                outLen = outLen + 1
+                output[outLen] = output[srcIdx]
             end
         end
     end

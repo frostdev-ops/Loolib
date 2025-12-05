@@ -4,11 +4,15 @@
 
     Features:
     - Confirmation dialogs
-    - Input dialogs
+    - Input dialogs (single or multiple editboxes)
+    - Multiple checkboxes
+    - Icon display
     - Custom button configurations
     - Modal overlay support
     - Escape to close
-    - Animation support
+    - Auto-dismiss with duration timer
+    - Lifecycle callbacks (on_show, on_hide, on_update)
+    - Delegate pattern (dialog templates)
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
@@ -74,12 +78,20 @@ function LoolibDialogMixin:OnLoad()
     self.escapeClose = true
     self.buttons = {}
     self.buttonPool = nil
+    self.editBoxes = {}
+    self.checkBoxes = {}
+    self.duration = nil
+    self.durationTimer = 0
+    self.on_show = nil
+    self.on_hide = nil
+    self.on_update = nil
 
     -- Get references
     self.Title = self.Title or self:GetName() and _G[self:GetName() .. "Title"]
     self.Message = self.Message or self:GetName() and _G[self:GetName() .. "Message"]
     self.CloseButton = self.CloseButton or self:GetName() and _G[self:GetName() .. "CloseButton"]
     self.ButtonContainer = self.ButtonContainer
+    self.Icon = self.Icon
 
     -- Set up close button
     if self.CloseButton then
@@ -92,6 +104,23 @@ function LoolibDialogMixin:OnLoad()
     self:SetScript("OnKeyDown", function(_, key)
         if key == "ESCAPE" and self.escapeClose then
             self:Cancel()
+        end
+    end)
+
+    -- Set up OnUpdate for duration timer and callbacks
+    self:SetScript("OnUpdate", function(frame, elapsed)
+        -- Duration timer
+        if self.duration then
+            self.durationTimer = self.durationTimer + elapsed
+            if self.durationTimer >= self.duration then
+                self:Hide()
+                return
+            end
+        end
+
+        -- Custom update callback
+        if self.on_update then
+            self.on_update(self, elapsed)
         end
     end)
 
@@ -138,6 +167,146 @@ end
 function LoolibDialogMixin:SetButtons(buttons)
     self.buttons = buttons or {}
     self:LayoutButtons()
+end
+
+--- Set the dialog icon
+-- @param iconPath string - Texture path for icon
+function LoolibDialogMixin:SetIcon(iconPath)
+    if self.Icon then
+        self.Icon:SetTexture(iconPath)
+        self.Icon:Show()
+    end
+end
+
+--- Set auto-dismiss duration
+-- @param duration number - Time in seconds before auto-close
+function LoolibDialogMixin:SetDuration(duration)
+    self.duration = duration
+    self.durationTimer = 0
+end
+
+--- Set lifecycle callbacks
+-- @param callbacks table - { on_show, on_hide, on_update }
+function LoolibDialogMixin:SetCallbacks(callbacks)
+    callbacks = callbacks or {}
+    self.on_show = callbacks.on_show
+    self.on_hide = callbacks.on_hide
+    self.on_update = callbacks.on_update
+end
+
+--- Set multiple editboxes
+-- @param editBoxes table - Array of { label, defaultValue, multiline }
+function LoolibDialogMixin:SetEditBoxes(editBoxes)
+    -- Clear existing editboxes
+    for _, editBox in ipairs(self.editBoxes) do
+        if editBox.frame then
+            editBox.frame:Hide()
+            editBox.frame:SetParent(nil)
+        end
+    end
+    wipe(self.editBoxes)
+
+    -- Create new editboxes
+    local yOffset = -60  -- Start below title/message
+    for i, editBoxInfo in ipairs(editBoxes or {}) do
+        local container = CreateFrame("Frame", nil, self)
+        container:SetSize(self:GetWidth() - 40, 40)
+        container:SetPoint("TOP", self, "TOP", 0, yOffset)
+
+        -- Label
+        local label = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
+        label:SetText(editBoxInfo.label or ("Input " .. i))
+
+        -- EditBox
+        local editBox = CreateFrame("EditBox", nil, container, "InputBoxTemplate")
+        editBox:SetSize(container:GetWidth(), 20)
+        editBox:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
+        editBox:SetAutoFocus(false)
+        editBox:SetText(editBoxInfo.defaultValue or "")
+
+        if editBoxInfo.multiline then
+            editBox:SetMultiLine(true)
+            editBox:SetMaxLetters(0)
+        end
+
+        container.editBox = editBox
+        container.label = label
+
+        self.editBoxes[i] = {
+            frame = container,
+            editBox = editBox,
+            label = label,
+        }
+
+        yOffset = yOffset - 50
+    end
+end
+
+--- Get editbox values
+-- @return table - Array of editbox text values
+function LoolibDialogMixin:GetEditBoxValues()
+    local values = {}
+    for i, editBoxInfo in ipairs(self.editBoxes) do
+        values[i] = editBoxInfo.editBox:GetText()
+    end
+    return values
+end
+
+--- Set multiple checkboxes
+-- @param checkBoxes table - Array of { label, checked, onClick }
+function LoolibDialogMixin:SetCheckBoxes(checkBoxes)
+    -- Clear existing checkboxes
+    for _, checkBox in ipairs(self.checkBoxes) do
+        if checkBox.frame then
+            checkBox.frame:Hide()
+            checkBox.frame:SetParent(nil)
+        end
+    end
+    wipe(self.checkBoxes)
+
+    -- Create new checkboxes
+    local yOffset = -60  -- Start below title/message
+    -- Adjust if editboxes exist
+    if #self.editBoxes > 0 then
+        yOffset = -60 - (#self.editBoxes * 50)
+    end
+
+    for i, checkBoxInfo in ipairs(checkBoxes or {}) do
+        local checkButton = CreateFrame("CheckButton", nil, self, "UICheckButtonTemplate")
+        checkButton:SetSize(24, 24)
+        checkButton:SetPoint("TOPLEFT", self, "TOPLEFT", 20, yOffset)
+        checkButton:SetChecked(checkBoxInfo.checked or false)
+
+        -- Label
+        local label = checkButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        label:SetPoint("LEFT", checkButton, "RIGHT", 4, 0)
+        label:SetText(checkBoxInfo.label or ("Option " .. i))
+
+        -- Click handler
+        if checkBoxInfo.onClick then
+            checkButton:SetScript("OnClick", function(cb)
+                checkBoxInfo.onClick(cb:GetChecked())
+            end)
+        end
+
+        self.checkBoxes[i] = {
+            frame = checkButton,
+            label = label,
+        }
+
+        yOffset = yOffset - 30
+    end
+end
+
+--- Get checkbox states
+-- @return table - Array of boolean checkbox states
+function LoolibDialogMixin:GetCheckBoxStates()
+    local states = {}
+    for i, checkBoxInfo in ipairs(self.checkBoxes) do
+        states[i] = checkBoxInfo.frame:GetChecked()
+    end
+    return states
 end
 
 --[[--------------------------------------------------------------------
@@ -210,6 +379,9 @@ function LoolibDialogMixin:Show()
     self:ClearAllPoints()
     self:SetPoint("CENTER", UIParent, "CENTER", 0, 50)
 
+    -- Reset duration timer
+    self.durationTimer = 0
+
     -- Show
     getmetatable(self).__index.Show(self)
 
@@ -221,6 +393,11 @@ function LoolibDialogMixin:Show()
     -- Focus
     self:EnableKeyboard(true)
     self:SetPropagateKeyboardInput(false)
+
+    -- Call lifecycle callback
+    if self.on_show then
+        self.on_show(self)
+    end
 
     self:TriggerEvent("OnShow")
 end
@@ -239,6 +416,11 @@ function LoolibDialogMixin:Hide()
 
     -- Update modal overlay
     UpdateModalOverlay()
+
+    -- Call lifecycle callback
+    if self.on_hide then
+        self.on_hide(self)
+    end
 
     self:TriggerEvent("OnHide")
 end

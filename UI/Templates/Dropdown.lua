@@ -4,9 +4,13 @@
 
     Features:
     - Simple options list
-    - Nested submenus
+    - Multi-level nested submenus with arrows
     - Disabled items
     - Icons and checkmarks
+    - Radio buttons and checkmarks
+    - Separators
+    - Color codes in text
+    - Tooltips on hover
     - Search/filter for long lists
 ----------------------------------------------------------------------]]
 
@@ -17,7 +21,9 @@ local Loolib = LibStub("Loolib")
 ----------------------------------------------------------------------]]
 
 local dropdownMenu = nil
+local submenuFrame = nil
 local currentDropdown = nil
+local activeSubmenu = nil
 
 local function GetDropdownMenu()
     if not dropdownMenu then
@@ -33,12 +39,25 @@ local function GetDropdownMenu()
         dropdownMenu:SetScript("OnKeyDown", function(_, key)
             if key == "ESCAPE" then
                 dropdownMenu:Hide()
+                if submenuFrame then
+                    submenuFrame:Hide()
+                end
             end
         end)
 
         dropdownMenu:EnableKeyboard(true)
     end
     return dropdownMenu
+end
+
+local function GetSubmenuFrame()
+    if not submenuFrame then
+        submenuFrame = CreateFrame("Frame", nil, UIParent, "LoolibDropdownMenuTemplate")
+        submenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+        submenuFrame:SetFrameLevel(GetDropdownMenu():GetFrameLevel() + 1)
+        submenuFrame:Hide()
+    end
+    return submenuFrame
 end
 
 --[[--------------------------------------------------------------------
@@ -90,7 +109,19 @@ end
 ----------------------------------------------------------------------]]
 
 --- Set the dropdown options
--- @param options table - Array of { value, text, icon, disabled, submenu }
+-- @param options table - Array of option tables with fields:
+--   - value: any - Option value
+--   - text: string - Display text
+--   - icon: string|nil - Icon texture path
+--   - disabled: boolean|nil - Whether item is disabled
+--   - isSeparator: boolean|nil - Whether this is a separator line
+--   - hasArrow: boolean|nil - Whether this item has a submenu
+--   - submenu: table|nil - Array of submenu items (same format)
+--   - checked: boolean|nil - Whether item has checkmark
+--   - isNotRadio: boolean|nil - Use checkmark instead of radio button
+--   - colorCode: string|nil - Color code prefix (e.g., "|cFFFF0000")
+--   - tooltipTitle: string|nil - Tooltip title
+--   - tooltipText: string|nil - Tooltip body text
 function LoolibDropdownMixin:SetOptions(options)
     self.options = options or {}
 end
@@ -98,7 +129,7 @@ end
 --- Add a single option
 -- @param value any - Option value
 -- @param text string - Display text
--- @param options table - Optional: { icon, disabled }
+-- @param options table - Optional fields (see SetOptions for full list)
 function LoolibDropdownMixin:AddOption(value, text, options)
     options = options or {}
     self.options[#self.options + 1] = {
@@ -106,6 +137,14 @@ function LoolibDropdownMixin:AddOption(value, text, options)
         text = text,
         icon = options.icon,
         disabled = options.disabled,
+        isSeparator = options.isSeparator,
+        hasArrow = options.hasArrow,
+        submenu = options.submenu,
+        checked = options.checked,
+        isNotRadio = options.isNotRadio,
+        colorCode = options.colorCode,
+        tooltipTitle = options.tooltipTitle,
+        tooltipText = options.tooltipText,
     }
 end
 
@@ -235,7 +274,11 @@ function LoolibDropdownMixin:CloseMenu()
 end
 
 --- Build the menu content
-function LoolibDropdownMixin:BuildMenu(menu)
+-- @param menu Frame - The menu frame to populate
+-- @param options table - The options to display
+-- @param parentItem Frame|nil - The parent menu item (for submenus)
+function LoolibDropdownMixin:BuildMenu(menu, options, parentItem)
+    options = options or self.options
     local content = menu.ScrollFrame and menu.ScrollFrame.Content
 
     if not content then
@@ -250,53 +293,154 @@ function LoolibDropdownMixin:BuildMenu(menu)
     end
 
     -- Create items
-    for i, option in ipairs(self.options) do
-        local item = CreateFrame("Button", nil, content, "LoolibDropdownMenuItemTemplate")
-        item:SetSize(content:GetWidth(), self.itemHeight)
-        item:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -((i - 1) * self.itemHeight))
+    for i, option in ipairs(options) do
+        local item
 
-        -- Text
-        if item.Text then
-            item.Text:SetText(option.text or "")
-        end
+        -- Handle separators
+        if option.isSeparator then
+            item = CreateFrame("Frame", nil, content)
+            item:SetSize(content:GetWidth(), self.itemHeight / 2)
+            item:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -((i - 1) * self.itemHeight))
 
-        -- Checkmark for selected
-        if item.Check then
-            if option.value == self.selectedValue then
-                item.Check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-                item.Check:Show()
+            -- Create separator line
+            local line = item:CreateTexture(nil, "ARTWORK")
+            line:SetHeight(1)
+            line:SetPoint("LEFT", item, "LEFT", 4, 0)
+            line:SetPoint("RIGHT", item, "RIGHT", -4, 0)
+            line:SetColorTexture(0.5, 0.5, 0.5, 0.5)
+
+            item:Show()
+        else
+            item = CreateFrame("Button", nil, content, "LoolibDropdownMenuItemTemplate")
+            item:SetSize(content:GetWidth(), self.itemHeight)
+            item:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -((i - 1) * self.itemHeight))
+
+            -- Text with optional color code
+            if item.Text then
+                local displayText = option.text or ""
+                if option.colorCode then
+                    displayText = option.colorCode .. displayText .. "|r"
+                end
+                item.Text:SetText(displayText)
+            end
+
+            -- Checkmark or radio button for selected/checked items
+            if item.Check then
+                local isChecked = option.checked or (option.value == self.selectedValue)
+                if isChecked then
+                    if option.isNotRadio then
+                        -- Checkmark
+                        item.Check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+                    else
+                        -- Radio button
+                        item.Check:SetTexture("Interface\\Buttons\\UI-RadioButton")
+                        item.Check:SetTexCoord(0.25, 0.5, 0, 1)
+                    end
+                    item.Check:Show()
+                    if item.Text then
+                        item.Text:SetPoint("LEFT", item.Check, "RIGHT", 2, 0)
+                    end
+                else
+                    item.Check:Hide()
+                end
+            end
+
+            -- Arrow for submenu
+            if option.hasArrow and option.submenu then
+                if not item.Arrow then
+                    item.Arrow = item:CreateTexture(nil, "ARTWORK")
+                    item.Arrow:SetSize(16, 16)
+                    item.Arrow:SetPoint("RIGHT", item, "RIGHT", -4, 0)
+                    item.Arrow:SetTexture("Interface\\ChatFrame\\ChatFrameExpandArrow")
+                end
+                item.Arrow:Show()
+            elseif item.Arrow then
+                item.Arrow:Hide()
+            end
+
+            -- Disabled state
+            if option.disabled then
+                item:SetEnabled(false)
                 if item.Text then
-                    item.Text:SetPoint("LEFT", item.Check, "RIGHT", 2, 0)
+                    item.Text:SetTextColor(0.5, 0.5, 0.5, 1)
                 end
             else
-                item.Check:Hide()
+                item:SetEnabled(true)
+                if item.Text and not option.colorCode then
+                    item.Text:SetTextColor(1, 1, 1, 1)
+                end
             end
+
+            -- Tooltip
+            if option.tooltipTitle or option.tooltipText then
+                item:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    if option.tooltipTitle then
+                        GameTooltip:SetText(option.tooltipTitle, 1, 1, 1)
+                    end
+                    if option.tooltipText then
+                        GameTooltip:AddLine(option.tooltipText, nil, nil, nil, true)
+                    end
+                    GameTooltip:Show()
+                end)
+                item:SetScript("OnLeave", function()
+                    GameTooltip:Hide()
+                end)
+            end
+
+            -- Click handler or submenu opener
+            if option.hasArrow and option.submenu then
+                -- Show submenu on hover
+                item:SetScript("OnEnter", function(itemFrame)
+                    -- Use dropdown instance, not the item frame
+                    if self.OpenSubmenu then
+                        self:OpenSubmenu(option.submenu, itemFrame)
+                    end
+                end)
+                item:SetScript("OnClick", function() end)  -- No click action for submenu parents
+            else
+                item:SetScript("OnClick", function()
+                    if not option.disabled then
+                        self:SetSelectedValue(option.value)
+                        self:TriggerEvent("OnSelect", option.value, option.text)
+                        self:CloseMenu()
+                    end
+                end)
+            end
+
+            item:Show()
         end
-
-        -- Disabled state
-        if option.disabled then
-            item:SetEnabled(false)
-            if item.Text then
-                item.Text:SetTextColor(0.5, 0.5, 0.5, 1)
-            end
-        else
-            item:SetEnabled(true)
-            if item.Text then
-                item.Text:SetTextColor(1, 1, 1, 1)
-            end
-        end
-
-        -- Click handler
-        item:SetScript("OnClick", function()
-            if not option.disabled then
-                self:SetSelectedValue(option.value)
-                self:TriggerEvent("OnSelect", option.value, option.text)
-                self:CloseMenu()
-            end
-        end)
-
-        item:Show()
     end
+end
+
+--- Open a submenu
+-- @param submenuOptions table - The submenu options
+-- @param parentItem Frame - The parent menu item
+function LoolibDropdownMixin:OpenSubmenu(submenuOptions, parentItem)
+    local submenu = GetSubmenuFrame()
+
+    -- Build submenu content
+    self:BuildMenu(submenu, submenuOptions, parentItem)
+
+    -- Position submenu to the right of parent item
+    submenu:ClearAllPoints()
+    submenu:SetPoint("TOPLEFT", parentItem, "TOPRIGHT", 0, 0)
+
+    -- Size submenu
+    local itemHeight = self.itemHeight
+    local numItems = #submenuOptions
+    local menuHeight = numItems * itemHeight + 8
+    local menuWidth = 150  -- Default submenu width
+
+    submenu:SetSize(menuWidth, menuHeight)
+
+    if submenu.ScrollFrame and submenu.ScrollFrame.Content then
+        submenu.ScrollFrame.Content:SetWidth(menuWidth - 8)
+        submenu.ScrollFrame.Content:SetHeight(numItems * itemHeight)
+    end
+
+    submenu:Show()
+    activeSubmenu = submenu
 end
 
 --[[--------------------------------------------------------------------

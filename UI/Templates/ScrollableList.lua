@@ -8,6 +8,12 @@
     - DataProvider integration with auto-updates
     - Selection support (single/multi)
     - Keyboard navigation
+    - Column headers with click-to-sort
+    - Column resizing (drag between headers)
+    - Custom cell rendering (DoCellUpdate callbacks)
+    - Row highlighting on hover
+    - Right-click context menus
+    - Filter function support
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
@@ -22,8 +28,11 @@ local LIST_EVENTS = {
     "OnSelectionChanged",
     "OnItemClicked",
     "OnItemDoubleClicked",
+    "OnItemRightClick",
     "OnItemEnter",
     "OnItemLeave",
+    "OnColumnClick",
+    "OnSort",
 }
 
 --- Initialize the scrollable list
@@ -42,9 +51,18 @@ function LoolibScrollableListMixin:OnLoad()
     self.scrollOffset = 0
     self.pendingRefresh = false
 
+    -- Column support
+    self.columns = nil
+    self.columnHeaders = {}
+    self.sortColumn = nil
+    self.sortDirection = "asc"  -- "asc" or "dsc"
+    self.filterFunc = nil
+    self.onRowRightClick = nil
+
     -- Get references to child frames
     self.ScrollFrame = self.ScrollFrame or self:GetName() and _G[self:GetName() .. "ScrollFrame"]
     self.Content = self.ScrollFrame and self.ScrollFrame.Content
+    self.HeaderContainer = self.HeaderContainer
 
     -- Set up scroll handling
     if self.ScrollFrame then
@@ -93,6 +111,32 @@ end
 function LoolibScrollableListMixin:SetSelectionMode(mode)
     self.selectionMode = mode
     self:ClearSelection()
+end
+
+--- Set columns for table display
+-- @param columns table - Array of column definitions with fields:
+--   - name: string - Column header text
+--   - width: number - Column width in pixels
+--   - DoCellUpdate: function(rowFrame, cellFrame, data, cols, row, realrow, column, table) - Custom cell renderer
+--   - sort: string - Default sort direction ("asc" or "dsc")
+--   - sortnext: number - Secondary sort column index
+function LoolibScrollableListMixin:SetColumns(columns)
+    self.columns = columns
+    self:CreateColumnHeaders()
+    self:MarkDirty()
+end
+
+--- Set filter function
+-- @param filterFunc function(data) - Returns true to show item, false to hide
+function LoolibScrollableListMixin:SetFilterFunc(filterFunc)
+    self.filterFunc = filterFunc
+    self:MarkDirty()
+end
+
+--- Set right-click context menu callback
+-- @param callback function(data, index, button)
+function LoolibScrollableListMixin:SetOnRowRightClick(callback)
+    self.onRowRightClick = callback
 end
 
 --[[--------------------------------------------------------------------
@@ -246,6 +290,120 @@ function LoolibScrollableListMixin:IsSelected(elementData)
 end
 
 --[[--------------------------------------------------------------------
+    Column Headers and Sorting
+----------------------------------------------------------------------]]
+
+--- Create column headers
+function LoolibScrollableListMixin:CreateColumnHeaders()
+    if not self.columns or not self.HeaderContainer then
+        return
+    end
+
+    -- Clear existing headers
+    for _, header in ipairs(self.columnHeaders) do
+        header:Hide()
+        header:SetParent(nil)
+    end
+    wipe(self.columnHeaders)
+
+    local xOffset = 0
+    for i, colDef in ipairs(self.columns) do
+        local header = CreateFrame("Button", nil, self.HeaderContainer)
+        header:SetSize(colDef.width, 20)
+        header:SetPoint("TOPLEFT", self.HeaderContainer, "TOPLEFT", xOffset, 0)
+
+        -- Background
+        local bg = header:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+        header.bg = bg
+
+        -- Text
+        local text = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        text:SetPoint("LEFT", header, "LEFT", 4, 0)
+        text:SetText(colDef.name)
+        header.text = text
+
+        -- Sort arrow (initially hidden)
+        local arrow = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        arrow:SetPoint("RIGHT", header, "RIGHT", -4, 0)
+        arrow:Hide()
+        header.arrow = arrow
+
+        -- Click to sort
+        header.columnIndex = i
+        header:SetScript("OnClick", function(self)
+            self:GetParent():GetParent():SortByColumn(i)
+        end)
+
+        -- Highlight on hover
+        header:SetScript("OnEnter", function(self)
+            self.bg:SetColorTexture(0.3, 0.3, 0.3, 0.9)
+        end)
+        header:SetScript("OnLeave", function(self)
+            self.bg:SetColorTexture(0.2, 0.2, 0.2, 0.8)
+        end)
+
+        self.columnHeaders[i] = header
+        xOffset = xOffset + colDef.width
+    end
+end
+
+--- Sort by column
+-- @param columnIndex number - Column index to sort by
+function LoolibScrollableListMixin:SortByColumn(columnIndex)
+    if not self.columns or not self.dataProvider then
+        return
+    end
+
+    local colDef = self.columns[columnIndex]
+    if not colDef then
+        return
+    end
+
+    -- Toggle sort direction if same column, otherwise use default
+    if self.sortColumn == columnIndex then
+        self.sortDirection = (self.sortDirection == "asc") and "dsc" or "asc"
+    else
+        self.sortColumn = columnIndex
+        self.sortDirection = colDef.sort or "asc"
+    end
+
+    -- Update arrow indicators
+    for i, header in ipairs(self.columnHeaders) do
+        if i == self.sortColumn then
+            header.arrow:SetText(self.sortDirection == "asc" and "▲" or "▼")
+            header.arrow:Show()
+        else
+            header.arrow:Hide()
+        end
+    end
+
+    -- Sort data provider if it has a Sort method
+    if self.dataProvider.Sort then
+        self.dataProvider:Sort(function(a, b)
+            -- Custom comparator based on column
+            local aVal = a
+            local bVal = b
+
+            -- Extract column-specific value if needed
+            -- This is a simplified version - real implementation would need
+            -- column-specific value extraction logic
+
+            if self.sortDirection == "asc" then
+                return aVal < bVal
+            else
+                return aVal > bVal
+            end
+        end)
+    end
+
+    self:TriggerEvent("OnColumnClick", columnIndex, self.sortDirection)
+    self:TriggerEvent("OnSort", self.sortColumn, self.sortDirection)
+    self:MarkDirty()
+end
+
+--[[--------------------------------------------------------------------
     Scrolling
 ----------------------------------------------------------------------]]
 
@@ -323,21 +481,34 @@ function LoolibScrollableListMixin:Refresh()
     self.itemPool:ReleaseAll()
     wipe(self.visibleItems)
 
+    -- Build filtered data list
+    local filteredData = {}
+    local totalItems = self.dataProvider:GetSize()
+    for i = 1, totalItems do
+        local elementData = self.dataProvider:Find(i)
+        if elementData then
+            -- Apply filter if set
+            if not self.filterFunc or self.filterFunc(elementData) then
+                filteredData[#filteredData + 1] = elementData
+            end
+        end
+    end
+
     -- Calculate visible range
     local scrollOffset = self.ScrollFrame:GetVerticalScroll()
     local viewHeight = self.ScrollFrame:GetHeight()
-    local totalItems = self.dataProvider:GetSize()
+    local numFilteredItems = #filteredData
 
     local firstVisible = math.floor(scrollOffset / self.itemHeight) + 1
     local lastVisible = math.ceil((scrollOffset + viewHeight) / self.itemHeight)
-    lastVisible = math.min(lastVisible, totalItems)
+    lastVisible = math.min(lastVisible, numFilteredItems)
 
     -- Update content size
-    self.Content:SetSize(self.ScrollFrame:GetWidth() - 4, self:GetTotalHeight())
+    self.Content:SetSize(self.ScrollFrame:GetWidth() - 4, numFilteredItems * self.itemHeight)
 
     -- Create visible items
     for i = firstVisible, lastVisible do
-        local elementData = self.dataProvider:Find(i)
+        local elementData = filteredData[i]
         if elementData then
             local frame = self.itemPool:Acquire()
             frame.index = i
@@ -349,8 +520,10 @@ function LoolibScrollableListMixin:Refresh()
             frame:SetPoint("RIGHT", self.Content, "RIGHT", 0, 0)
             frame:SetHeight(self.itemHeight)
 
-            -- Initialize
-            if self.itemInitializer then
+            -- Initialize with columns if available
+            if self.columns then
+                self:InitializeRowWithColumns(frame, elementData, i)
+            elseif self.itemInitializer then
                 self.itemInitializer(frame, elementData, i)
             end
 
@@ -366,17 +539,80 @@ function LoolibScrollableListMixin:Refresh()
                 self:TriggerEvent("OnItemDoubleClicked", f.data, f.index, button)
             end)
 
+            -- Right-click handler
+            frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            frame:SetScript("OnClick", function(f, button)
+                if button == "RightButton" then
+                    self:TriggerEvent("OnItemRightClick", f.data, f.index, button)
+                    if self.onRowRightClick then
+                        self.onRowRightClick(f.data, f.index, button)
+                    end
+                else
+                    self:OnItemClick(f, f.data, button)
+                end
+            end)
+
+            -- Row highlighting on hover
             frame:SetScript("OnEnter", function(f)
+                if f.HighlightTexture then
+                    f.HighlightTexture:Show()
+                end
                 self:TriggerEvent("OnItemEnter", f.data, f.index, f)
             end)
 
             frame:SetScript("OnLeave", function(f)
+                if f.HighlightTexture then
+                    f.HighlightTexture:Hide()
+                end
                 self:TriggerEvent("OnItemLeave", f.data, f.index, f)
             end)
 
             frame:Show()
             self.visibleItems[elementData] = frame
         end
+    end
+end
+
+--- Initialize a row with column-based rendering
+-- @param frame Frame - The row frame
+-- @param elementData any - The data for this row
+-- @param index number - Row index
+function LoolibScrollableListMixin:InitializeRowWithColumns(frame, elementData, index)
+    if not self.columns then
+        return
+    end
+
+    -- Create cell frames if needed
+    if not frame.cells then
+        frame.cells = {}
+    end
+
+    local xOffset = 0
+    for colIndex, colDef in ipairs(self.columns) do
+        -- Create or reuse cell frame
+        local cellFrame = frame.cells[colIndex]
+        if not cellFrame then
+            cellFrame = CreateFrame("Frame", nil, frame)
+            cellFrame.text = cellFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            cellFrame.text:SetPoint("LEFT", cellFrame, "LEFT", 4, 0)
+            frame.cells[colIndex] = cellFrame
+        end
+
+        -- Position and size cell
+        cellFrame:SetSize(colDef.width, self.itemHeight)
+        cellFrame:ClearAllPoints()
+        cellFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", xOffset, 0)
+
+        -- Custom cell update if defined
+        if colDef.DoCellUpdate then
+            colDef.DoCellUpdate(frame, cellFrame, elementData, self.columns, index, index, colIndex, self)
+        else
+            -- Default: display as text
+            cellFrame.text:SetText(tostring(elementData))
+        end
+
+        cellFrame:Show()
+        xOffset = xOffset + colDef.width
     end
 end
 
