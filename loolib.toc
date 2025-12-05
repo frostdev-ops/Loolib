@@ -19,6 +19,7 @@ Core\Mixin.lua
 Core\TableUtil.lua
 Core\FunctionUtil.lua
 Core\Constants.lua
+Core\Timer.lua
 
 # ============================================================
 # Events - Callback and event system
@@ -26,6 +27,7 @@ Core\Constants.lua
 Events\CallbackRegistry.lua
 Events\EventRegistry.lua
 Events\EventFrame.lua
+Events\Bucket.lua
 
 # ============================================================
 # UI Core - Frame and region utilities

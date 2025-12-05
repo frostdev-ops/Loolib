@@ -11,6 +11,7 @@ if not Loolib then return end
 
 -- Preserve existing data on upgrade
 Loolib.modules = Loolib.modules or {}
+Loolib.addons = Loolib.addons or {}  -- Addon registry (populated by Core/Addon.lua)
 Loolib.version = LOOLIB_MINOR
 
 --[[--------------------------------------------------------------------
@@ -105,4 +106,81 @@ end
 -- @param ... - Values to print
 function Loolib:Error(...)
     print("|cffff0000[Loolib Error]|r", ...)
+end
+
+--[[--------------------------------------------------------------------
+    Addon Management API (implemented in Core/Addon.lua)
+
+    These stubs document the API and will be overwritten when
+    Addon.lua loads. This ensures the functions exist even if
+    accessed before Addon.lua is fully loaded.
+----------------------------------------------------------------------]]
+
+--- Create a new addon with lifecycle management
+-- Signature variants:
+--   NewAddon(name) -> creates new addon
+--   NewAddon(name, lib1, lib2, ...) -> creates addon with embedded libraries
+--   NewAddon(existingObject, name) -> uses existingObject as base
+--   NewAddon(existingObject, name, lib1, lib2, ...) -> uses object + embeds libs
+-- @param arg1 table|string - Either an existing object or the addon name
+-- @param arg2 string - The addon name (if arg1 is an object)
+-- @param ... - Optional library names to embed
+-- @return table - The addon object with LoolibAddonMixin applied
+-- @see LoolibAddonMixin
+function Loolib:NewAddon(arg1, arg2, ...)
+    -- Stub - implemented in Core/Addon.lua
+    error("Loolib:NewAddon requires Core/Addon.lua to be loaded", 2)
+end
+
+--- Get an addon by name
+-- @param name string - The addon name
+-- @param silent boolean|nil - If true, don't error if addon not found
+-- @return table|nil - The addon object, or nil if not found and silent
+function Loolib:GetAddon(name, silent)
+    -- Stub - implemented in Core/Addon.lua
+    local addon = self.addons[name]
+    if not addon and not silent then
+        error(string.format("Addon '%s' does not exist", name), 2)
+    end
+    return addon
+end
+
+--- Iterate over all registered addons
+-- @return iterator - pairs iterator over addon name -> addon object
+function Loolib:IterateAddons()
+    -- Stub - implemented in Core/Addon.lua
+    return pairs(self.addons)
+end
+
+--- Embed a library into a target object
+-- Looks up library from Loolib.modules first, then falls back to LibStub.
+-- Calls library.OnEmbed(target) if the library defines it.
+-- @param target table - The object to embed the library into
+-- @param libName string - The library name to embed
+-- @return boolean - True if library was found and embedded
+function Loolib:EmbedLibrary(target, libName)
+    -- Stub - implemented in Core/Addon.lua
+    local lib = self.modules[libName]
+    if lib then
+        for k, v in pairs(lib) do
+            target[k] = v
+        end
+        if lib.OnEmbed then
+            lib:OnEmbed(target)
+        end
+        return true
+    end
+    return false
+end
+
+--- Embed multiple libraries into a target object
+-- @param target table - The object to embed libraries into
+-- @param ... - Library names to embed (varargs)
+function Loolib:EmbedLibraries(target, ...)
+    for i = 1, select("#", ...) do
+        local libName = select(i, ...)
+        if type(libName) == "string" then
+            self:EmbedLibrary(target, libName)
+        end
+    end
 end
