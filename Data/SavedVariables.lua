@@ -601,7 +601,25 @@ end
     Default Stripping (called on PLAYER_LOGOUT to save space)
 ----------------------------------------------------------------------]]
 
+--- Deep-compare two values for equality (tables compared recursively)
+-- @param a any
+-- @param b any
+-- @return boolean
+local function DeepEqual(a, b)
+    if a == b then return true end
+    if type(a) ~= "table" or type(b) ~= "table" then return false end
+    for k, v in pairs(a) do
+        if not DeepEqual(v, b[k]) then return false end
+    end
+    for k in pairs(b) do
+        if a[k] == nil then return false end
+    end
+    return true
+end
+
 --- Remove values that match defaults (recursive)
+-- Arrays (tables with a numeric key [1]) are compared atomically to prevent
+-- individual element stripping that creates sparse tables on reload.
 -- @param saved table - Saved data table
 -- @param defaults table - Default values
 -- @return boolean - True if table is empty after stripping
@@ -617,9 +635,16 @@ local function RemoveDefaultsRecursive(saved, defaults)
 
         if defaultValue ~= nil then
             if type(savedValue) == "table" and type(defaultValue) == "table" then
-                -- Recursively process nested tables
-                if RemoveDefaultsRecursive(savedValue, defaultValue) then
-                    keysToRemove[#keysToRemove + 1] = key
+                -- Arrays (numeric key 1 present): compare as atomic values
+                if savedValue[1] ~= nil or defaultValue[1] ~= nil then
+                    if DeepEqual(savedValue, defaultValue) then
+                        keysToRemove[#keysToRemove + 1] = key
+                    end
+                else
+                    -- Non-array tables: recursively process
+                    if RemoveDefaultsRecursive(savedValue, defaultValue) then
+                        keysToRemove[#keysToRemove + 1] = key
+                    end
                 end
             elseif savedValue == defaultValue then
                 -- Value matches default, remove it
