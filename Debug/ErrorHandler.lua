@@ -231,6 +231,20 @@ end
 -- @param warningType number - Warning type ID
 -- @param warningMessage string - The warning message
 function LoolibErrorHandlerMixin:OnLuaWarning(warningType, warningMessage)
+    -- LUA_WARNING fires globally for all addons. Only record warnings that
+    -- originate from Loolib or a registered Loolib-based addon.
+    local stackStr = debugstack(2, 20, 20)
+    local isOwn = stackStr:find("AddOns/Loolib/", 1, true) ~= nil
+    if not isOwn then
+        for addonName in pairs(Loolib.addons) do
+            if stackStr:find("AddOns/" .. addonName .. "/", 1, true) then
+                isOwn = true
+                break
+            end
+        end
+    end
+    if not isOwn then return end
+
     local message = string.format("[Warning Type %s] %s",
         tostring(warningType), warningMessage or "Unknown")
 

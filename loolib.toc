@@ -2,7 +2,7 @@
 ## Title: Loolib
 ## Notes: Comprehensive addon library for WoW 12.0+ (Midnight expansion)
 ## Author: James Kueller
-## Version: 1.1.4
+## Version: 1.1.5
 ## X-Category: Library
 ## X-License: MIT
 ## SavedVariables: LoolibRecentColors
