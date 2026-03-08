@@ -49,9 +49,11 @@ local function UpdateModalOverlay()
     end
 
     if hasModal then
+        overlay:SetFrameStrata("FULLSCREEN_DIALOG")
         overlay:SetFrameLevel(highestLevel - 1)
         overlay:Show()
     else
+        overlay:SetFrameStrata("DIALOG")
         overlay:Hide()
     end
 end
@@ -385,6 +387,11 @@ function LoolibDialogMixin:Show()
     -- Show
     getmetatable(self).__index.Show(self)
     self:Raise()
+
+    -- Modal dialogs must appear above DIALOG-strata frames (e.g. ResultsPanel)
+    if self.modal then
+        self:SetFrameStrata("FULLSCREEN_DIALOG")
+    end
 
     -- Re-layout buttons now that the frame has valid dimensions.
     -- ButtonContainer uses relative anchors (BOTTOMLEFT/BOTTOMRIGHT), so
