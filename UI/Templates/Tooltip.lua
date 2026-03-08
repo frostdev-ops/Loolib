@@ -292,7 +292,8 @@ end
 -- @param parent Frame - Parent frame
 -- @return Frame - The tooltip frame
 function CreateLoolibTooltip(parent)
-    local tooltip = CreateFrame("Frame", nil, parent or UIParent, "LoolibTooltipTemplate")
+    local tooltip = CreateFrame("Frame", nil, parent or UIParent, "BackdropTemplate")
+    LoolibTemplates.InitTooltip(tooltip)
     LoolibMixin(tooltip, LoolibTooltipMixin)
     tooltip:OnLoad()
     return tooltip

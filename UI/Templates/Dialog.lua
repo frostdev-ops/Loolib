@@ -26,9 +26,9 @@ local modalOverlay = nil
 
 local function GetModalOverlay()
     if not modalOverlay then
-        modalOverlay = CreateFrame("Frame", nil, UIParent, "LoolibModalOverlayTemplate")
+        modalOverlay = CreateFrame("Frame", nil, UIParent)
+        LoolibTemplates.InitModalOverlay(modalOverlay)
         modalOverlay:SetAllPoints(UIParent)
-        modalOverlay:SetFrameStrata("DIALOG")
         modalOverlay:Hide()
     end
     return modalOverlay
@@ -456,7 +456,8 @@ end
 -- @param parent Frame - Parent frame (optional, defaults to UIParent)
 -- @return Frame - The dialog frame
 function CreateLoolibDialog(parent)
-    local dialog = CreateFrame("Frame", nil, parent or UIParent, "LoolibDialogTemplate")
+    local dialog = CreateFrame("Frame", nil, parent or UIParent, "BackdropTemplate")
+    LoolibTemplates.InitDialog(dialog)
     LoolibMixin(dialog, LoolibDialogMixin)
     dialog:OnLoad()
     return dialog
@@ -518,7 +519,8 @@ end
 
 --- Create an input dialog
 function CreateLoolibInputDialog(parent)
-    local dialog = CreateFrame("Frame", nil, parent or UIParent, "LoolibInputDialogTemplate")
+    local dialog = CreateFrame("Frame", nil, parent or UIParent, "BackdropTemplate")
+    LoolibTemplates.InitInputDialog(dialog)
     LoolibMixin(dialog, LoolibInputDialogMixin)
     dialog:OnLoad()
     return dialog

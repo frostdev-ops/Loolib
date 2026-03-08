@@ -42,7 +42,11 @@ function LoolibTabbedPanelMixin:OnLoad()
     self.ContentFrame = self.ContentFrame or self:GetName() and _G[self:GetName() .. "ContentFrame"]
 
     -- Create tab button pool
-    self.tabButtonPool = CreateLoolibFramePool("Button", self.TabBar, "LoolibTabButtonTemplate")
+    self.tabButtonPool = CreateLoolibObjectPool(function()
+        local btn = CreateFrame("Button", nil, self.TabBar)
+        LoolibTemplates.InitTabButton(btn)
+        return btn
+    end, LoolibGetResetterForFrameType("Button"))
 end
 
 --[[--------------------------------------------------------------------
@@ -396,7 +400,8 @@ end
 -- @param parent Frame - Parent frame
 -- @return Frame - The tabbed panel
 function CreateLoolibTabbedPanel(parent)
-    local panel = CreateFrame("Frame", nil, parent, "LoolibTabbedPanelTemplate")
+    local panel = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    LoolibTemplates.InitTabbedPanel(panel)
     LoolibMixin(panel, LoolibTabbedPanelMixin)
     panel:OnLoad()
     return panel

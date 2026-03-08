@@ -27,8 +27,8 @@ local activeSubmenu = nil
 
 local function GetDropdownMenu()
     if not dropdownMenu then
-        dropdownMenu = CreateFrame("Frame", nil, UIParent, "LoolibDropdownMenuTemplate")
-        dropdownMenu:SetFrameStrata("FULLSCREEN_DIALOG")
+        dropdownMenu = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+        LoolibTemplates.InitDropdownMenu(dropdownMenu)
         dropdownMenu:Hide()
 
         -- Close on click outside
@@ -54,8 +54,8 @@ end
 
 local function GetSubmenuFrame()
     if not submenuFrame then
-        submenuFrame = CreateFrame("Frame", nil, UIParent, "LoolibDropdownMenuTemplate")
-        submenuFrame:SetFrameStrata("FULLSCREEN_DIALOG")
+        submenuFrame = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+        LoolibTemplates.InitDropdownMenu(submenuFrame)
         submenuFrame:SetFrameLevel(GetDropdownMenu():GetFrameLevel() + 1)
         submenuFrame:Hide()
     end
@@ -313,7 +313,8 @@ function LoolibDropdownMixin:BuildMenu(menu, options, parentItem)
 
             item:Show()
         else
-            item = CreateFrame("Button", nil, content, "LoolibDropdownMenuItemTemplate")
+            item = CreateFrame("Button", nil, content)
+            LoolibTemplates.InitDropdownMenuItem(item)
             item:SetSize(content:GetWidth(), self.itemHeight)
             item:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -((i - 1) * self.itemHeight))
 
@@ -469,7 +470,8 @@ end
 -- @param parent Frame - Parent frame
 -- @return Frame - The dropdown frame
 function CreateLoolibDropdown(parent)
-    local dropdown = CreateFrame("Frame", nil, parent, "LoolibDropdownTemplate")
+    local dropdown = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    LoolibTemplates.InitDropdown(dropdown)
     LoolibMixin(dropdown, LoolibDropdownMixin)
     dropdown:OnLoad()
     return dropdown

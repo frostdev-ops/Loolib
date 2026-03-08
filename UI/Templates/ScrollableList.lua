@@ -42,7 +42,7 @@ function LoolibScrollableListMixin:OnLoad()
 
     self.itemPool = nil
     self.itemHeight = 24
-    self.itemTemplate = "LoolibListItemTemplate"
+    self.itemTemplate = nil
     self.itemInitializer = nil
     self.dataProvider = nil
     self.selectionMode = "SINGLE"  -- NONE, SINGLE, MULTI
@@ -474,7 +474,17 @@ function LoolibScrollableListMixin:Refresh()
 
     -- Create item pool if needed
     if not self.itemPool then
-        self.itemPool = CreateLoolibFramePool("Button", self.Content, self.itemTemplate)
+        if self.itemTemplate then
+            -- External XML template (consumer-provided)
+            self.itemPool = CreateLoolibFramePool("Button", self.Content, self.itemTemplate)
+        else
+            -- Default Lua-initialized template
+            self.itemPool = CreateLoolibObjectPool(function()
+                local btn = CreateFrame("Button", nil, self.Content)
+                LoolibTemplates.InitListItem(btn)
+                return btn
+            end, LoolibGetResetterForFrameType("Button"))
+        end
     end
 
     -- Release all current items
@@ -691,7 +701,8 @@ end
 -- @param parent Frame - Parent frame
 -- @return Frame - The list frame
 function CreateLoolibScrollableList(parent)
-    local list = CreateFrame("Frame", nil, parent, "LoolibScrollableListTemplate")
+    local list = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    LoolibTemplates.InitScrollableList(list)
     LoolibMixin(list, LoolibScrollableListMixin)
     list:OnLoad()
     return list
