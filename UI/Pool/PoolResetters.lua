@@ -64,15 +64,15 @@ function LoolibPoolReset_Button(pool, button, isNew)
     end
 
     if button.SetNormalTexture then
-        button:SetNormalTexture(nil)
+        button:SetNormalTexture("")
     end
 
     if button.SetPushedTexture then
-        button:SetPushedTexture(nil)
+        button:SetPushedTexture("")
     end
 
     if button.SetHighlightTexture then
-        button:SetHighlightTexture(nil)
+        button:SetHighlightTexture("")
     end
 
     button.data = nil

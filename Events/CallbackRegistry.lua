@@ -4,9 +4,16 @@
 
     Based on Blizzard's CallbackRegistryMixin pattern but simplified
     for addon use (no secure frame requirements).
+
+    Dependencies (must be loaded before this file):
+    - Core/Loolib.lua (Loolib namespace)
+    - Core/FunctionUtil.lua (LoolibFunctionUtil for closures)
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+
+-- Verify dependencies are loaded
+assert(LoolibFunctionUtil, "Loolib/Core/FunctionUtil.lua must be loaded before CallbackRegistry")
 
 --[[--------------------------------------------------------------------
     Callback Types

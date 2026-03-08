@@ -286,6 +286,7 @@ LoolibConfigTypes.commonProperties = {
 ----------------------------------------------------------------------]]
 
 LoolibConfigTypes.widthValues = {
+    third = 0.333,
     half = 0.5,
     normal = 1.0,
     double = 2.0,

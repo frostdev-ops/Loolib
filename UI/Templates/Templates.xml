@@ -15,7 +15,7 @@
         <Size x="300" y="200"/>
         <Layers>
             <Layer level="OVERLAY">
-                <FontString name="$parentTitle" inherits="GameFontNormalLarge" justifyH="CENTER">
+                <FontString name="$parentTitle" parentKey="Title" inherits="GameFontNormalLarge" justifyH="CENTER">
                     <Anchors>
                         <Anchor point="TOP" x="0" y="-10"/>
                     </Anchors>
@@ -206,13 +206,13 @@
         <Size x="200" y="50"/>
         <Layers>
             <Layer level="OVERLAY">
-                <FontString name="$parentTitle" inherits="GameFontNormal" justifyH="LEFT">
+                <FontString name="$parentTitle" parentKey="Title" inherits="GameFontNormal" justifyH="LEFT">
                     <Anchors>
                         <Anchor point="TOPLEFT" x="10" y="-10"/>
                         <Anchor point="TOPRIGHT" x="-10" y="-10"/>
                     </Anchors>
                 </FontString>
-                <FontString name="$parentText" inherits="GameFontNormalSmall" justifyH="LEFT" justifyV="TOP">
+                <FontString name="$parentText" parentKey="Text" inherits="GameFontNormalSmall" justifyH="LEFT" justifyV="TOP">
                     <Anchors>
                         <Anchor point="TOPLEFT" relativeKey="$parent.Title" relativePoint="BOTTOMLEFT" y="-4"/>
                         <Anchor point="RIGHT" x="-10"/>
@@ -236,12 +236,12 @@
         <Size x="320" y="160"/>
         <Layers>
             <Layer level="OVERLAY">
-                <FontString name="$parentTitle" inherits="GameFontNormalLarge" justifyH="CENTER">
+                <FontString name="$parentTitle" parentKey="Title" inherits="GameFontNormalLarge" justifyH="CENTER">
                     <Anchors>
                         <Anchor point="TOP" x="0" y="-15"/>
                     </Anchors>
                 </FontString>
-                <FontString name="$parentMessage" inherits="GameFontNormal" justifyH="CENTER" justifyV="TOP">
+                <FontString name="$parentMessage" parentKey="Message" inherits="GameFontNormal" justifyH="CENTER" justifyV="TOP">
                     <Size x="280" y="0"/>
                     <Anchors>
                         <Anchor point="TOP" relativeKey="$parent.Title" relativePoint="BOTTOM" y="-10"/>
@@ -250,7 +250,7 @@
             </Layer>
         </Layers>
         <Frames>
-            <Button name="$parentCloseButton" inherits="UIPanelCloseButton">
+            <Button name="$parentCloseButton" parentKey="CloseButton" inherits="UIPanelCloseButton">
                 <Anchors>
                     <Anchor point="TOPRIGHT" x="-3" y="-3"/>
                 </Anchors>

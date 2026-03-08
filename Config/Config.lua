@@ -273,3 +273,13 @@ end
 ----------------------------------------------------------------------]]
 
 Loolib:RegisterModule("Config", LoolibConfig)
+
+--[[--------------------------------------------------------------------
+    Auto-Initialize
+
+    Call Initialize() immediately after registration to ensure
+    LoolibConfig.Dialog, Registry, Cmd, etc. are available
+    before any addon tries to access them.
+----------------------------------------------------------------------]]
+
+LoolibConfig:Initialize()

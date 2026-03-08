@@ -5,6 +5,7 @@
 ## Version: 1.0.0
 ## X-Category: Library
 ## X-License: MIT
+## SavedVariables: LoolibRecentColors
 
 # ============================================================
 # LibStub - Library versioning and distribution
@@ -20,6 +21,7 @@ Core\TableUtil.lua
 Core\FunctionUtil.lua
 Core\Constants.lua
 Core\Timer.lua
+Core\TempTable.lua
 Core\Addon.lua
 
 # ============================================================
@@ -55,6 +57,11 @@ UI\Theme\ThemeDark.lua
 UI\Theme\ThemeMinimal.lua
 
 # ============================================================
+# UI Appearance - Skin and appearance management
+# ============================================================
+UI\Appearance.lua
+
+# ============================================================
 # UI Factory - Frame creation
 # ============================================================
 UI\Factory\FrameFactory.lua
@@ -83,11 +90,55 @@ Comm\AddonMessage.lua
 Data\DataProvider.lua
 Data\SavedVariables.lua
 Data\ProfileManager.lua
+Data\Migration.lua
 
 # ============================================================
 # UI Templates - XML templates (must load before Lua)
 # ============================================================
 UI\Templates\Templates.xml
+
+# ============================================================
+# UI Widgets - Fluent widget API
+# ============================================================
+UI\Widgets\WidgetMod.lua
+UI\Widgets\EnhancedSlider.lua
+UI\Widgets\PopupMenu.lua
+UI\Widgets\EnhancedDropdown.lua
+
+# ============================================================
+# UI DragDrop - Drag and drop functionality
+# ============================================================
+UI\DragDrop\DragContext.lua
+UI\DragDrop\DraggableMixin.lua
+UI\DragDrop\DropTargetMixin.lua
+UI\DragDrop\DragGhost.lua
+UI\DragDrop\ReorderableMixin.lua
+
+# ============================================================
+# UI Note - Conditional note markup system
+# ============================================================
+UI\Note\NoteParser.lua
+UI\Note\NoteMarkup.lua
+UI\Note\NoteRenderer.lua
+UI\Note\NoteTimer.lua
+UI\Note\NoteFrame.lua
+
+# ============================================================
+# UI Canvas - Sketch/drawing system
+# ============================================================
+UI\Canvas\CanvasElement.lua
+UI\Canvas\CanvasBrush.lua
+UI\Canvas\CanvasShape.lua
+UI\Canvas\CanvasText.lua
+UI\Canvas\CanvasIcon.lua
+UI\Canvas\CanvasImage.lua
+UI\Canvas\CanvasGroup.lua
+UI\Canvas\CanvasSelection.lua
+UI\Canvas\CanvasZoom.lua
+UI\Canvas\CanvasHistory.lua
+UI\Canvas\CanvasSync.lua
+UI\Canvas\CanvasToolbar.lua
+UI\Canvas\CanvasFrame.lua
 
 # ============================================================
 # UI Templates - Component implementations
@@ -97,6 +148,7 @@ UI\Templates\TabbedPanel.lua
 UI\Templates\Tooltip.lua
 UI\Templates\Dialog.lua
 UI\Templates\Dropdown.lua
+UI\Templates\ColorSwatch.lua
 
 # ============================================================
 # Config - Configuration system (AceConfig equivalent)
@@ -109,7 +161,13 @@ Config\ConfigDialog.lua
 Config\Config.lua
 
 # ============================================================
+# Utils - Utility modules
+# ============================================================
+Utils\Transmog.lua
+
+# ============================================================
 # Debug - Debugging and inspection tools
 # ============================================================
 Debug\Logger.lua
+Debug\ErrorHandler.lua
 Debug\Dump.lua

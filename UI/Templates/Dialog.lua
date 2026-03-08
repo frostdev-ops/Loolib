@@ -385,6 +385,14 @@ function LoolibDialogMixin:Show()
     -- Show
     getmetatable(self).__index.Show(self)
 
+    -- Re-layout buttons now that the frame has valid dimensions.
+    -- ButtonContainer uses relative anchors (BOTTOMLEFT/BOTTOMRIGHT), so
+    -- GetWidth() returns the XML stub value of 1 before the frame is shown.
+    -- After Show() the anchor chain resolves and we get the real width.
+    if #self.buttons > 0 then
+        self:LayoutButtons()
+    end
+
     -- Update modal overlay
     if self.modal then
         UpdateModalOverlay()
@@ -392,7 +400,9 @@ function LoolibDialogMixin:Show()
 
     -- Focus
     self:EnableKeyboard(true)
-    self:SetPropagateKeyboardInput(false)
+    if not InCombatLockdown() then
+        self:SetPropagateKeyboardInput(false)
+    end
 
     -- Call lifecycle callback
     if self.on_show then

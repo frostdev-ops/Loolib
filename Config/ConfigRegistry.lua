@@ -4,9 +4,18 @@
 
     Central registry for addon options tables. Supports both static
     tables and dynamic function-based options generation.
+
+    Dependencies (must be loaded before this file):
+    - Core/Mixin.lua (LoolibCreateFromMixins)
+    - Events/CallbackRegistry.lua (LoolibCallbackRegistryMixin)
+    - Config/ConfigTypes.lua (LoolibConfigTypes)
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+
+-- Verify dependencies are loaded
+assert(LoolibCreateFromMixins, "Loolib/Core/Mixin.lua must be loaded before ConfigRegistry")
+assert(LoolibCallbackRegistryMixin, "Loolib/Events/CallbackRegistry.lua must be loaded before ConfigRegistry")
 
 --[[--------------------------------------------------------------------
     LoolibConfigRegistryMixin

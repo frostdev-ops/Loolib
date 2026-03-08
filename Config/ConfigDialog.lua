@@ -4,22 +4,40 @@
 
     Renders declarative options tables into interactive UI dialogs.
     Supports tree, tab, and inline group layouts with all option types.
+
+    Dependencies (must be loaded before this file):
+    - Core/Mixin.lua (LoolibCreateFromMixins)
+    - Events/CallbackRegistry.lua (LoolibCallbackRegistryMixin)
+    - Config/ConfigRegistry.lua (ConfigRegistry for options access)
+    - Config/ConfigTypes.lua (LoolibConfigTypes for type info)
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+
+-- Verify dependencies are loaded
+assert(LoolibCreateFromMixins, "Loolib/Core/Mixin.lua must be loaded before ConfigDialog")
+assert(LoolibCallbackRegistryMixin, "Loolib/Events/CallbackRegistry.lua must be loaded before ConfigDialog")
 
 --[[--------------------------------------------------------------------
     Constants
 ----------------------------------------------------------------------]]
 
-local DIALOG_WIDTH = 700
-local DIALOG_HEIGHT = 500
+-- Default dimensions (can be overridden per-app via SetDefaultSize)
+local DIALOG_WIDTH = 750
+local DIALOG_HEIGHT = 520
 local TREE_WIDTH = 180
-local CONTENT_PADDING = 16
-local WIDGET_SPACING = 8
+local CONTENT_PADDING = 12
+local WIDGET_SPACING = 4
 local LABEL_WIDTH = 200
 
+-- Helper function to get dialog dimensions with optional override
+local function GetDialogDimensions(appName, defaultSizes)
+    local size = defaultSizes and defaultSizes[appName]
+    return size and size.width or DIALOG_WIDTH, size and size.height or DIALOG_HEIGHT
+end
+
 local WIDTH_MULTIPLIERS = {
+    third = 0.333,
     half = 0.5,
     normal = 1.0,
     double = 2.0,
@@ -56,6 +74,175 @@ function LoolibConfigDialogMixin:Init()
     self.selectedPaths = {}    -- appName -> current selected path
     self.widgetPools = {}      -- Frame pools for widgets (type -> pool)
     self.regionPools = {}      -- Pools for regions (FontString, Texture)
+    self.filterStates = {}     -- appName -> { searchText, typeFilters, activeFilterCount }
+    self.searchTimers = {}     -- appName -> debounce timer handle
+end
+
+--- Get or initialize filter state for a dialog
+-- @param appName string - The app name
+-- @return table - Filter state { searchText, typeFilters, activeFilterCount }
+function LoolibConfigDialogMixin:GetFilterState(appName)
+    if not self.filterStates[appName] then
+        self.filterStates[appName] = {
+            searchText = "",
+            typeFilters = {},    -- optionType -> boolean (false = hide this type)
+            activeFilterCount = 0,
+        }
+    end
+    return self.filterStates[appName]
+end
+
+--- Clear all filters for a dialog
+-- @param appName string - The app name
+function LoolibConfigDialogMixin:ClearAllFilters(appName)
+    local filterState = self:GetFilterState(appName)
+    filterState.searchText = ""
+    wipe(filterState.typeFilters)
+    filterState.activeFilterCount = 0
+
+    local dialog = self.dialogs[appName]
+    if dialog and dialog.searchBox then
+        dialog.searchBox:SetText("")
+    end
+
+    self:UpdateFilterUI(appName)
+    self:RefreshContent(appName)
+end
+
+--- Update filter count display
+-- @param appName string - The app name
+function LoolibConfigDialogMixin:UpdateFilterUI(appName)
+    local dialog = self.dialogs[appName]
+    if not dialog then return end
+
+    local filterState = self:GetFilterState(appName)
+    local count = 0
+
+    if filterState.searchText ~= "" then
+        count = count + 1
+    end
+
+    for _, enabled in pairs(filterState.typeFilters) do
+        if enabled == false then
+            count = count + 1
+        end
+    end
+
+    filterState.activeFilterCount = count
+
+    -- Update clear button visibility
+    if dialog.clearFiltersBtn then
+        dialog.clearFiltersBtn:SetShown(count > 0)
+    end
+
+    -- Update type filter button text
+    if dialog.typeFilterBtn and dialog.typeFilterText then
+        local typeCount = 0
+        for _, v in pairs(filterState.typeFilters) do
+            if v == false then typeCount = typeCount + 1 end
+        end
+
+        if typeCount > 0 then
+            dialog.typeFilterText:SetText(string.format("Types (%d)", typeCount))
+        else
+            dialog.typeFilterText:SetText("All Types")
+        end
+    end
+end
+
+--- Check if an option should be shown based on current filters
+-- @param option table - The option definition
+-- @param info table - The info table for this option
+-- @param filterState table - Current filter state
+-- @param registry table - The config registry
+-- @return boolean - True if option should be shown
+function LoolibConfigDialogMixin:ShouldShowOption(option, info, filterState, registry)
+    -- Skip if already hidden by config
+    if registry:IsHidden(option, info, "dialog") then
+        return false
+    end
+
+    local searchText = filterState.searchText
+    local typeFilters = filterState.typeFilters
+
+    -- Search filter: match name or desc (case-insensitive)
+    if searchText and searchText ~= "" then
+        local searchLower = searchText:lower()
+        local name = registry:ResolveValue(option.name, info) or ""
+        local desc = registry:ResolveValue(option.desc, info) or ""
+
+        local nameMatch = name:lower():find(searchLower, 1, true)
+        local descMatch = desc:lower():find(searchLower, 1, true)
+
+        if not nameMatch and not descMatch then
+            return false
+        end
+    end
+
+    -- Type filter: check if this option type is hidden
+    if next(typeFilters) then
+        local optType = option.type
+        -- Skip groups, headers, descriptions from type filtering
+        if optType ~= "group" and optType ~= "header" and optType ~= "description" then
+            if typeFilters[optType] == false then
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
+--- Check if a group has any visible children (for tree/tab visibility)
+-- @param group table - The group option
+-- @param rootOptions table - Root options table
+-- @param registry table - The config registry
+-- @param path table - Current path
+-- @param filterState table - Current filter state
+-- @param appName string - App name
+-- @return boolean - True if group has visible children
+function LoolibConfigDialogMixin:HasVisibleChildren(group, rootOptions, registry, path, filterState, appName)
+    if not group.args then
+        return false
+    end
+
+    for key, opt in pairs(group.args) do
+        local currentPath = {}
+        for _, p in ipairs(path) do currentPath[#currentPath + 1] = p end
+        currentPath[#currentPath + 1] = key
+
+        local info = registry:BuildInfoTable(rootOptions, opt, appName, unpack(currentPath))
+
+        if opt.type == "group" then
+            -- Recursively check nested groups
+            if self:HasVisibleChildren(opt, rootOptions, registry, currentPath, filterState, appName) then
+                return true
+            end
+        else
+            -- Check if this leaf option is visible
+            if self:ShouldShowOption(opt, info, filterState, registry) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+--- Check if filters are currently active
+-- @param appName string - App name
+-- @return boolean - True if any filters are active
+function LoolibConfigDialogMixin:HasActiveFilters(appName)
+    local filterState = self:GetFilterState(appName)
+    if filterState.searchText ~= "" then
+        return true
+    end
+    for _, enabled in pairs(filterState.typeFilters) do
+        if enabled == false then
+            return true
+        end
+    end
+    return false
 end
 
 --[[--------------------------------------------------------------------
@@ -115,12 +302,20 @@ function LoolibConfigDialogMixin:ReleaseWidgets(container)
             
             child:Hide()
             child:ClearAllPoints()
-            child:SetScript("OnEnter", nil)
-            child:SetScript("OnLeave", nil)
-            child:SetScript("OnClick", nil)
-            child:SetScript("OnValueChanged", nil)
-            child:SetScript("OnKeyDown", nil)
-            
+            if child:HasScript("OnEnter") then child:SetScript("OnEnter", nil) end
+            if child:HasScript("OnLeave") then child:SetScript("OnLeave", nil) end
+            if child:HasScript("OnClick") then child:SetScript("OnClick", nil) end
+            if child:HasScript("OnValueChanged") then child:SetScript("OnValueChanged", nil) end
+            if child:HasScript("OnKeyDown") then child:SetScript("OnKeyDown", nil) end
+            if child:HasScript("OnUpdate") then child:SetScript("OnUpdate", nil) end
+
+            -- More aggressive cleanup - clear text, textures, values
+            if child.SetText then child:SetText("") end
+            if child.SetNormalTexture then child:SetNormalTexture("") end
+            if child.SetHighlightTexture then child:SetHighlightTexture("") end
+            if child.SetValue then child:SetValue(0) end
+            if child.SetChecked then child:SetChecked(false) end
+
             table.insert(pool.inactive, child)
         else
             -- Not pooled by us, just hide
@@ -175,7 +370,7 @@ function LoolibConfigDialogMixin:Open(appName, container, ...)
 
     -- Create new dialog
     dialog = self:CreateDialog(appName, options, container)
-    self.dialogs[appName] = dialog
+    self.dialogs[appName] = dialog  -- Must be set before RefreshContent
 
     -- Navigate to initial path if provided
     if select("#", ...) > 0 then
@@ -186,6 +381,10 @@ function LoolibConfigDialogMixin:Open(appName, container, ...)
     end
 
     dialog:Show()
+
+    -- Refresh content after dialog is shown and registered
+    self:RefreshContent(appName)
+
     self:TriggerEvent("OnDialogOpened", appName)
 
     return dialog
@@ -277,10 +476,8 @@ function LoolibConfigDialogMixin:CreateDialog(appName, options, container)
     local ConfigRegistry = Loolib:GetModule("ConfigRegistry")
     local registry = ConfigRegistry and ConfigRegistry.Registry
 
-    -- Get size
-    local size = self.defaultSizes[appName] or {}
-    local width = size.width or DIALOG_WIDTH
-    local height = size.height or DIALOG_HEIGHT
+    -- Get size (supports configurable dimensions)
+    local width, height = GetDialogDimensions(appName, self.defaultSizes)
 
     -- Create main frame
     local dialog = CreateFrame("Frame", "LoolibConfigDialog_" .. appName, container or UIParent, "BackdropTemplate")
@@ -304,6 +501,23 @@ function LoolibConfigDialogMixin:CreateDialog(appName, options, container)
     dialog:RegisterForDrag("LeftButton")
     dialog:SetScript("OnDragStart", dialog.StartMoving)
     dialog:SetScript("OnDragStop", dialog.StopMovingOrSizing)
+
+    -- Make resizable
+    dialog:SetResizable(true)
+    dialog:SetResizeBounds(500, 350, 1200, 900)
+
+    local resizeGrip = CreateFrame("Button", nil, dialog)
+    resizeGrip:SetSize(16, 16)
+    resizeGrip:SetPoint("BOTTOMRIGHT", -6, 6)
+    resizeGrip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+    resizeGrip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+    resizeGrip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    resizeGrip:SetScript("OnMouseDown", function() dialog:StartSizing("BOTTOMRIGHT") end)
+    resizeGrip:SetScript("OnMouseUp", function()
+        dialog:StopMovingOrSizing()
+        self:RefreshContent(appName)
+    end)
+    dialog.resizeGrip = resizeGrip
 
     -- Title bar
     local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -332,6 +546,27 @@ function LoolibConfigDialogMixin:CreateDialog(appName, options, container)
 
     -- Create appropriate layout based on childGroups
     local childGroups = options.childGroups or "tree"
+
+    -- Check if ANY child group also has childGroups = "tab" (nested tabs)
+    -- If so, force tree layout for better UX (nested tabs are complex and confusing)
+    local hasNestedTabs = false
+    if childGroups == "tab" and options.args then
+        for _, opt in pairs(options.args) do
+            if opt.type == "group" and opt.childGroups == "tab" then
+                hasNestedTabs = true
+                break
+            end
+        end
+    end
+
+    -- Auto-convert nested tabs to tree layout
+    if hasNestedTabs then
+        childGroups = "tree"
+    end
+
+    -- Create filter bar before layouts
+    self:CreateFilterBar(dialog)
+
     if childGroups == "tree" then
         self:CreateTreeLayout(dialog)
     elseif childGroups == "tab" then
@@ -340,8 +575,7 @@ function LoolibConfigDialogMixin:CreateDialog(appName, options, container)
         self:CreateSimpleLayout(dialog)
     end
 
-    -- Initial render
-    self:RefreshContent(appName)
+    -- Note: RefreshContent is called from Open() after dialog is registered and shown
 
     -- Listen for config changes
     registry:RegisterCallback("OnConfigTableChange", function(_, changedApp)
@@ -354,6 +588,228 @@ function LoolibConfigDialogMixin:CreateDialog(appName, options, container)
 end
 
 --[[--------------------------------------------------------------------
+    Filter Bar Creation
+----------------------------------------------------------------------]]
+
+local FILTER_BAR_HEIGHT = 32
+local FILTER_OPTION_TYPES = {"toggle", "input", "range", "select", "multiselect", "color", "keybinding", "execute"}
+
+--- Create the filter bar UI
+-- @param dialog Frame - The dialog frame
+function LoolibConfigDialogMixin:CreateFilterBar(dialog)
+    local appName = dialog.appName
+    local dialogMixin = self
+
+    -- Filter bar container
+    local filterBar = CreateFrame("Frame", nil, dialog.content)
+    filterBar:SetPoint("TOPLEFT", 0, 0)
+    filterBar:SetPoint("TOPRIGHT", 0, 0)
+    filterBar:SetHeight(FILTER_BAR_HEIGHT)
+    dialog.filterBar = filterBar
+
+    -- Search box
+    local searchBox = CreateFrame("EditBox", nil, filterBar, "BackdropTemplate")
+    searchBox:SetSize(180, 22)
+    searchBox:SetPoint("LEFT", 8, 0)
+    searchBox:SetFontObject("GameFontHighlight")
+    searchBox:SetAutoFocus(false)
+    searchBox:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 12,
+        insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    searchBox:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+    searchBox:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    searchBox:SetTextInsets(8, 20, 0, 0)
+    dialog.searchBox = searchBox
+
+    -- Search icon
+    local searchIcon = searchBox:CreateTexture(nil, "OVERLAY")
+    searchIcon:SetSize(14, 14)
+    searchIcon:SetPoint("LEFT", 4, 0)
+    searchIcon:SetTexture("Interface\\Common\\UI-Searchbox-Icon")
+    searchIcon:SetVertexColor(0.6, 0.6, 0.6)
+
+    -- Placeholder text
+    local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    placeholder:SetPoint("LEFT", 24, 0)
+    placeholder:SetText("Search options...")
+    searchBox.placeholder = placeholder
+
+    -- Clear search button
+    local clearSearchBtn = CreateFrame("Button", nil, searchBox)
+    clearSearchBtn:SetSize(16, 16)
+    clearSearchBtn:SetPoint("RIGHT", -4, 0)
+    clearSearchBtn:Hide()
+
+    local clearX = clearSearchBtn:CreateTexture(nil, "ARTWORK")
+    clearX:SetAllPoints()
+    clearX:SetTexture("Interface\\Buttons\\UI-StopButton")
+
+    clearSearchBtn:SetScript("OnClick", function()
+        searchBox:SetText("")
+        searchBox:ClearFocus()
+    end)
+    dialog.clearSearchBtn = clearSearchBtn
+
+    -- Search box events
+    searchBox:SetScript("OnTextChanged", function(self)
+        local text = self:GetText()
+        clearSearchBtn:SetShown(text ~= "")
+        placeholder:SetShown(text == "")
+
+        -- Cancel previous timer
+        if dialogMixin.searchTimers[appName] then
+            dialogMixin.searchTimers[appName]:Cancel()
+        end
+
+        -- Debounce search
+        dialogMixin.searchTimers[appName] = C_Timer.NewTimer(0.2, function()
+            local filterState = dialogMixin:GetFilterState(appName)
+            filterState.searchText = text
+            dialogMixin:UpdateFilterUI(appName)
+            dialogMixin:RefreshContent(appName)
+        end)
+    end)
+
+    searchBox:SetScript("OnEscapePressed", function(self)
+        self:SetText("")
+        self:ClearFocus()
+    end)
+
+    searchBox:SetScript("OnEnterPressed", function(self)
+        self:ClearFocus()
+    end)
+
+    -- Type filter dropdown button
+    local typeFilterBtn = CreateFrame("Button", nil, filterBar, "BackdropTemplate")
+    typeFilterBtn:SetSize(100, 22)
+    typeFilterBtn:SetPoint("LEFT", searchBox, "RIGHT", 12, 0)
+    typeFilterBtn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 12,
+        insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    typeFilterBtn:SetBackdropColor(0.15, 0.15, 0.2, 1)
+    typeFilterBtn:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    dialog.typeFilterBtn = typeFilterBtn
+
+    local typeFilterText = typeFilterBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    typeFilterText:SetPoint("LEFT", 8, 0)
+    typeFilterText:SetText("All Types")
+    dialog.typeFilterText = typeFilterText
+
+    local arrow = typeFilterBtn:CreateTexture(nil, "ARTWORK")
+    arrow:SetPoint("RIGHT", -5, 0)
+    arrow:SetSize(10, 10)
+    arrow:SetTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
+
+    -- Highlight
+    local highlight = typeFilterBtn:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetColorTexture(0.3, 0.3, 0.5, 0.3)
+
+    typeFilterBtn:SetScript("OnClick", function()
+        dialogMixin:ShowTypeFilterMenu(dialog)
+    end)
+
+    -- Clear all filters button
+    local clearFiltersBtn = CreateFrame("Button", nil, filterBar, "UIPanelButtonTemplate")
+    clearFiltersBtn:SetSize(50, 22)
+    clearFiltersBtn:SetPoint("RIGHT", -8, 0)
+    clearFiltersBtn:SetText("Clear")
+    clearFiltersBtn:Hide()
+    clearFiltersBtn:SetScript("OnClick", function()
+        dialogMixin:ClearAllFilters(appName)
+    end)
+    dialog.clearFiltersBtn = clearFiltersBtn
+end
+
+--- Show the type filter dropdown menu
+-- @param dialog Frame - The dialog frame
+function LoolibConfigDialogMixin:ShowTypeFilterMenu(dialog)
+    local appName = dialog.appName
+    local filterState = self:GetFilterState(appName)
+    local typeFilters = filterState.typeFilters
+    local dialogMixin = self
+
+    -- Close existing menu if any
+    if dialog.typeFilterMenu then
+        dialog.typeFilterMenu:Hide()
+    end
+
+    local menu = CreateFrame("Frame", nil, dialog.typeFilterBtn, "BackdropTemplate")
+    menu:SetFrameStrata("TOOLTIP")
+    menu:SetPoint("TOPLEFT", dialog.typeFilterBtn, "BOTTOMLEFT", 0, -2)
+    menu:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = true, tileSize = 16, edgeSize = 12,
+        insets = {left = 3, right = 3, top = 3, bottom = 3}
+    })
+    menu:SetBackdropColor(0.1, 0.1, 0.15, 1)
+    menu:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+    dialog.typeFilterMenu = menu
+
+    local yOffset = -6
+    local menuWidth = 140
+
+    for _, optType in ipairs(FILTER_OPTION_TYPES) do
+        local item = CreateFrame("CheckButton", nil, menu, "UICheckButtonTemplate")
+        item:SetSize(20, 20)
+        item:SetPoint("TOPLEFT", 6, yOffset)
+
+        -- Default to checked (showing all types)
+        local isEnabled = typeFilters[optType] ~= false
+        item:SetChecked(isEnabled)
+
+        local label = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("LEFT", item, "RIGHT", 4, 0)
+        -- Capitalize first letter
+        label:SetText(optType:sub(1,1):upper() .. optType:sub(2))
+
+        local itemType = optType
+        item:SetScript("OnClick", function(self)
+            if self:GetChecked() then
+                typeFilters[itemType] = nil  -- Show this type
+            else
+                typeFilters[itemType] = false  -- Hide this type
+            end
+            dialogMixin:UpdateFilterUI(appName)
+            dialogMixin:RefreshContent(appName)
+        end)
+
+        yOffset = yOffset - 22
+    end
+
+    menu:SetSize(menuWidth, math.abs(yOffset) + 6)
+    menu:Show()
+
+    -- ESC key handling
+    menu:EnableKeyboard(true)
+    menu:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            self:Hide()
+        else
+            if not InCombatLockdown() then
+                self:SetPropagateKeyboardInput(true)
+            end
+        end
+    end)
+
+    -- Close on click outside
+    menu:SetScript("OnUpdate", function(self)
+        if not MouseIsOver(self) and not MouseIsOver(dialog.typeFilterBtn) then
+            if IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton") then
+                self:Hide()
+            end
+        end
+    end)
+end
+
+--[[--------------------------------------------------------------------
     Layout Creation
 ----------------------------------------------------------------------]]
 
@@ -361,9 +817,9 @@ end
 function LoolibConfigDialogMixin:CreateTreeLayout(dialog)
     local content = dialog.content
 
-    -- Tree container (left side)
+    -- Tree container (left side) - offset by filter bar height
     local treeContainer = CreateFrame("Frame", nil, content, "BackdropTemplate")
-    treeContainer:SetPoint("TOPLEFT", 0, 0)
+    treeContainer:SetPoint("TOPLEFT", 0, -FILTER_BAR_HEIGHT)
     treeContainer:SetPoint("BOTTOMLEFT", 0, 0)
     treeContainer:SetWidth(TREE_WIDTH)
     treeContainer:SetBackdrop({
@@ -421,11 +877,16 @@ end
 function LoolibConfigDialogMixin:CreateTabLayout(dialog)
     local content = dialog.content
 
-    -- Tab bar
+    -- Hide filter bar in tab layout (tabs replace navigation, filter is clutter)
+    if dialog.filterBar then
+        dialog.filterBar:Hide()
+    end
+
+    -- Tab bar at the very top (no filter bar offset needed)
     local tabBar = CreateFrame("Frame", nil, content)
     tabBar:SetPoint("TOPLEFT", 0, 0)
     tabBar:SetPoint("TOPRIGHT", 0, 0)
-    tabBar:SetHeight(30)
+    tabBar:SetHeight(32)
     dialog.tabBar = tabBar
 
     -- Options container
@@ -461,9 +922,10 @@ end
 function LoolibConfigDialogMixin:CreateSimpleLayout(dialog)
     local content = dialog.content
 
-    -- Options container fills entire content
+    -- Options container fills entire content (offset by filter bar)
     local optionsContainer = CreateFrame("Frame", nil, content, "BackdropTemplate")
-    optionsContainer:SetAllPoints()
+    optionsContainer:SetPoint("TOPLEFT", 0, -FILTER_BAR_HEIGHT)
+    optionsContainer:SetPoint("BOTTOMRIGHT", 0, 0)
     optionsContainer:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -538,6 +1000,9 @@ function LoolibConfigDialogMixin:RenderTree(dialog, options, registry)
     local yOffset = 0
     local appName = dialog.appName
     local selectedPath = self.selectedPaths[appName] or {}
+    local filterState = self:GetFilterState(appName)
+    local hasActiveFilters = self:HasActiveFilters(appName)
+    local dialogMixin = self
 
     -- Render tree items recursively
     local function RenderTreeGroup(group, path, indent)
@@ -554,30 +1019,65 @@ function LoolibConfigDialogMixin:RenderTree(dialog, options, registry)
 
                 local info = registry:BuildInfoTable(options, opt, appName, unpack(currentPath))
 
-                if not registry:IsHidden(opt, info, "dialog") then
+                -- Check if hidden by config
+                local isHidden = registry:IsHidden(opt, info, "dialog")
+
+                -- When filters active, also check if group has any visible children
+                if not isHidden and hasActiveFilters then
+                    isHidden = not dialogMixin:HasVisibleChildren(opt, options, registry, currentPath, filterState, appName)
+                end
+
+                if not isHidden then
                     local name = registry:ResolveValue(opt.name, info) or item.key
                     local isSelected = self:PathEquals(selectedPath, currentPath)
 
                     -- Create tree button
                     local btn = CreateFrame("Button", nil, treeContent)
-                    btn:SetSize(TREE_WIDTH - 35, 20)
+                    btn:SetSize(TREE_WIDTH - 35, 24)
                     btn:SetPoint("TOPLEFT", indent * 12, yOffset)
 
                     -- Highlight
                     local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
                     highlight:SetAllPoints()
-                    highlight:SetColorTexture(0.3, 0.3, 0.5, 0.5)
+                    highlight:SetColorTexture(0.3, 0.4, 0.6, 0.4)
 
                     -- Selection indicator
                     if isSelected then
                         local selected = btn:CreateTexture(nil, "BACKGROUND")
                         selected:SetAllPoints()
-                        selected:SetColorTexture(0.2, 0.4, 0.6, 0.8)
+                        selected:SetColorTexture(0.15, 0.35, 0.55, 0.9)
                     end
 
-                    -- Text
+                    -- Icon (if provided)
+                    -- Validate icon path and coordinates before rendering
+                    local icon
+                    if opt.icon and type(opt.icon) == "string" and opt.icon ~= "" then
+                        icon = btn:CreateTexture(nil, "ARTWORK")
+                        icon:SetSize(16, 16)
+                        icon:SetPoint("LEFT", 4, 0)
+                        icon:SetTexture(opt.icon)
+
+                        -- Apply iconCoords if valid (must be table with 4 numeric values)
+                        if opt.iconCoords and type(opt.iconCoords) == "table" and #opt.iconCoords == 4 then
+                            local coords = opt.iconCoords
+                            -- Validate that all coords are numbers
+                            if type(coords[1]) == "number" and type(coords[2]) == "number" and
+                               type(coords[3]) == "number" and type(coords[4]) == "number" then
+                                icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                            end
+                        end
+
+                        -- Note: If texture path doesn't exist, WoW will show a question mark (expected behavior)
+                    end
+
+                    -- Text (always position consistently - icon visibility handled by texture load)
                     local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    text:SetPoint("LEFT", 4, 0)
+                    -- Always position text based on whether icon element exists
+                    if icon then
+                        text:SetPoint("LEFT", icon, "RIGHT", 4, 0)
+                    else
+                        text:SetPoint("LEFT", 4, 0)
+                    end
                     text:SetText(name)
                     if isSelected then
                         text:SetTextColor(1, 1, 0)
@@ -588,7 +1088,7 @@ function LoolibConfigDialogMixin:RenderTree(dialog, options, registry)
                         self:SelectGroup(appName, unpack(currentPath))
                     end)
 
-                    yOffset = yOffset - 22
+                    yOffset = yOffset - 24
 
                     -- Render children
                     RenderTreeGroup(opt, currentPath, indent + 1)
@@ -614,9 +1114,20 @@ function LoolibConfigDialogMixin:RenderTabs(dialog, options, registry)
         child:SetParent(nil)
     end
 
+    -- Tab layout constants
+    local TAB_PADDING = 20      -- Horizontal padding inside tab (10 each side)
+    local TAB_SPACING = 4       -- Space between tabs
+    local TAB_HEIGHT = 28
+    local TAB_MIN_WIDTH = 60    -- Minimum tab width
+    local TAB_MAX_WIDTH = 180   -- Maximum tab width (prevent overflow)
+    local ICON_SIZE = 20
+    local ICON_SPACING = 4
+
     local xOffset = 0
     local appName = dialog.appName
     local selectedPath = self.selectedPaths[appName] or {}
+    local filterState = self:GetFilterState(appName)
+    local hasActiveFilters = self:HasActiveFilters(appName)
 
     if not options.args then return end
 
@@ -628,40 +1139,116 @@ function LoolibConfigDialogMixin:RenderTabs(dialog, options, registry)
             local currentPath = {item.key}
             local info = registry:BuildInfoTable(options, opt, appName, item.key)
 
-            if not registry:IsHidden(opt, info, "dialog") then
+            -- Check if hidden by config
+            local isHidden = registry:IsHidden(opt, info, "dialog")
+
+            -- When filters active, also check if tab has any visible children
+            if not isHidden and hasActiveFilters then
+                isHidden = not self:HasVisibleChildren(opt, options, registry, currentPath, filterState, appName)
+            end
+
+            if not isHidden then
                 local name = registry:ResolveValue(opt.name, info) or item.key
                 local isSelected = selectedPath[1] == item.key
 
                 -- Create tab button
                 local tab = CreateFrame("Button", nil, tabBar)
-                tab:SetSize(100, 26)
+
+                -- Calculate dynamic tab width based on text
+                local tempText = tab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                tempText:SetText(name)
+                local textWidth = tempText:GetStringWidth()
+                tempText:Hide()
+                tempText:SetParent(nil)  -- Clean up temp text
+
+                -- Check if icon will be used
+                local hasIcon = opt.icon and type(opt.icon) == "string" and opt.icon ~= ""
+                local iconWidth = hasIcon and (ICON_SIZE + ICON_SPACING) or 0
+
+                -- Calculate final tab width with bounds
+                local tabWidth = textWidth + iconWidth + TAB_PADDING
+                tabWidth = math.max(TAB_MIN_WIDTH, tabWidth)
+                tabWidth = math.min(TAB_MAX_WIDTH, tabWidth)
+
+                tab:SetSize(tabWidth, TAB_HEIGHT)
                 tab:SetPoint("BOTTOMLEFT", xOffset, 0)
 
                 -- Background
                 local bg = tab:CreateTexture(nil, "BACKGROUND")
                 bg:SetAllPoints()
                 if isSelected then
-                    bg:SetColorTexture(0.3, 0.3, 0.4, 1)
+                    bg:SetColorTexture(0.12, 0.25, 0.45, 1)
                 else
-                    bg:SetColorTexture(0.15, 0.15, 0.2, 1)
+                    bg:SetColorTexture(0.1, 0.1, 0.14, 1)
+                end
+
+                -- Gold bottom border on active tab
+                if isSelected then
+                    local activeLine = tab:CreateTexture(nil, "OVERLAY")
+                    activeLine:SetPoint("BOTTOMLEFT", 0, 0)
+                    activeLine:SetPoint("BOTTOMRIGHT", 0, 0)
+                    activeLine:SetHeight(2)
+                    activeLine:SetColorTexture(1, 0.82, 0, 1)
                 end
 
                 -- Highlight
                 local highlight = tab:CreateTexture(nil, "HIGHLIGHT")
                 highlight:SetAllPoints()
-                highlight:SetColorTexture(0.4, 0.4, 0.5, 0.5)
+                highlight:SetColorTexture(0.3, 0.4, 0.6, 0.4)
+
+                -- Icon (if provided)
+                -- Validate icon path and coordinates before rendering
+                local icon
+                if hasIcon then
+                    icon = tab:CreateTexture(nil, "ARTWORK")
+                    icon:SetSize(ICON_SIZE, ICON_SIZE)
+                    icon:SetTexture(opt.icon)
+
+                    -- Apply iconCoords if valid (must be table with 4 numeric values)
+                    if opt.iconCoords and type(opt.iconCoords) == "table" and #opt.iconCoords == 4 then
+                        local coords = opt.iconCoords
+                        -- Validate that all coords are numbers
+                        if type(coords[1]) == "number" and type(coords[2]) == "number" and
+                           type(coords[3]) == "number" and type(coords[4]) == "number" then
+                            icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+                        end
+                    end
+
+                    -- Note: If texture path doesn't exist, WoW will show a question mark (expected behavior)
+                end
 
                 -- Text
                 local text = tab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                text:SetPoint("CENTER")
+
+                -- Position text based on whether we have an icon
+                if icon then
+                    -- Icon on left, text on right
+                    icon:SetPoint("LEFT", 8, 0)
+                    text:SetPoint("LEFT", icon, "RIGHT", ICON_SPACING, 0)
+                    text:SetPoint("RIGHT", -8, 0)  -- Constrain right side
+                else
+                    -- Text centered with padding
+                    text:SetPoint("LEFT", 10, 0)
+                    text:SetPoint("RIGHT", -10, 0)
+                end
                 text:SetText(name)
+                text:SetJustifyH("CENTER")
+                if isSelected then
+                    text:SetTextColor(1, 1, 1, 1)
+                else
+                    text:SetTextColor(0.7, 0.7, 0.7, 1)
+                end
+
+                -- Truncate long text with ellipsis
+                text:SetWordWrap(false)
 
                 -- Click handler
                 tab:SetScript("OnClick", function()
                     self:SelectGroup(appName, unpack(currentPath))
                 end)
 
-                xOffset = xOffset + 104
+                -- Use dynamic width for offset calculation
+                xOffset = xOffset + tabWidth + TAB_SPACING
             end
         end
     end
@@ -692,7 +1279,17 @@ function LoolibConfigDialogMixin:RenderOptions(dialog, group, rootOptions, regis
 
     local appName = dialog.appName
     local yOffset = -CONTENT_PADDING
-    local contentWidth = dialog.optionsContainer:GetWidth() - 50
+    local filterState = self:GetFilterState(appName)
+    local hasActiveFilters = self:HasActiveFilters(appName)
+
+    -- Calculate actual available content width
+    -- Container width minus scrollbar (25px) minus insets (5px left + 5px right)
+    local containerWidth = dialog.optionsContainer:GetWidth()
+    local SCROLLBAR_WIDTH = 25
+    local CONTENT_INSETS = 10
+    local contentWidth = containerWidth - SCROLLBAR_WIDTH - CONTENT_INSETS
+    -- Ensure minimum usable width
+    contentWidth = math.max(contentWidth, 300)
 
     -- Group header
     local groupInfo = registry:BuildInfoTable(rootOptions, group, appName, unpack(path))
@@ -701,7 +1298,10 @@ function LoolibConfigDialogMixin:RenderOptions(dialog, group, rootOptions, regis
         local header = optionsContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         header:SetPoint("TOPLEFT", CONTENT_PADDING, yOffset)
         header:SetText(groupName)
-        yOffset = yOffset - 30
+        header:SetTextColor(1, 0.82, 0)  -- Gold color for headers
+        -- Measure actual header height instead of hardcoding
+        local headerHeight = header:GetStringHeight()
+        yOffset = yOffset - headerHeight - 12  -- Header height + spacing below
     end
 
     -- Group description
@@ -716,6 +1316,9 @@ function LoolibConfigDialogMixin:RenderOptions(dialog, group, rootOptions, regis
         yOffset = yOffset - desc:GetHeight() - 16
     end
 
+    -- Track if any options were rendered
+    local optionsRendered = 0
+
     -- Render each option
     local sorted = registry:GetSortedOptions(group)
 
@@ -727,18 +1330,35 @@ function LoolibConfigDialogMixin:RenderOptions(dialog, group, rootOptions, regis
 
         local info = registry:BuildInfoTable(rootOptions, opt, appName, unpack(currentPath))
 
-        -- Skip hidden options
-        if not registry:IsHidden(opt, info, "dialog") then
-            local optType = opt.type
+        local optType = opt.type
 
-            -- Handle inline groups
-            if optType == "group" and opt.inline then
+        -- Handle inline groups
+        if optType == "group" and opt.inline then
+            -- Check if inline group has any visible children
+            local showInlineGroup = not registry:IsHidden(opt, info, "dialog")
+            if showInlineGroup and hasActiveFilters then
+                showInlineGroup = self:HasVisibleChildren(opt, rootOptions, registry, currentPath, filterState, appName)
+            end
+            if showInlineGroup then
                 yOffset = self:RenderInlineGroup(optionsContent, opt, rootOptions, registry, currentPath, yOffset, contentWidth, appName)
-            elseif optType ~= "group" then
-                -- Render the widget
+                optionsRendered = optionsRendered + 1
+            end
+        elseif optType ~= "group" then
+            -- Use filter predicate for non-group options
+            if self:ShouldShowOption(opt, info, filterState, registry) then
                 yOffset = self:RenderWidget(optionsContent, opt, rootOptions, registry, info, yOffset, contentWidth)
+                optionsRendered = optionsRendered + 1
             end
         end
+    end
+
+    -- Show "no results" message if filters are active and nothing matched
+    if hasActiveFilters and optionsRendered == 0 then
+        local noResults = optionsContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        noResults:SetPoint("TOPLEFT", CONTENT_PADDING, yOffset)
+        noResults:SetText("No options match the current filters.")
+        noResults:SetTextColor(0.6, 0.6, 0.6)
+        yOffset = yOffset - 24
     end
 
     -- Update scroll child height
@@ -750,6 +1370,7 @@ end
 function LoolibConfigDialogMixin:RenderInlineGroup(parent, group, rootOptions, registry, path, yOffset, contentWidth, appName)
     local info = registry:BuildInfoTable(rootOptions, group, appName, unpack(path))
     local groupName = registry:ResolveValue(group.name, info)
+    local filterState = self:GetFilterState(appName)
 
     -- Group frame
     local groupFrame = self:AcquireWidget("group_frame", parent, "BackdropTemplate")
@@ -761,32 +1382,100 @@ function LoolibConfigDialogMixin:RenderInlineGroup(parent, group, rootOptions, r
         tile = true, tileSize = 16, edgeSize = 12,
         insets = {left = 2, right = 2, top = 2, bottom = 2}
     })
-    groupFrame:SetBackdropColor(0.15, 0.15, 0.2, 0.5)
-    groupFrame:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+    groupFrame:SetBackdropColor(0.08, 0.08, 0.1, 0.7)
+    groupFrame:SetBackdropBorderColor(0.6, 0.6, 0.6, 0.9)
 
     local innerOffset = -8
 
     -- Group title
     if groupName then
-        local title = groupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        local title = groupFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         title:SetPoint("TOPLEFT", 8, innerOffset)
         title:SetText("|cffffd700" .. groupName .. "|r")
-        innerOffset = innerOffset - 20
+        -- Measure actual title height instead of hardcoding
+        local titleHeight = title:GetStringHeight()
+        innerOffset = innerOffset - titleHeight - 6  -- Title height + spacing
     end
 
-    -- Render group options
+    -- Render group options (with optional multi-column flow)
     if group.args then
         local sorted = registry:GetSortedOptions(group)
-        for _, item in ipairs(sorted) do
-            local opt = item.option
-            local currentPath = {}
-            for _, p in ipairs(path) do currentPath[#currentPath + 1] = p end
-            currentPath[#currentPath + 1] = item.key
+        local numColumns = group.columns or 1
+        local groupFrameWidth = contentWidth - CONTENT_PADDING * 2
+        local innerContentWidth = groupFrameWidth - 16  -- 8px insets each side
 
-            local optInfo = registry:BuildInfoTable(rootOptions, opt, appName, unpack(currentPath))
+        if numColumns > 1 then
+            -- Multi-column flow layout
+            local colWidth = innerContentWidth / numColumns
+            local col = 0
+            local rowStartOffset = innerOffset
+            local rowMaxHeight = 0
 
-            if not registry:IsHidden(opt, optInfo, "dialog") and opt.type ~= "group" then
-                innerOffset = self:RenderWidget(groupFrame, opt, rootOptions, registry, optInfo, innerOffset, contentWidth - CONTENT_PADDING * 3)
+            for _, item in ipairs(sorted) do
+                local opt = item.option
+                local currentPath = {}
+                for _, p in ipairs(path) do currentPath[#currentPath + 1] = p end
+                currentPath[#currentPath + 1] = item.key
+
+                local optInfo = registry:BuildInfoTable(rootOptions, opt, appName, unpack(currentPath))
+
+                if opt.type ~= "group" and self:ShouldShowOption(opt, optInfo, filterState, registry) then
+                    -- Calculate column span for this widget
+                    local widthMod = WIDTH_MULTIPLIERS[opt.width] or WIDTH_MULTIPLIERS.normal
+                    if opt.width == "full" then widthMod = 1.0 end
+                    local colSpan = math.max(1, math.min(numColumns, math.floor(widthMod * numColumns + 0.5)))
+
+                    -- Wrap to next row if this widget doesn't fit
+                    if col + colSpan > numColumns then
+                        innerOffset = rowStartOffset - rowMaxHeight - WIDGET_SPACING
+                        rowStartOffset = innerOffset
+                        col = 0
+                        rowMaxHeight = 0
+                    end
+
+                    -- Create cell container positioned at correct column
+                    local cellX = 8 + col * colWidth
+                    local cellWidth = colSpan * colWidth
+
+                    local cell = CreateFrame("Frame", nil, groupFrame)
+                    cell:SetPoint("TOPLEFT", cellX, rowStartOffset)
+                    cell:SetSize(cellWidth, 1)
+
+                    -- Render widget into cell at y=0
+                    local newY = self:RenderWidget(cell, opt, rootOptions, registry, optInfo, 0, cellWidth)
+                    local widgetH = math.abs(newY)
+                    cell:SetHeight(widgetH)
+
+                    rowMaxHeight = math.max(rowMaxHeight, widgetH)
+                    col = col + colSpan
+
+                    -- Auto-wrap after filling a row
+                    if col >= numColumns then
+                        innerOffset = rowStartOffset - rowMaxHeight - WIDGET_SPACING
+                        rowStartOffset = innerOffset
+                        col = 0
+                        rowMaxHeight = 0
+                    end
+                end
+            end
+
+            -- Account for the last partial row
+            if rowMaxHeight > 0 then
+                innerOffset = rowStartOffset - rowMaxHeight
+            end
+        else
+            -- Single-column vertical layout (original behavior)
+            for _, item in ipairs(sorted) do
+                local opt = item.option
+                local currentPath = {}
+                for _, p in ipairs(path) do currentPath[#currentPath + 1] = p end
+                currentPath[#currentPath + 1] = item.key
+
+                local optInfo = registry:BuildInfoTable(rootOptions, opt, appName, unpack(currentPath))
+
+                if opt.type ~= "group" and self:ShouldShowOption(opt, optInfo, filterState, registry) then
+                    innerOffset = self:RenderWidget(groupFrame, opt, rootOptions, registry, optInfo, innerOffset, innerContentWidth)
+                end
             end
         end
     end
@@ -868,14 +1557,36 @@ function LoolibConfigDialogMixin:RenderDescription(parent, option, name, desc, y
     local fontSize = option.fontSize or "medium"
     local fontObject = LoolibConfigTypes.fontSizes[fontSize] or "GameFontNormal"
 
-    local text = parent:CreateFontString(nil, "OVERLAY", fontObject)
-    text:SetPoint("TOPLEFT", 8, yOffset)
-    text:SetWidth(contentWidth - 16)
-    text:SetJustifyH("LEFT")
-    text:SetText(name)
-    text:SetTextColor(0.9, 0.9, 0.9)
+    -- Render image if provided
+    if option.image and type(option.image) == "string" and option.image ~= "" then
+        local imgWidth = option.imageWidth or 64
+        local imgHeight = option.imageHeight or 32
+        local img = parent:CreateTexture(nil, "ARTWORK")
+        img:SetPoint("TOPLEFT", 8, yOffset)
+        img:SetSize(imgWidth, imgHeight)
+        img:SetTexture(option.image)
+        if option.imageCoords and type(option.imageCoords) == "table" and #option.imageCoords == 4 then
+            local c = option.imageCoords
+            if type(c[1]) == "number" then
+                img:SetTexCoord(c[1], c[2], c[3], c[4])
+            end
+        end
+        yOffset = yOffset - imgHeight - WIDGET_SPACING
+    end
 
-    return yOffset - text:GetHeight() - WIDGET_SPACING
+    -- Only render text if name is non-empty
+    if name and name ~= "" then
+        local text = parent:CreateFontString(nil, "OVERLAY", fontObject)
+        text:SetPoint("TOPLEFT", 8, yOffset)
+        text:SetWidth(contentWidth - 16)
+        text:SetJustifyH("LEFT")
+        text:SetText(name)
+        text:SetTextColor(0.9, 0.9, 0.9)
+
+        yOffset = yOffset - text:GetHeight() - WIDGET_SPACING
+    end
+
+    return yOffset
 end
 
 --- Render toggle (checkbox)
@@ -892,6 +1603,10 @@ function LoolibConfigDialogMixin:RenderToggle(parent, option, name, desc, regist
     local label = check:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("LEFT", check, "RIGHT", 4, 0)
     label:SetText(name)
+    local parentWidth = parent:GetWidth()
+    if parentWidth and parentWidth > 44 then
+        label:SetWidth(parentWidth - 44)  -- 8 left pad + 24 check + 4 gap + 8 right pad
+    end
 
     if disabled then
         label:SetTextColor(0.5, 0.5, 0.5)
@@ -906,7 +1621,13 @@ function LoolibConfigDialogMixin:RenderToggle(parent, option, name, desc, regist
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
         end)
-        check:SetScript("OnLeave", GameTooltip_Hide)
+        check:SetScript("OnLeave", function()
+            if GameTooltip_Hide then
+                GameTooltip_Hide()
+            else
+                GameTooltip:Hide()
+            end
+        end)
     end
 
     -- Handler
@@ -969,7 +1690,13 @@ function LoolibConfigDialogMixin:RenderInput(parent, option, name, desc, registr
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
         end)
-        editBox:SetScript("OnLeave", GameTooltip_Hide)
+        editBox:SetScript("OnLeave", function()
+            if GameTooltip_Hide then
+                GameTooltip_Hide()
+            else
+                GameTooltip:Hide()
+            end
+        end)
     end
 
     -- Handlers
@@ -1059,7 +1786,13 @@ function LoolibConfigDialogMixin:RenderRange(parent, option, name, desc, registr
             GameTooltip:AddLine(string.format("Range: %s - %s", minVal, maxVal), 0.8, 0.8, 0.8)
             GameTooltip:Show()
         end)
-        slider:SetScript("OnLeave", GameTooltip_Hide)
+        slider:SetScript("OnLeave", function()
+            if GameTooltip_Hide then
+                GameTooltip_Hide()
+            else
+                GameTooltip:Hide()
+            end
+        end)
     end
 
     -- Handler
@@ -1068,10 +1801,25 @@ function LoolibConfigDialogMixin:RenderRange(parent, option, name, desc, registr
         registry:SetValue(option, info, val)
     end)
 
-    -- Hide default labels
-    _G[slider:GetName() .. "Low"]:SetText("")
-    _G[slider:GetName() .. "High"]:SetText("")
-    _G[slider:GetName() .. "Text"]:SetText("")
+    -- Hide default labels (OptionsSliderTemplate creates named children)
+    -- Since we create sliders without names, access via GetRegions() instead of global lookup
+    local sliderName = slider:GetName()
+    if sliderName then
+        -- Named slider - use global lookup
+        local lowText = _G[sliderName .. "Low"]
+        local highText = _G[sliderName .. "High"]
+        local labelText = _G[sliderName .. "Text"]
+        if lowText then lowText:SetText("") end
+        if highText then highText:SetText("") end
+        if labelText then labelText:SetText("") end
+    else
+        -- Anonymous slider - hide all FontStrings to suppress default labels
+        for _, region in ipairs({slider:GetRegions()}) do
+            if region:GetObjectType() == "FontString" then
+                region:SetText("")
+            end
+        end
+    end
 
     return yOffset - 44
 end
@@ -1133,7 +1881,13 @@ function LoolibConfigDialogMixin:RenderSelect(parent, option, name, desc, regist
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
         end)
-        dropdown:SetScript("OnLeave", GameTooltip_Hide)
+        dropdown:SetScript("OnLeave", function()
+            if GameTooltip_Hide then
+                GameTooltip_Hide()
+            else
+                GameTooltip:Hide()
+            end
+        end)
     end
 
     -- Click handler - show menu
@@ -1198,6 +1952,21 @@ function LoolibConfigDialogMixin:RenderSelect(parent, option, name, desc, regist
 
         menu:SetSize(menuWidth, menuHeight)
         menu:Show()
+
+        -- ESC key handling
+        if not InCombatLockdown() then
+            menu:SetPropagateKeyboardInput(false)
+        end
+        menu:EnableKeyboard(true)
+        menu:SetScript("OnKeyDown", function(self, key)
+            if key == "ESCAPE" then
+                self:Hide()
+            else
+                if not InCombatLockdown() then
+                    self:SetPropagateKeyboardInput(true)
+                end
+            end
+        end)
 
         -- Close on click outside
         menu:SetScript("OnUpdate", function(self)
@@ -1332,7 +2101,13 @@ function LoolibConfigDialogMixin:RenderColor(parent, option, name, desc, registr
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
         end)
-        swatch:SetScript("OnLeave", GameTooltip_Hide)
+        swatch:SetScript("OnLeave", function()
+            if GameTooltip_Hide then
+                GameTooltip_Hide()
+            else
+                GameTooltip:Hide()
+            end
+        end)
     end
 
     -- Click handler - open color picker
@@ -1418,7 +2193,13 @@ function LoolibConfigDialogMixin:RenderExecute(parent, option, name, desc, regis
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
         end)
-        btn:SetScript("OnLeave", GameTooltip_Hide)
+        btn:SetScript("OnLeave", function()
+            if GameTooltip_Hide then
+                GameTooltip_Hide()
+            else
+                GameTooltip:Hide()
+            end
+        end)
     end
 
     -- Click handler
@@ -1426,7 +2207,10 @@ function LoolibConfigDialogMixin:RenderExecute(parent, option, name, desc, regis
         if option.func then
             local success, err = pcall(registry.CallMethod, registry, option, info, option.func)
             if not success then
+                -- Log error
                 Loolib:Error("Execute error:", err)
+                -- Notify user
+                print("|cffff0000Error executing " .. name .. ":|r " .. tostring(err))
             end
         end
     end)
@@ -1484,7 +2268,13 @@ function LoolibConfigDialogMixin:RenderKeybinding(parent, option, name, desc, re
             GameTooltip:AddLine("Click to set key binding", 0.8, 0.8, 0.8)
             GameTooltip:Show()
         end)
-        keyBtn:SetScript("OnLeave", GameTooltip_Hide)
+        keyBtn:SetScript("OnLeave", function()
+            if GameTooltip_Hide then
+                GameTooltip_Hide()
+            else
+                GameTooltip:Hide()
+            end
+        end)
     end
 
     local isListening = false
@@ -1579,7 +2369,13 @@ function LoolibConfigDialogMixin:RenderTexture(parent, option, name, desc, regis
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
         end)
-        texFrame:SetScript("OnLeave", GameTooltip_Hide)
+        texFrame:SetScript("OnLeave", function()
+            if GameTooltip_Hide then
+                GameTooltip_Hide()
+            else
+                GameTooltip:Hide()
+            end
+        end)
     end
 
     -- If values provided, make it a selector
@@ -1702,7 +2498,13 @@ function LoolibConfigDialogMixin:RenderFont(parent, option, name, desc, registry
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
         end)
-        dropdown:SetScript("OnLeave", GameTooltip_Hide)
+        dropdown:SetScript("OnLeave", function()
+            if GameTooltip_Hide then
+                GameTooltip_Hide()
+            else
+                GameTooltip:Hide()
+            end
+        end)
     end
 
     -- Click handler - show font menu
@@ -1777,6 +2579,21 @@ function LoolibConfigDialogMixin:RenderFont(parent, option, name, desc, registry
 
         menu:SetSize(menuWidth, menuHeight)
         menu:Show()
+
+        -- ESC key handling
+        if not InCombatLockdown() then
+            menu:SetPropagateKeyboardInput(false)
+        end
+        menu:EnableKeyboard(true)
+        menu:SetScript("OnKeyDown", function(self, key)
+            if key == "ESCAPE" then
+                self:Hide()
+            else
+                if not InCombatLockdown() then
+                    self:SetPropagateKeyboardInput(true)
+                end
+            end
+        end)
 
         -- Close on click outside
         menu:SetScript("OnUpdate", function(self)

@@ -353,6 +353,12 @@ function LoolibAddonMixin:Disable()
 
     self.enabledState = false
 
+    -- Cancel all timers if this addon has the Timer mixin embedded
+    -- This prevents timers from firing on a disabled addon
+    if self.CancelAllTimers then
+        self:CancelAllTimers()
+    end
+
     -- Disable all child modules first
     for _, module in ipairs(self.orderedModules) do
         module:Disable()

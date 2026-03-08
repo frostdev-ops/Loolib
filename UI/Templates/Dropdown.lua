@@ -33,7 +33,9 @@ local function GetDropdownMenu()
 
         -- Close on click outside
         dropdownMenu:SetScript("OnShow", function()
-            dropdownMenu:SetPropagateKeyboardInput(false)
+            if not InCombatLockdown() then
+                dropdownMenu:SetPropagateKeyboardInput(false)
+            end
         end)
 
         dropdownMenu:SetScript("OnKeyDown", function(_, key)
