@@ -384,6 +384,7 @@ function LoolibDialogMixin:Show()
 
     -- Show
     getmetatable(self).__index.Show(self)
+    self:Raise()
 
     -- Re-layout buttons now that the frame has valid dimensions.
     -- ButtonContainer uses relative anchors (BOTTOMLEFT/BOTTOMRIGHT), so
