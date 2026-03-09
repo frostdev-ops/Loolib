@@ -81,7 +81,7 @@ LOOLIB_CANVAS_ACTION_TYPES = {
         end
 ----------------------------------------------------------------------]]
 
-LoolibCanvasHistoryMixin = {}
+local LoolibCanvasHistoryMixin = {}
 
 --- Initialize the history system
 function LoolibCanvasHistoryMixin:OnLoad()
@@ -761,7 +761,7 @@ end
 
 --- Create a new canvas history instance
 --- @return table Canvas history object
-function LoolibCreateCanvasHistory()
+local function LoolibCreateCanvasHistory()
     local history = {}
     LoolibMixin(history, LoolibCanvasHistoryMixin)
     history:OnLoad()

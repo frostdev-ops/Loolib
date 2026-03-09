@@ -9,25 +9,36 @@
 
 local Loolib = LibStub("Loolib")
 
--- Get dependencies
-local TimerModule = Loolib:GetModule("Timer")
-local EventRegistryModule = Loolib:GetModule("EventRegistry")
-local EventRegistry = EventRegistryModule.Registry
+local Events = Loolib.Events or Loolib:GetOrCreateModule("Events")
+Loolib.Events = Events
 
--- Local references
+-- FIX(critical-01): Use Loolib.CreateFromMixins directly instead of unstable "Mixin" module lookup
+local TimerModule = Loolib.Timer or Loolib:GetModule("Timer")
+local EventRegistryModule = Events.EventRegistry
+    or Loolib:GetModule("Events.EventRegistry")
+    or Loolib:GetModule("EventRegistry")
+
+assert(Loolib.CreateFromMixins, "Loolib/Core/Mixin.lua must be loaded before Bucket")
+assert(TimerModule and TimerModule.Mixin, "Loolib/Core/Timer.lua must be loaded before Bucket")
+assert(EventRegistryModule and EventRegistryModule.Registry, "Loolib/Events/EventRegistry.lua must be loaded before Bucket")
+
+local CreateFromMixins = Loolib.CreateFromMixins
+local EventRegistry = Events.Registry or EventRegistryModule.Registry
+local ipairs = ipairs
+local pairs = pairs
 local type = type
 
 -- Global handle counter for unique bucket IDs
 local bucketHandleCounter = 0
 
 --[[--------------------------------------------------------------------
-    LoolibBucketMixin
+    BucketMixin
 
     Mixin for objects that need event/message bucketing capabilities.
     Automatically includes timer functionality.
 ----------------------------------------------------------------------]]
 
-LoolibBucketMixin = LoolibCreateFromMixins(TimerModule.Mixin)
+local BucketMixin = CreateFromMixins(TimerModule.Mixin)
 
 --[[--------------------------------------------------------------------
     Internal Helper Functions
@@ -63,9 +74,9 @@ local function NormalizeEvents(events)
         return {events}
     elseif type(events) == "table" then
         return events
-    else
-        error("Events must be a string or table of strings", 3)
     end
+
+    error("Events must be a string or table of strings", 3)
 end
 
 --[[--------------------------------------------------------------------
@@ -84,26 +95,21 @@ end
 -- @param self table - The object instance
 -- @param bucket table - The bucket info
 local function FireBucket(self, bucket)
-    -- Calculate total count
     local totalCount = 0
     for _, count in pairs(bucket.data) do
         totalCount = totalCount + count
     end
 
-    -- Prepare data table
     local data = {
         count = totalCount,
         events = bucket.data,
     }
 
-    -- Clear bucket data
     bucket.data = {}
     bucket.timerActive = false
 
-    -- Execute callback
     local callback = bucket.callback
     if type(callback) == "string" then
-        -- Method name - call self[callback](self, data)
         local method = self[callback]
         if method then
             method(self, data)
@@ -111,7 +117,6 @@ local function FireBucket(self, bucket)
             Loolib:Error("Bucket: method '" .. callback .. "' not found")
         end
     else
-        -- Function - call callback(data)
         callback(data)
     end
 end
@@ -121,16 +126,12 @@ end
 -- @param bucket table - The bucket info
 -- @param eventName string - The event name
 local function HandleBucketEvent(self, bucket, eventName)
-    -- Increment counter for this event
     bucket.data[eventName] = (bucket.data[eventName] or 0) + 1
 
-    -- Start timer if not already running
     if not bucket.timerActive then
         bucket.timerActive = true
-
-        -- Schedule timer to fire bucket
         self:ScheduleTimer(function()
-            if self.buckets[bucket.handle] then
+            if self.buckets and self.buckets[bucket.handle] then
                 FireBucket(self, bucket)
             end
         end, bucket.interval)
@@ -146,8 +147,7 @@ end
 -- @param interval number - Seconds to collect events before firing callback
 -- @param callback function|string - Callback function or method name
 -- @return string - Bucket handle for unregistration
-function LoolibBucketMixin:RegisterBucketEvent(events, interval, callback)
-    -- Validate parameters
+function BucketMixin:RegisterBucketEvent(events, interval, callback)
     if not ValidateInterval(interval) then
         error("RegisterBucketEvent: interval must be a positive number", 2)
     end
@@ -158,27 +158,21 @@ function LoolibBucketMixin:RegisterBucketEvent(events, interval, callback)
 
     EnsureBucketStorage(self)
 
-    -- Normalize events to table
     local eventList = NormalizeEvents(events)
-
-    -- Generate unique handle
     local handle = GenerateBucketHandle()
-
-    -- Create bucket info
     local bucket = {
         handle = handle,
         events = eventList,
         interval = interval,
         callback = callback,
-        data = {}, -- Event name -> count
+        data = {},
         timerActive = false,
         type = "event",
-        registrations = {}, -- Store event registration handles
+        registrations = {},
     }
 
     self.buckets[handle] = bucket
 
-    -- Register for each event
     for _, eventName in ipairs(eventList) do
         local registration = EventRegistry:RegisterEventCallbackWithHandle(
             eventName,
@@ -203,8 +197,7 @@ end
 -- @param interval number - Seconds to collect messages before firing callback
 -- @param callback function|string - Callback function or method name
 -- @return string - Bucket handle for unregistration
-function LoolibBucketMixin:RegisterBucketMessage(messages, interval, callback)
-    -- Validate parameters
+function BucketMixin:RegisterBucketMessage(messages, interval, callback)
     if not ValidateInterval(interval) then
         error("RegisterBucketMessage: interval must be a positive number", 2)
     end
@@ -215,27 +208,21 @@ function LoolibBucketMixin:RegisterBucketMessage(messages, interval, callback)
 
     EnsureBucketStorage(self)
 
-    -- Normalize messages to table
     local messageList = NormalizeEvents(messages)
-
-    -- Generate unique handle
     local handle = GenerateBucketHandle()
-
-    -- Create bucket info
     local bucket = {
         handle = handle,
         events = messageList,
         interval = interval,
         callback = callback,
-        data = {}, -- Message name -> count
+        data = {},
         timerActive = false,
         type = "message",
-        registrations = {}, -- Store message registration handles
+        registrations = {},
     }
 
     self.buckets[handle] = bucket
 
-    -- Register for each message
     for _, messageName in ipairs(messageList) do
         local registration = EventRegistry:RegisterCallbackWithHandle(
             messageName,
@@ -258,7 +245,7 @@ end
 --- Unregister a bucket by handle
 -- @param handle string - Bucket handle returned from Register methods
 -- @return boolean - True if unregistered, false if not found
-function LoolibBucketMixin:UnregisterBucket(handle)
+function BucketMixin:UnregisterBucket(handle)
     if not self.buckets then
         return false
     end
@@ -268,29 +255,24 @@ function LoolibBucketMixin:UnregisterBucket(handle)
         return false
     end
 
-    -- Unregister all event/message callbacks
     for _, registration in ipairs(bucket.registrations) do
         registration:Unregister()
     end
 
-    -- Remove from storage
     self.buckets[handle] = nil
-
     return true
 end
 
 --- Unregister all buckets for this object
-function LoolibBucketMixin:UnregisterAllBuckets()
+function BucketMixin:UnregisterAllBuckets()
     if not self.buckets then
         return
     end
 
-    -- Unregister each bucket
     for handle in pairs(self.buckets) do
         self:UnregisterBucket(handle)
     end
 
-    -- Clear storage
     self.buckets = {}
 end
 
@@ -301,13 +283,13 @@ end
 --- Check if a bucket exists
 -- @param handle string - Bucket handle
 -- @return boolean - True if bucket exists and is active
-function LoolibBucketMixin:IsBucketActive(handle)
+function BucketMixin:IsBucketActive(handle)
     return self.buckets and self.buckets[handle] ~= nil
 end
 
 --- Get all active bucket handles
 -- @return table - Array of bucket handles
-function LoolibBucketMixin:GetActiveBuckets()
+function BucketMixin:GetActiveBuckets()
     if not self.buckets then
         return {}
     end
@@ -322,7 +304,7 @@ end
 
 --- Get count of active buckets
 -- @return number - Number of active buckets
-function LoolibBucketMixin:GetBucketCount()
+function BucketMixin:GetBucketCount()
     if not self.buckets then
         return 0
     end
@@ -338,7 +320,7 @@ end
 --- Get current data for a bucket (without firing it)
 -- @param handle string - Bucket handle
 -- @return table|nil - Data table { count, events } or nil if not found
-function LoolibBucketMixin:GetBucketData(handle)
+function BucketMixin:GetBucketData(handle)
     if not self.buckets then
         return nil
     end
@@ -348,7 +330,6 @@ function LoolibBucketMixin:GetBucketData(handle)
         return nil
     end
 
-    -- Calculate total count
     local totalCount = 0
     for _, count in pairs(bucket.data) do
         totalCount = totalCount + count
@@ -363,7 +344,7 @@ end
 --- Manually fire a bucket immediately (clears data and resets timer)
 -- @param handle string - Bucket handle
 -- @return boolean - True if fired, false if not found or no data
-function LoolibBucketMixin:FireBucketNow(handle)
+function BucketMixin:FireBucketNow(handle)
     if not self.buckets then
         return false
     end
@@ -373,7 +354,6 @@ function LoolibBucketMixin:FireBucketNow(handle)
         return false
     end
 
-    -- Check if there's any data to fire
     local hasData = false
     for _ in pairs(bucket.data) do
         hasData = true
@@ -384,9 +364,7 @@ function LoolibBucketMixin:FireBucketNow(handle)
         return false
     end
 
-    -- Fire the bucket
     FireBucket(self, bucket)
-
     return true
 end
 
@@ -395,7 +373,13 @@ end
 ----------------------------------------------------------------------]]
 
 local BucketModule = {
-    Mixin = LoolibBucketMixin,
+    Mixin = BucketMixin,
 }
 
+Loolib.Events.Bucket = BucketModule
+Loolib.Events.BucketMixin = BucketMixin
+
+Loolib.BucketMixin = BucketMixin
+
 Loolib:RegisterModule("Bucket", BucketModule)
+Loolib:RegisterModule("Events.Bucket", BucketModule)

@@ -16,6 +16,7 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for ErrorHandler")
 
 -- Verify dependencies
 assert(LoolibEventRegistry, "Loolib/Events/EventRegistry.lua must be loaded before ErrorHandler")
@@ -37,7 +38,7 @@ local HASH_MODULO = 2147483647              -- Prime for string hashing
     accessed via Loolib:GetModule("ErrorHandler").
 ----------------------------------------------------------------------]]
 
-LoolibErrorHandlerMixin = {}
+local LoolibErrorHandlerMixin = {}
 
 --- Initialize the error handler
 function LoolibErrorHandlerMixin:Init()
@@ -790,22 +791,21 @@ end
     Singleton Instance
 ----------------------------------------------------------------------]]
 
--- Create the global singleton
-LoolibErrorHandler = LoolibCreateFromMixins(LoolibErrorHandlerMixin)
-LoolibErrorHandler:Init()
-LoolibErrorHandler:RegisterEvents()
+local errorHandler = CreateFromMixins(LoolibErrorHandlerMixin)
+errorHandler:Init()
+errorHandler:RegisterEvents()
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local ErrorHandlerModule = {
+local errorHandlerModule = {
     Mixin = LoolibErrorHandlerMixin,
-    Handler = LoolibErrorHandler,
+    Handler = errorHandler,
 }
 
-Loolib:RegisterModule("ErrorHandler", ErrorHandlerModule)
+Loolib:RegisterModule("Debug.ErrorHandler", errorHandlerModule)
 
 -- Also register for easy access
-local Debug = Loolib:GetOrCreateModule("Debug")
-Debug.ErrorHandler = LoolibErrorHandler
+local debugModule = Loolib:GetOrCreateModule("Debug")
+debugModule.ErrorHandler = errorHandler

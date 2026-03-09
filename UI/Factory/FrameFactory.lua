@@ -8,6 +8,13 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for FrameFactory")
+local CreatePoolCollection = assert(Loolib.CreatePoolCollection, "Loolib.CreatePoolCollection is required for FrameFactory")
+local ResetFrame = assert(Loolib.PoolReset_Frame, "Loolib.PoolReset_Frame is required for FrameFactory")
+local Mixin = assert(Loolib.Mixin, "Loolib.Mixin is required for FrameFactory")
+local ReflectScriptHandlers = assert(Loolib.ReflectScriptHandlers, "Loolib.ReflectScriptHandlers is required for FrameFactory")
+local Factory = Loolib.Factory or Loolib:GetOrCreateModule("Factory")
+local FrameFactoryModule = Factory.FrameFactory or Loolib:GetModule("Factory.FrameFactory") or {}
 
 --[[--------------------------------------------------------------------
     Template Info Cache
@@ -15,16 +22,16 @@ local Loolib = LibStub("Loolib")
     Caches information about XML templates to avoid repeated lookups.
 ----------------------------------------------------------------------]]
 
-LoolibTemplateInfoCacheMixin = {}
+local TemplateInfoCacheMixin = FrameFactoryModule.TemplateInfoCacheMixin or {}
 
-function LoolibTemplateInfoCacheMixin:Init()
+function TemplateInfoCacheMixin:Init()
     self.cache = {}
 end
 
 --- Get information about a template
 -- @param templateName string - The template name
 -- @return table|nil - Template info or nil if not a template
-function LoolibTemplateInfoCacheMixin:GetTemplateInfo(templateName)
+function TemplateInfoCacheMixin:GetTemplateInfo(templateName)
     if not templateName or templateName == "" then
         return nil
     end
@@ -49,7 +56,7 @@ end
 --- Check if a string is a known frame type (not a template)
 -- @param name string - The name to check
 -- @return boolean
-function LoolibTemplateInfoCacheMixin:IsFrameType(name)
+function TemplateInfoCacheMixin:IsFrameType(name)
     local frameTypes = {
         Frame = true, Button = true, CheckButton = true, EditBox = true,
         ScrollFrame = true, Slider = true, StatusBar = true, Cooldown = true,
@@ -62,13 +69,13 @@ function LoolibTemplateInfoCacheMixin:IsFrameType(name)
 end
 
 --- Clear the cache
-function LoolibTemplateInfoCacheMixin:Clear()
+function TemplateInfoCacheMixin:Clear()
     wipe(self.cache)
 end
 
 --- Create a new template info cache
-function CreateLoolibTemplateInfoCache()
-    local cache = LoolibCreateFromMixins(LoolibTemplateInfoCacheMixin)
+local function CreateTemplateInfoCache()
+    local cache = CreateFromMixins(TemplateInfoCacheMixin)
     cache:Init()
     return cache
 end
@@ -79,11 +86,11 @@ end
     A mixin that provides universal frame creation with pooling.
 ----------------------------------------------------------------------]]
 
-LoolibFrameFactoryMixin = {}
+local FrameFactoryMixin = FrameFactoryModule.FactoryMixin or {}
 
-function LoolibFrameFactoryMixin:Init()
-    self.templateInfoCache = CreateLoolibTemplateInfoCache()
-    self.poolCollection = CreateLoolibPoolCollection()
+function FrameFactoryMixin:Init()
+    self.templateInfoCache = CreateTemplateInfoCache()
+    self.poolCollection = CreatePoolCollection()
 end
 
 --[[--------------------------------------------------------------------
@@ -95,7 +102,7 @@ end
 -- @param frameTemplateOrType string - Template name or frame type
 -- @param resetFunc function - Optional reset function
 -- @return Frame, boolean, table - Frame, isNew, templateInfo
-function LoolibFrameFactoryMixin:Create(parent, frameTemplateOrType, resetFunc)
+function FrameFactoryMixin:Create(parent, frameTemplateOrType, resetFunc)
     local frameTemplate = nil
     local frameType = nil
     local info = nil
@@ -123,7 +130,7 @@ function LoolibFrameFactoryMixin:Create(parent, frameTemplateOrType, resetFunc)
         frameType,
         parent,
         frameTemplate,
-        resetFunc or LoolibPoolReset_Frame
+        resetFunc or ResetFrame
     )
 
     local frame, isNew = pool:Acquire()
@@ -137,14 +144,14 @@ end
 -- @param resetFunc function - Optional reset function
 -- @param ... - Mixins to apply
 -- @return Frame, boolean
-function LoolibFrameFactoryMixin:CreateWithMixins(parent, frameTemplateOrType, resetFunc, ...)
+function FrameFactoryMixin:CreateWithMixins(parent, frameTemplateOrType, resetFunc, ...)
     local frame, isNew, info = self:Create(parent, frameTemplateOrType, resetFunc)
 
     if isNew then
         local mixinCount = select("#", ...)
         if mixinCount > 0 then
-            LoolibMixin(frame, ...)
-            LoolibReflectScriptHandlers(frame)
+            Mixin(frame, ...)
+            ReflectScriptHandlers(frame)
 
             if frame.Init then
                 frame:Init()
@@ -162,12 +169,12 @@ end
 --- Release a frame back to its pool
 -- @param frame Frame - The frame to release
 -- @return boolean - True if released
-function LoolibFrameFactoryMixin:Release(frame)
+function FrameFactoryMixin:Release(frame)
     return self.poolCollection:Release(frame)
 end
 
 --- Release all frames
-function LoolibFrameFactoryMixin:ReleaseAll()
+function FrameFactoryMixin:ReleaseAll()
     self.poolCollection:ReleaseAll()
 end
 
@@ -181,19 +188,19 @@ end
 -- @param template string - Template name
 -- @param resetFunc function - Reset function
 -- @return table, boolean - Pool, isNew
-function LoolibFrameFactoryMixin:GetOrCreatePool(frameType, parent, template, resetFunc)
+function FrameFactoryMixin:GetOrCreatePool(frameType, parent, template, resetFunc)
     return self.poolCollection:GetOrCreatePool(frameType, parent, template, resetFunc)
 end
 
 --- Get the pool collection
 -- @return table
-function LoolibFrameFactoryMixin:GetPoolCollection()
+function FrameFactoryMixin:GetPoolCollection()
     return self.poolCollection
 end
 
 --- Get the template info cache
 -- @return table
-function LoolibFrameFactoryMixin:GetTemplateInfoCache()
+function FrameFactoryMixin:GetTemplateInfoCache()
     return self.templateInfoCache
 end
 
@@ -203,18 +210,18 @@ end
 
 --- Get the number of active frames
 -- @return number
-function LoolibFrameFactoryMixin:GetNumActive()
+function FrameFactoryMixin:GetNumActive()
     return self.poolCollection:GetNumActive()
 end
 
 --- Get the number of pools
 -- @return number
-function LoolibFrameFactoryMixin:GetNumPools()
+function FrameFactoryMixin:GetNumPools()
     return self.poolCollection:GetNumPools()
 end
 
 --- Dump statistics
-function LoolibFrameFactoryMixin:Dump()
+function FrameFactoryMixin:Dump()
     print("Frame Factory Statistics:")
     self.poolCollection:Dump()
 end
@@ -225,7 +232,7 @@ end
 
 --- Iterate over all active frames
 -- @return iterator
-function LoolibFrameFactoryMixin:EnumerateActive()
+function FrameFactoryMixin:EnumerateActive()
     return self.poolCollection:EnumerateActive()
 end
 
@@ -235,8 +242,8 @@ end
 
 --- Create a new frame factory
 -- @return table - A new FrameFactory instance
-function CreateLoolibFrameFactory()
-    local factory = LoolibCreateFromMixins(LoolibFrameFactoryMixin)
+local function CreateFrameFactory()
+    local factory = CreateFromMixins(FrameFactoryMixin)
     factory:Init()
     return factory
 end
@@ -247,7 +254,7 @@ end
     A shared factory instance for general use.
 ----------------------------------------------------------------------]]
 
-LoolibFrameFactory = CreateLoolibFrameFactory()
+local DefaultFrameFactory = FrameFactoryModule.Default or CreateFrameFactory()
 
 --[[--------------------------------------------------------------------
     Convenience Functions
@@ -260,8 +267,8 @@ LoolibFrameFactory = CreateLoolibFrameFactory()
 -- @param frameTemplateOrType string - Template or frame type
 -- @param resetFunc function - Optional reset function
 -- @return Frame, boolean, table
-function LoolibCreateFrame(parent, frameTemplateOrType, resetFunc)
-    return LoolibFrameFactory:Create(parent, frameTemplateOrType, resetFunc)
+local function CreateFrame(parent, frameTemplateOrType, resetFunc)
+    return DefaultFrameFactory:Create(parent, frameTemplateOrType, resetFunc)
 end
 
 --- Create a frame with mixins using the default factory
@@ -270,44 +277,41 @@ end
 -- @param resetFunc function - Optional reset function
 -- @param ... - Mixins to apply
 -- @return Frame, boolean
-function LoolibCreateFrameWithMixins(parent, frameTemplateOrType, resetFunc, ...)
-    return LoolibFrameFactory:CreateWithMixins(parent, frameTemplateOrType, resetFunc, ...)
+local function CreateFrameWithMixins(parent, frameTemplateOrType, resetFunc, ...)
+    return DefaultFrameFactory:CreateWithMixins(parent, frameTemplateOrType, resetFunc, ...)
 end
 
 --- Release a frame to the default factory
 -- @param frame Frame - The frame to release
 -- @return boolean
-function LoolibReleaseFrame(frame)
-    return LoolibFrameFactory:Release(frame)
+local function ReleaseFrame(frame)
+    return DefaultFrameFactory:Release(frame)
 end
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local FrameFactoryModule = {
-    -- Mixins
-    FactoryMixin = LoolibFrameFactoryMixin,
-    TemplateInfoCacheMixin = LoolibTemplateInfoCacheMixin,
+FrameFactoryModule.FactoryMixin = FrameFactoryMixin
+FrameFactoryModule.TemplateInfoCacheMixin = TemplateInfoCacheMixin
+FrameFactoryModule.Create = CreateFrameFactory
+FrameFactoryModule.CreateTemplateInfoCache = CreateTemplateInfoCache
+FrameFactoryModule.Default = DefaultFrameFactory
+FrameFactoryModule.CreateFrame = CreateFrame
+FrameFactoryModule.CreateFrameWithMixins = CreateFrameWithMixins
+FrameFactoryModule.ReleaseFrame = ReleaseFrame
 
-    -- Factory functions
-    Create = CreateLoolibFrameFactory,
-    CreateTemplateInfoCache = CreateLoolibTemplateInfoCache,
-
-    -- Default factory
-    Default = LoolibFrameFactory,
-
-    -- Convenience functions
-    CreateFrame = LoolibCreateFrame,
-    CreateFrameWithMixins = LoolibCreateFrameWithMixins,
-    ReleaseFrame = LoolibReleaseFrame,
-}
-
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.FrameFactory = FrameFactoryModule
-UI.CreateFrame = LoolibCreateFrame
-UI.CreateFrameWithMixins = LoolibCreateFrameWithMixins
-UI.ReleaseFrame = LoolibReleaseFrame
+UI.CreateFrame = CreateFrame
+UI.CreateFrameWithMixins = CreateFrameWithMixins
+UI.ReleaseFrame = ReleaseFrame
 
-Loolib:RegisterModule("FrameFactory", FrameFactoryModule)
+Factory.FrameFactory = FrameFactoryModule
+Loolib.FrameFactory = DefaultFrameFactory
+Loolib.CreateFrame = CreateFrame
+Loolib.CreateFrameWithMixins = CreateFrameWithMixins
+Loolib.ReleaseFrame = ReleaseFrame
+Loolib.CreateTemplateInfoCache = CreateTemplateInfoCache
+
+Loolib:RegisterModule("Factory.FrameFactory", FrameFactoryModule)

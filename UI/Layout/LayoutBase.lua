@@ -7,6 +7,8 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local Layout = Loolib.Layout or Loolib:GetOrCreateModule("Layout")
+local LayoutBaseModule = Layout.LayoutBase or Loolib:GetModule("Layout.LayoutBase") or {}
 
 --[[--------------------------------------------------------------------
     LoolibBaseLayoutMixin
@@ -14,12 +16,12 @@ local Loolib = LibStub("Loolib")
     Base mixin that all layout types inherit from.
 ----------------------------------------------------------------------]]
 
-LoolibBaseLayoutMixin = {}
+local LayoutBaseMixin = LayoutBaseModule.Mixin or {}
 
 --- Initialize the layout
 -- @param container Frame - The container frame to manage
 -- @param config table - Configuration options
-function LoolibBaseLayoutMixin:Init(container, config)
+function LayoutBaseMixin:Init(container, config)
     self.container = container
     self.children = {}
     self.config = config or {}
@@ -48,7 +50,7 @@ end
 -- @param child Region - The child region to add
 -- @param index number - Optional index to insert at
 -- @return number - The index of the added child
-function LoolibBaseLayoutMixin:AddChild(child, index)
+function LayoutBaseMixin:AddChild(child, index)
     if not child then
         return nil
     end
@@ -75,7 +77,7 @@ end
 
 --- Add multiple children
 -- @param ... Region - Children to add
-function LoolibBaseLayoutMixin:AddChildren(...)
+function LayoutBaseMixin:AddChildren(...)
     for i = 1, select("#", ...) do
         self:AddChild(select(i, ...))
     end
@@ -84,7 +86,7 @@ end
 --- Remove a child from the layout
 -- @param child Region - The child to remove
 -- @return boolean - True if removed
-function LoolibBaseLayoutMixin:RemoveChild(child)
+function LayoutBaseMixin:RemoveChild(child)
     for i, c in ipairs(self.children) do
         if c == child then
             table.remove(self.children, i)
@@ -99,7 +101,7 @@ end
 --- Remove a child by index
 -- @param index number - The index to remove
 -- @return Region|nil - The removed child
-function LoolibBaseLayoutMixin:RemoveChildByIndex(index)
+function LayoutBaseMixin:RemoveChildByIndex(index)
     if index >= 1 and index <= #self.children then
         local child = table.remove(self.children, index)
         child.parentLayout = nil
@@ -110,7 +112,7 @@ function LoolibBaseLayoutMixin:RemoveChildByIndex(index)
 end
 
 --- Remove all children
-function LoolibBaseLayoutMixin:ClearChildren()
+function LayoutBaseMixin:ClearChildren()
     for _, child in ipairs(self.children) do
         child.parentLayout = nil
     end
@@ -121,38 +123,38 @@ end
 --- Get a child by index
 -- @param index number - The index
 -- @return Region|nil - The child
-function LoolibBaseLayoutMixin:GetChild(index)
+function LayoutBaseMixin:GetChild(index)
     return self.children[index]
 end
 
 --- Get all children
 -- @return table - Array of children
-function LoolibBaseLayoutMixin:GetChildren()
+function LayoutBaseMixin:GetChildren()
     return self.children
 end
 
 --- Get the number of children
 -- @return number
-function LoolibBaseLayoutMixin:GetNumChildren()
+function LayoutBaseMixin:GetNumChildren()
     return #self.children
 end
 
 --- Check if the layout has children
 -- @return boolean
-function LoolibBaseLayoutMixin:HasChildren()
+function LayoutBaseMixin:HasChildren()
     return #self.children > 0
 end
 
 --- Iterate over children
 -- @return iterator
-function LoolibBaseLayoutMixin:EnumerateChildren()
+function LayoutBaseMixin:EnumerateChildren()
     return ipairs(self.children)
 end
 
 --- Find child index
 -- @param child Region - The child to find
 -- @return number|nil - The index or nil
-function LoolibBaseLayoutMixin:FindChildIndex(child)
+function LayoutBaseMixin:FindChildIndex(child)
     for i, c in ipairs(self.children) do
         if c == child then
             return i
@@ -164,7 +166,7 @@ end
 --- Move a child to a new index
 -- @param child Region - The child to move
 -- @param newIndex number - The new index
-function LoolibBaseLayoutMixin:MoveChild(child, newIndex)
+function LayoutBaseMixin:MoveChild(child, newIndex)
     local currentIndex = self:FindChildIndex(child)
     if currentIndex and newIndex ~= currentIndex then
         table.remove(self.children, currentIndex)
@@ -181,7 +183,7 @@ end
 ----------------------------------------------------------------------]]
 
 --- Mark the layout as dirty (needs recalculation)
-function LoolibBaseLayoutMixin:MarkDirty()
+function LayoutBaseMixin:MarkDirty()
     self.dirty = true
 
     -- Schedule deferred layout if not already pending
@@ -197,18 +199,18 @@ function LoolibBaseLayoutMixin:MarkDirty()
 end
 
 --- Mark the layout as clean
-function LoolibBaseLayoutMixin:MarkClean()
+function LayoutBaseMixin:MarkClean()
     self.dirty = false
 end
 
 --- Check if the layout is dirty
 -- @return boolean
-function LoolibBaseLayoutMixin:IsDirty()
+function LayoutBaseMixin:IsDirty()
     return self.dirty
 end
 
 --- Force an immediate layout
-function LoolibBaseLayoutMixin:ForceLayout()
+function LayoutBaseMixin:ForceLayout()
     self.dirty = true
     self:Layout()
 end
@@ -219,8 +221,8 @@ end
 
 --- Perform layout calculation
 -- Subclasses MUST override this method
-function LoolibBaseLayoutMixin:Layout()
-    error("LoolibBaseLayoutMixin:Layout must be overridden by subclass")
+function LayoutBaseMixin:Layout()
+    error("LayoutBaseMixin:Layout must be overridden by subclass")
 end
 
 --[[--------------------------------------------------------------------
@@ -229,14 +231,14 @@ end
 
 --- Get the content size
 -- @return number, number - width, height
-function LoolibBaseLayoutMixin:GetContentSize()
+function LayoutBaseMixin:GetContentSize()
     return self.contentWidth, self.contentHeight
 end
 
 --- Set the content size (internal)
 -- @param width number
 -- @param height number
-function LoolibBaseLayoutMixin:SetContentSize(width, height)
+function LayoutBaseMixin:SetContentSize(width, height)
     self.contentWidth = width
     self.contentHeight = height
 
@@ -251,7 +253,7 @@ end
 
 --- Get the available space for children
 -- @return number, number - available width, height
-function LoolibBaseLayoutMixin:GetAvailableSpace()
+function LayoutBaseMixin:GetAvailableSpace()
     local width = self.container:GetWidth() - self.config.paddingLeft - self.config.paddingRight
     local height = self.container:GetHeight() - self.config.paddingTop - self.config.paddingBottom
     return math.max(0, width), math.max(0, height)
@@ -266,7 +268,7 @@ end
 -- @param right number - Right padding
 -- @param top number - Top padding
 -- @param bottom number - Bottom padding
-function LoolibBaseLayoutMixin:SetPadding(left, right, top, bottom)
+function LayoutBaseMixin:SetPadding(left, right, top, bottom)
     self.config.paddingLeft = left
     self.config.paddingRight = right or left
     self.config.paddingTop = top or left
@@ -276,32 +278,32 @@ end
 
 --- Set uniform padding
 -- @param padding number - Padding for all sides
-function LoolibBaseLayoutMixin:SetUniformPadding(padding)
+function LayoutBaseMixin:SetUniformPadding(padding)
     self:SetPadding(padding, padding, padding, padding)
 end
 
 --- Set spacing between children
 -- @param spacing number - Spacing in pixels
-function LoolibBaseLayoutMixin:SetSpacing(spacing)
+function LayoutBaseMixin:SetSpacing(spacing)
     self.config.spacing = spacing
     self:MarkDirty()
 end
 
 --- Set auto-size behavior
 -- @param autoSize boolean - Whether to auto-size container
-function LoolibBaseLayoutMixin:SetAutoSize(autoSize)
+function LayoutBaseMixin:SetAutoSize(autoSize)
     self.config.autoSize = autoSize
 end
 
 --- Get the container frame
 -- @return Frame
-function LoolibBaseLayoutMixin:GetContainer()
+function LayoutBaseMixin:GetContainer()
     return self.container
 end
 
 --- Get configuration
 -- @return table
-function LoolibBaseLayoutMixin:GetConfig()
+function LayoutBaseMixin:GetConfig()
     return self.config
 end
 
@@ -311,7 +313,7 @@ end
 
 --- Get visible children only
 -- @return table - Array of visible children
-function LoolibBaseLayoutMixin:GetVisibleChildren()
+function LayoutBaseMixin:GetVisibleChildren()
     local visible = {}
     for _, child in ipairs(self.children) do
         if child:IsShown() then
@@ -323,7 +325,7 @@ end
 
 --- Get number of visible children
 -- @return number
-function LoolibBaseLayoutMixin:GetNumVisibleChildren()
+function LayoutBaseMixin:GetNumVisibleChildren()
     local count = 0
     for _, child in ipairs(self.children) do
         if child:IsShown() then
@@ -340,7 +342,7 @@ end
 --- Get the size of a child (respecting layout hints)
 -- @param child Region - The child
 -- @return number, number - width, height
-function LoolibBaseLayoutMixin:GetChildSize(child)
+function LayoutBaseMixin:GetChildSize(child)
     -- Check for layout hints
     local width = child.layoutWidth or child:GetWidth()
     local height = child.layoutHeight or child:GetHeight()
@@ -351,7 +353,7 @@ end
 -- @param child Region - The child
 -- @param axis string - "width" or "height"
 -- @return boolean
-function LoolibBaseLayoutMixin:ShouldStretch(child, axis)
+function LayoutBaseMixin:ShouldStretch(child, axis)
     if axis == "width" then
         return child.layoutStretchWidth == true
     elseif axis == "height" then
@@ -364,12 +366,12 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local LayoutBaseModule = {
-    Mixin = LoolibBaseLayoutMixin,
-}
+LayoutBaseModule.Mixin = LayoutBaseMixin
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.LayoutBase = LayoutBaseModule
 
-Loolib:RegisterModule("LayoutBase", LayoutBaseModule)
+Layout.LayoutBase = LayoutBaseModule
+Loolib.LayoutBaseMixin = LayoutBaseMixin
+
+Loolib:RegisterModule("Layout.LayoutBase", LayoutBaseModule)

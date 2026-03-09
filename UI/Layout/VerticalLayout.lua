@@ -10,18 +10,25 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for VerticalLayout")
+local Layout = Loolib.Layout or Loolib:GetOrCreateModule("Layout")
+local LayoutBaseMixin = assert(
+    Loolib.LayoutBaseMixin or ((Layout.LayoutBase or Loolib:GetModule("Layout.LayoutBase")) and (Layout.LayoutBase or Loolib:GetModule("Layout.LayoutBase")).Mixin),
+    "Loolib.Layout.LayoutBase.Mixin is required for VerticalLayout"
+)
+local VerticalLayoutModule = Layout.VerticalLayout or Loolib:GetModule("Layout.VerticalLayout") or {}
 
 --[[--------------------------------------------------------------------
     LoolibVerticalLayoutMixin
 ----------------------------------------------------------------------]]
 
-LoolibVerticalLayoutMixin = LoolibCreateFromMixins(LoolibBaseLayoutMixin)
+local VerticalLayoutMixin = VerticalLayoutModule.Mixin or CreateFromMixins(LayoutBaseMixin)
 
 --- Initialize vertical layout
 -- @param container Frame - The container frame
 -- @param config table - Configuration options
-function LoolibVerticalLayoutMixin:Init(container, config)
-    LoolibBaseLayoutMixin.Init(self, container, config)
+function VerticalLayoutMixin:Init(container, config)
+    LayoutBaseMixin.Init(self, container, config)
 
     -- Vertical-specific config
     self.config.alignItems = self.config.alignItems or "LEFT"  -- LEFT, CENTER, RIGHT, STRETCH
@@ -35,21 +42,21 @@ end
 
 --- Set horizontal alignment of children
 -- @param align string - LEFT, CENTER, RIGHT, STRETCH
-function LoolibVerticalLayoutMixin:SetAlignItems(align)
+function VerticalLayoutMixin:SetAlignItems(align)
     self.config.alignItems = align
     self:MarkDirty()
 end
 
 --- Set vertical content justification
 -- @param justify string - START, CENTER, END, SPACE_BETWEEN, SPACE_AROUND
-function LoolibVerticalLayoutMixin:SetJustifyContent(justify)
+function VerticalLayoutMixin:SetJustifyContent(justify)
     self.config.justifyContent = justify
     self:MarkDirty()
 end
 
 --- Set layout direction
 -- @param direction string - DOWN, UP
-function LoolibVerticalLayoutMixin:SetDirection(direction)
+function VerticalLayoutMixin:SetDirection(direction)
     self.config.direction = direction
     self:MarkDirty()
 end
@@ -58,7 +65,7 @@ end
     Layout Calculation
 ----------------------------------------------------------------------]]
 
-function LoolibVerticalLayoutMixin:Layout()
+function VerticalLayoutMixin:Layout()
     if not self.dirty then
         return
     end
@@ -154,8 +161,8 @@ end
 -- @param container Frame - Container frame
 -- @param config table - Configuration
 -- @return table - Layout instance
-function CreateLoolibVerticalLayout(container, config)
-    local layout = LoolibCreateFromMixins(LoolibVerticalLayoutMixin)
+local function CreateVerticalLayout(container, config)
+    local layout = CreateFromMixins(VerticalLayoutMixin)
     layout:Init(container, config)
     return layout
 end
@@ -164,14 +171,15 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local VerticalLayoutModule = {
-    Mixin = LoolibVerticalLayoutMixin,
-    Create = CreateLoolibVerticalLayout,
-}
+VerticalLayoutModule.Mixin = VerticalLayoutMixin
+VerticalLayoutModule.Create = CreateVerticalLayout
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.VerticalLayout = VerticalLayoutModule
-UI.CreateVerticalLayout = CreateLoolibVerticalLayout
+UI.CreateVerticalLayout = CreateVerticalLayout
 
-Loolib:RegisterModule("VerticalLayout", VerticalLayoutModule)
+Layout.VerticalLayout = VerticalLayoutModule
+Loolib.VerticalLayoutMixin = VerticalLayoutMixin
+Loolib.CreateVerticalLayout = CreateVerticalLayout
+
+Loolib:RegisterModule("Layout.VerticalLayout", VerticalLayoutModule)

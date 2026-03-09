@@ -4,6 +4,7 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local Core = Loolib.Core or Loolib:GetOrCreateModule("Core")
 
 --[[--------------------------------------------------------------------
     LoolibHookMixin
@@ -17,7 +18,7 @@ local Loolib = LibStub("Loolib")
     - Secure Hook: Post-hook using hooksecurefunc (safe for secure code)
 ----------------------------------------------------------------------]]
 
-LoolibHookMixin = {}
+local HookMixin = Core.Hook or Loolib:GetModule("Core.Hook") or {}
 
 --[[--------------------------------------------------------------------
     Initialization
@@ -25,7 +26,7 @@ LoolibHookMixin = {}
 
 --- Initialize the hook storage for an object
 -- @param self table - The object to initialize
-function LoolibHookMixin:_InitHooks()
+function HookMixin:_InitHooks()
     if not self.hooks then
         self.hooks = {}
         self.hookData = {}
@@ -95,7 +96,7 @@ end
 -- @param handler function|string - Handler function or method name
 -- @param hookSecure boolean - Use secure hook instead
 -- @return boolean - Success
-function LoolibHookMixin:Hook(object, method, handler, hookSecure)
+function HookMixin:Hook(object, method, handler, hookSecure)
     self:_InitHooks()
 
     -- Parse arguments based on signature
@@ -184,7 +185,7 @@ end
 -- @param method string|function - Method name or handler
 -- @param handler function|string - Handler function or method name
 -- @return boolean - Success
-function LoolibHookMixin:RawHook(object, method, handler)
+function HookMixin:RawHook(object, method, handler)
     self:_InitHooks()
 
     -- Parse arguments
@@ -256,7 +257,7 @@ end
 -- @param method string|function - Method name or handler
 -- @param handler function|string - Handler function or method name
 -- @return boolean - Success
-function LoolibHookMixin:SecureHook(object, method, handler)
+function HookMixin:SecureHook(object, method, handler)
     self:_InitHooks()
 
     -- Parse arguments
@@ -330,7 +331,7 @@ end
 -- @param script string - Script name (e.g., "OnShow", "OnHide")
 -- @param handler function|string - Handler function or method name
 -- @return boolean - Success
-function LoolibHookMixin:HookScript(frame, script, handler)
+function HookMixin:HookScript(frame, script, handler)
     self:_InitHooks()
 
     -- Validate
@@ -510,7 +511,7 @@ end
 -- @param object table|string - Object or global function name
 -- @param method string - Method name (nil if object is string)
 -- @return boolean - Success
-function LoolibHookMixin:Unhook(object, method)
+function HookMixin:Unhook(object, method)
     if not self.hooks then
         return false
     end
@@ -584,7 +585,7 @@ function LoolibHookMixin:UnhookScript(frame, script)
 end
 
 --- Unhook all hooks created by this object
-function LoolibHookMixin:UnhookAll()
+function HookMixin:UnhookAll()
     if not self.hooks then
         return
     end
@@ -624,7 +625,7 @@ end
 -- @param method string - Method name (nil if object is string)
 -- @return boolean - True if hooked
 -- @return function|nil - The handler function
-function LoolibHookMixin:IsHooked(object, method)
+function HookMixin:IsHooked(object, method)
     if not self.hooks then
         return false, nil
     end
@@ -651,7 +652,7 @@ end
 -- @param script string - Script name
 -- @return boolean - True if hooked
 -- @return function|nil - The handler function
-function LoolibHookMixin:IsScriptHooked(frame, script)
+function HookMixin:IsScriptHooked(frame, script)
     if not self.scripts then
         return false, nil
     end
@@ -670,4 +671,7 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-Loolib:RegisterModule("Hook", LoolibHookMixin)
+Core.Hook = HookMixin
+Loolib.Hook = HookMixin
+
+Loolib:RegisterModule("Core.Hook", HookMixin)

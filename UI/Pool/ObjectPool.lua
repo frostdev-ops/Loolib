@@ -8,6 +8,9 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for ObjectPool")
+local Pool = Loolib.Pool or Loolib:GetOrCreateModule("Pool")
+local ObjectPoolModule = Pool.ObjectPool or Loolib:GetModule("Pool.ObjectPool") or {}
 
 --[[--------------------------------------------------------------------
     LoolibObjectPoolMixin
@@ -15,13 +18,13 @@ local Loolib = LibStub("Loolib")
     A mixin that provides object pooling functionality.
 ----------------------------------------------------------------------]]
 
-LoolibObjectPoolMixin = {}
+local ObjectPoolMixin = ObjectPoolModule.Mixin or {}
 
 --- Initialize the pool
 -- @param createFunc function - Function that creates new objects: function(pool) -> object
 -- @param resetFunc function - Function called on acquire/release: function(pool, object, isNew)
 -- @param capacity number - Optional maximum pool capacity (default: unlimited)
-function LoolibObjectPoolMixin:Init(createFunc, resetFunc, capacity)
+function ObjectPoolMixin:Init(createFunc, resetFunc, capacity)
     if type(createFunc) ~= "function" then
         error("LoolibObjectPoolMixin:Init requires createFunc as first argument")
     end
@@ -43,7 +46,7 @@ end
 --- Acquire an object from the pool
 -- Returns an existing inactive object or creates a new one
 -- @return any, boolean - The object and whether it's newly created
-function LoolibObjectPoolMixin:Acquire()
+function ObjectPoolMixin:Acquire()
     -- Check capacity
     if self.activeCount >= self.capacity then
         return nil, false
@@ -77,7 +80,7 @@ end
 --- Release an object back to the pool
 -- @param object any - The object to release
 -- @return boolean - True if the object was active and released
-function LoolibObjectPoolMixin:Release(object)
+function ObjectPoolMixin:Release(object)
     if not self:IsActive(object) then
         return false
     end
@@ -94,7 +97,7 @@ function LoolibObjectPoolMixin:Release(object)
 end
 
 --- Release all active objects back to the pool
-function LoolibObjectPoolMixin:ReleaseAll()
+function ObjectPoolMixin:ReleaseAll()
     for object in pairs(self.activeObjects) do
         self:CallReset(object, false)
         self.inactiveObjects[#self.inactiveObjects + 1] = object
@@ -107,7 +110,7 @@ end
 --- Call the reset function on an object
 -- @param object any - The object to reset
 -- @param isNew boolean - True if this is a newly created object
-function LoolibObjectPoolMixin:CallReset(object, isNew)
+function ObjectPoolMixin:CallReset(object, isNew)
     local success, err = pcall(self.resetFunc, self, object, isNew)
     if not success then
         Loolib:Error("Pool reset error:", err)
@@ -121,14 +124,14 @@ end
 --- Check if an object is currently active (acquired)
 -- @param object any - The object to check
 -- @return boolean
-function LoolibObjectPoolMixin:IsActive(object)
+function ObjectPoolMixin:IsActive(object)
     return self.activeObjects[object] == true
 end
 
 --- Check if an object belongs to this pool
 -- @param object any - The object to check
 -- @return boolean
-function LoolibObjectPoolMixin:DoesObjectBelongToPool(object)
+function ObjectPoolMixin:DoesObjectBelongToPool(object)
     if self.activeObjects[object] then
         return true
     end
@@ -144,31 +147,31 @@ end
 
 --- Get the number of active objects
 -- @return number
-function LoolibObjectPoolMixin:GetNumActive()
+function ObjectPoolMixin:GetNumActive()
     return self.activeCount
 end
 
 --- Get the number of inactive (available) objects
 -- @return number
-function LoolibObjectPoolMixin:GetNumInactive()
+function ObjectPoolMixin:GetNumInactive()
     return #self.inactiveObjects
 end
 
 --- Get the total number of objects created by this pool
 -- @return number
-function LoolibObjectPoolMixin:GetTotalCreated()
+function ObjectPoolMixin:GetTotalCreated()
     return self.totalCreated
 end
 
 --- Get the capacity of this pool
 -- @return number
-function LoolibObjectPoolMixin:GetCapacity()
+function ObjectPoolMixin:GetCapacity()
     return self.capacity
 end
 
 --- Check if the pool is at capacity
 -- @return boolean
-function LoolibObjectPoolMixin:IsAtCapacity()
+function ObjectPoolMixin:IsAtCapacity()
     return self.activeCount >= self.capacity
 end
 
@@ -178,20 +181,20 @@ end
 
 --- Iterate over all active objects
 -- @return iterator - Pairs iterator over active objects
-function LoolibObjectPoolMixin:EnumerateActive()
+function ObjectPoolMixin:EnumerateActive()
     return pairs(self.activeObjects)
 end
 
 --- Get the next active object (for manual iteration)
 -- @param current any - The current object (nil to start)
 -- @return any - The next active object
-function LoolibObjectPoolMixin:GetNextActive(current)
+function ObjectPoolMixin:GetNextActive(current)
     return next(self.activeObjects, current)
 end
 
 --- Execute a function for each active object
 -- @param func function - Function(object) to call
-function LoolibObjectPoolMixin:ForEachActive(func)
+function ObjectPoolMixin:ForEachActive(func)
     for object in pairs(self.activeObjects) do
         func(object)
     end
@@ -203,7 +206,7 @@ end
 
 --- Pre-allocate objects up to a certain count
 -- @param count number - Number of objects to pre-allocate
-function LoolibObjectPoolMixin:Reserve(count)
+function ObjectPoolMixin:Reserve(count)
     local toCreate = count - (self.activeCount + #self.inactiveObjects)
 
     for i = 1, toCreate do
@@ -215,7 +218,7 @@ function LoolibObjectPoolMixin:Reserve(count)
 end
 
 --- Clear all objects from the pool (both active and inactive)
-function LoolibObjectPoolMixin:Clear()
+function ObjectPoolMixin:Clear()
     wipe(self.activeObjects)
     wipe(self.inactiveObjects)
     self.activeCount = 0
@@ -224,18 +227,18 @@ end
 
 --- Set a new reset function
 -- @param resetFunc function - The new reset function
-function LoolibObjectPoolMixin:SetResetFunc(resetFunc)
+function ObjectPoolMixin:SetResetFunc(resetFunc)
     self.resetFunc = resetFunc or function() end
 end
 
 --- Set the pool capacity
 -- @param capacity number - The new capacity
-function LoolibObjectPoolMixin:SetCapacity(capacity)
+function ObjectPoolMixin:SetCapacity(capacity)
     self.capacity = capacity or math.huge
 end
 
 --- Debug: Print pool statistics
-function LoolibObjectPoolMixin:Dump()
+function ObjectPoolMixin:Dump()
     print(string.format("Pool Stats: Active=%d, Inactive=%d, Total=%d, Capacity=%s",
         self.activeCount,
         #self.inactiveObjects,
@@ -253,8 +256,8 @@ end
 -- @param resetFunc function - Optional reset function
 -- @param capacity number - Optional maximum capacity
 -- @return table - A new ObjectPool instance
-function CreateLoolibObjectPool(createFunc, resetFunc, capacity)
-    local pool = LoolibCreateFromMixins(LoolibObjectPoolMixin)
+local function CreateObjectPool(createFunc, resetFunc, capacity)
+    local pool = CreateFromMixins(ObjectPoolMixin)
     pool:Init(createFunc, resetFunc, capacity)
     return pool
 end
@@ -263,14 +266,15 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local ObjectPoolModule = {
-    Mixin = LoolibObjectPoolMixin,
-    Create = CreateLoolibObjectPool,
-}
+ObjectPoolModule.Mixin = ObjectPoolMixin
+ObjectPoolModule.Create = CreateObjectPool
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.ObjectPool = ObjectPoolModule
-UI.CreateObjectPool = CreateLoolibObjectPool
+UI.CreateObjectPool = CreateObjectPool
 
-Loolib:RegisterModule("ObjectPool", ObjectPoolModule)
+Pool.ObjectPool = ObjectPoolModule
+Loolib.ObjectPoolMixin = ObjectPoolMixin
+Loolib.CreateObjectPool = CreateObjectPool
+
+Loolib:RegisterModule("Pool.ObjectPool", ObjectPoolModule)

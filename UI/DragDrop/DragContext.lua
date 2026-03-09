@@ -29,6 +29,8 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibCreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for DragContext")
+local LoolibCallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib.CallbackRegistryMixin is required for DragContext")
 
 -- Verify dependencies are loaded
 assert(LoolibCreateFromMixins, "Loolib/Core/Mixin.lua must be loaded before DragContext")
@@ -417,7 +419,4 @@ end
 LoolibDragContext:Initialize()
 
 -- Register with Loolib
-Loolib:RegisterModule("DragContext", LoolibDragContext)
-
--- Global access
-_G.LoolibDragContext = LoolibDragContext
+Loolib:RegisterModule("DragDrop.DragContext", LoolibDragContext)

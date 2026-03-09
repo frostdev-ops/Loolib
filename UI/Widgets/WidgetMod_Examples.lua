@@ -417,8 +417,9 @@ end
     Export Examples
 ----------------------------------------------------------------------]]
 
--- Make examples available globally for testing
-LOOLIB_WIDGET_EXAMPLES = {
+-- Make examples available under the Loolib UI namespace for testing
+local ui = Loolib:GetOrCreateModule("UI")
+ui.WidgetExamples = {
     CreateInfoPanel = CreateInfoPanel,
     CreateActionButton = CreateActionButton,
     CreateSettingsPanel = CreateSettingsPanel,

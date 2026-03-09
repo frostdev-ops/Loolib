@@ -41,7 +41,7 @@ local BRUSH_EVENTS = {
     Uses parallel arrays for dot storage (MRT VisNote pattern).
 ----------------------------------------------------------------------]]
 
-LoolibCanvasBrushMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local LoolibCanvasBrushMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
 
 --- Initialize the brush system
 function LoolibCanvasBrushMixin:OnLoad()
@@ -392,7 +392,7 @@ end
 
 --- Create a new canvas brush instance
 -- @return table - Initialized brush object
-function LoolibCreateCanvasBrush()
+local function LoolibCreateCanvasBrush()
     local brush = {}
     LoolibMixin(brush, LoolibCanvasBrushMixin)
     brush:OnLoad()

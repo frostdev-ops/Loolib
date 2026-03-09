@@ -1,11 +1,22 @@
+local Loolib = LibStub("Loolib")
+
 --[[--------------------------------------------------------------------
     Loolib - WoW 12.0+ Addon Library
     Table utilities for common operations
 ----------------------------------------------------------------------]]
 
-local Loolib = LibStub("Loolib")
+local ipairs = ipairs
+local next = next
+local pairs = pairs
+local select = select
+local type = type
 
-LoolibTableUtil = {}
+local tinsert = table.insert
+local tremove = table.remove
+local setmetatable = setmetatable
+local getmetatable = getmetatable
+
+local TableUtil = Loolib.TableUtil or {}
 
 --[[--------------------------------------------------------------------
     Basic Operations
@@ -14,7 +25,7 @@ LoolibTableUtil = {}
 --- Create a shallow copy of a table
 -- @param tbl table - The table to copy
 -- @return table - A new table with the same keys/values
-function LoolibTableUtil.Copy(tbl)
+function TableUtil.Copy(tbl)
     if type(tbl) ~= "table" then
         return tbl
     end
@@ -30,7 +41,7 @@ end
 -- @param tbl table - The table to copy
 -- @param seen table - Internal tracking for circular references
 -- @return table - A new table with recursively copied values
-function LoolibTableUtil.DeepCopy(tbl, seen)
+function TableUtil.DeepCopy(tbl, seen)
     if type(tbl) ~= "table" then
         return tbl
     end
@@ -44,7 +55,7 @@ function LoolibTableUtil.DeepCopy(tbl, seen)
     seen[tbl] = copy
 
     for key, value in pairs(tbl) do
-        copy[LoolibTableUtil.DeepCopy(key, seen)] = LoolibTableUtil.DeepCopy(value, seen)
+        copy[TableUtil.DeepCopy(key, seen)] = TableUtil.DeepCopy(value, seen)
     end
 
     return setmetatable(copy, getmetatable(tbl))
@@ -54,7 +65,7 @@ end
 -- @param target table - The target table to merge into
 -- @param ... - One or more source tables
 -- @return table - The modified target table
-function LoolibTableUtil.Merge(target, ...)
+function TableUtil.Merge(target, ...)
     for i = 1, select("#", ...) do
         local source = select(i, ...)
         if source then
@@ -70,14 +81,14 @@ end
 -- @param target table - The target table to merge into
 -- @param source table - The source table
 -- @return table - The modified target table
-function LoolibTableUtil.DeepMerge(target, source)
+function TableUtil.DeepMerge(target, source)
     if type(source) ~= "table" then
         return target
     end
 
     for key, value in pairs(source) do
         if type(value) == "table" and type(target[key]) == "table" then
-            LoolibTableUtil.DeepMerge(target[key], value)
+            TableUtil.DeepMerge(target[key], value)
         else
             target[key] = value
         end
@@ -92,7 +103,7 @@ end
 --- Check if a table is an array (sequential integer keys starting at 1)
 -- @param tbl table - The table to check
 -- @return boolean
-function LoolibTableUtil.IsArray(tbl)
+function TableUtil.IsArray(tbl)
     if type(tbl) ~= "table" then
         return false
     end
@@ -108,7 +119,7 @@ end
 --- Get the number of elements in a table (works for both arrays and maps)
 -- @param tbl table - The table to count
 -- @return number
-function LoolibTableUtil.Count(tbl)
+function TableUtil.Count(tbl)
     local count = 0
     for _ in pairs(tbl) do
         count = count + 1
@@ -119,7 +130,7 @@ end
 --- Check if a table is empty
 -- @param tbl table - The table to check
 -- @return boolean
-function LoolibTableUtil.IsEmpty(tbl)
+function TableUtil.IsEmpty(tbl)
     return next(tbl) == nil
 end
 
@@ -127,9 +138,9 @@ end
 -- @param tbl table - The table to search
 -- @param value any - The value to find
 -- @return boolean
-function LoolibTableUtil.Contains(tbl, value)
-    for _, v in pairs(tbl) do
-        if v == value then
+function TableUtil.Contains(tbl, value)
+    for _, currentValue in pairs(tbl) do
+        if currentValue == value then
             return true
         end
     end
@@ -140,7 +151,7 @@ end
 -- @param tbl table - The table to search
 -- @param key any - The key to find
 -- @return boolean
-function LoolibTableUtil.ContainsKey(tbl, key)
+function TableUtil.ContainsKey(tbl, key)
     return tbl[key] ~= nil
 end
 
@@ -148,10 +159,10 @@ end
 -- @param tbl table - The array to search
 -- @param value any - The value to find
 -- @return number|nil - The index, or nil if not found
-function LoolibTableUtil.IndexOf(tbl, value)
-    for i, v in ipairs(tbl) do
-        if v == value then
-            return i
+function TableUtil.IndexOf(tbl, value)
+    for index, currentValue in ipairs(tbl) do
+        if currentValue == value then
+            return index
         end
     end
     return nil
@@ -161,10 +172,10 @@ end
 -- @param tbl table - The table to search
 -- @param value any - The value to find
 -- @return any|nil - The key, or nil if not found
-function LoolibTableUtil.KeyOf(tbl, value)
-    for k, v in pairs(tbl) do
-        if v == value then
-            return k
+function TableUtil.KeyOf(tbl, value)
+    for key, currentValue in pairs(tbl) do
+        if currentValue == value then
+            return key
         end
     end
     return nil
@@ -178,19 +189,19 @@ end
 -- @param tbl table - The table to filter
 -- @param predicate function - Function(value, key) -> boolean
 -- @return table - A new table with matching elements
-function LoolibTableUtil.Filter(tbl, predicate)
+function TableUtil.Filter(tbl, predicate)
     local result = {}
 
-    if LoolibTableUtil.IsArray(tbl) then
-        for i, v in ipairs(tbl) do
-            if predicate(v, i) then
-                result[#result + 1] = v
+    if TableUtil.IsArray(tbl) then
+        for index, value in ipairs(tbl) do
+            if predicate(value, index) then
+                result[#result + 1] = value
             end
         end
     else
-        for k, v in pairs(tbl) do
-            if predicate(v, k) then
-                result[k] = v
+        for key, value in pairs(tbl) do
+            if predicate(value, key) then
+                result[key] = value
             end
         end
     end
@@ -202,16 +213,16 @@ end
 -- @param tbl table - The table to map
 -- @param transform function - Function(value, key) -> newValue
 -- @return table - A new table with transformed values
-function LoolibTableUtil.Map(tbl, transform)
+function TableUtil.Map(tbl, transform)
     local result = {}
 
-    if LoolibTableUtil.IsArray(tbl) then
-        for i, v in ipairs(tbl) do
-            result[i] = transform(v, i)
+    if TableUtil.IsArray(tbl) then
+        for index, value in ipairs(tbl) do
+            result[index] = transform(value, index)
         end
     else
-        for k, v in pairs(tbl) do
-            result[k] = transform(v, k)
+        for key, value in pairs(tbl) do
+            result[key] = transform(value, key)
         end
     end
 
@@ -223,11 +234,11 @@ end
 -- @param reducer function - Function(accumulator, value, key) -> newAccumulator
 -- @param initial any - The initial accumulator value
 -- @return any - The final accumulated value
-function LoolibTableUtil.Reduce(tbl, reducer, initial)
+function TableUtil.Reduce(tbl, reducer, initial)
     local accumulator = initial
 
-    for k, v in pairs(tbl) do
-        accumulator = reducer(accumulator, v, k)
+    for key, value in pairs(tbl) do
+        accumulator = reducer(accumulator, value, key)
     end
 
     return accumulator
@@ -237,10 +248,10 @@ end
 -- @param tbl table - The table to search
 -- @param predicate function - Function(value, key) -> boolean
 -- @return any, any - The value and key, or nil if not found
-function LoolibTableUtil.Find(tbl, predicate)
-    for k, v in pairs(tbl) do
-        if predicate(v, k) then
-            return v, k
+function TableUtil.Find(tbl, predicate)
+    for key, value in pairs(tbl) do
+        if predicate(value, key) then
+            return value, key
         end
     end
     return nil, nil
@@ -250,9 +261,9 @@ end
 -- @param tbl table - The table to check
 -- @param predicate function - Function(value, key) -> boolean
 -- @return boolean
-function LoolibTableUtil.Every(tbl, predicate)
-    for k, v in pairs(tbl) do
-        if not predicate(v, k) then
+function TableUtil.Every(tbl, predicate)
+    for key, value in pairs(tbl) do
+        if not predicate(value, key) then
             return false
         end
     end
@@ -263,9 +274,9 @@ end
 -- @param tbl table - The table to check
 -- @param predicate function - Function(value, key) -> boolean
 -- @return boolean
-function LoolibTableUtil.Some(tbl, predicate)
-    for k, v in pairs(tbl) do
-        if predicate(v, k) then
+function TableUtil.Some(tbl, predicate)
+    for key, value in pairs(tbl) do
+        if predicate(value, key) then
             return true
         end
     end
@@ -275,9 +286,9 @@ end
 --- Execute a function for each element
 -- @param tbl table - The table to iterate
 -- @param func function - Function(value, key)
-function LoolibTableUtil.ForEach(tbl, func)
-    for k, v in pairs(tbl) do
-        func(v, k)
+function TableUtil.ForEach(tbl, func)
+    for key, value in pairs(tbl) do
+        func(value, key)
     end
 end
 
@@ -288,10 +299,10 @@ end
 --- Get all keys from a table
 -- @param tbl table - The table
 -- @return table - An array of keys
-function LoolibTableUtil.Keys(tbl)
+function TableUtil.Keys(tbl)
     local keys = {}
-    for k in pairs(tbl) do
-        keys[#keys + 1] = k
+    for key in pairs(tbl) do
+        keys[#keys + 1] = key
     end
     return keys
 end
@@ -299,10 +310,10 @@ end
 --- Get all values from a table
 -- @param tbl table - The table
 -- @return table - An array of values
-function LoolibTableUtil.Values(tbl)
+function TableUtil.Values(tbl)
     local values = {}
-    for _, v in pairs(tbl) do
-        values[#values + 1] = v
+    for _, value in pairs(tbl) do
+        values[#values + 1] = value
     end
     return values
 end
@@ -310,10 +321,10 @@ end
 --- Invert a table (swap keys and values)
 -- @param tbl table - The table to invert
 -- @return table - A new table with keys and values swapped
-function LoolibTableUtil.Invert(tbl)
+function TableUtil.Invert(tbl)
     local inverted = {}
-    for k, v in pairs(tbl) do
-        inverted[v] = k
+    for key, value in pairs(tbl) do
+        inverted[value] = key
     end
     return inverted
 end
@@ -326,10 +337,10 @@ end
 -- @param tbl table - The array to modify
 -- @param value any - The value to remove
 -- @return boolean - True if an element was removed
-function LoolibTableUtil.RemoveByValue(tbl, value)
-    local index = LoolibTableUtil.IndexOf(tbl, value)
+function TableUtil.RemoveByValue(tbl, value)
+    local index = TableUtil.IndexOf(tbl, value)
     if index then
-        table.remove(tbl, index)
+        tremove(tbl, index)
         return true
     end
     return false
@@ -340,9 +351,9 @@ end
 -- @param position number - The position to insert at
 -- @param source table - The source array to insert
 -- @return table - The modified target array
-function LoolibTableUtil.InsertRange(target, position, source)
-    for i = #source, 1, -1 do
-        table.insert(target, position, source[i])
+function TableUtil.InsertRange(target, position, source)
+    for index = #source, 1, -1 do
+        tinsert(target, position, source[index])
     end
     return target
 end
@@ -351,9 +362,9 @@ end
 -- @param target table - The target array
 -- @param source table - The source array to append
 -- @return table - The modified target array
-function LoolibTableUtil.Append(target, source)
-    for i = 1, #source do
-        target[#target + 1] = source[i]
+function TableUtil.Append(target, source)
+    for index = 1, #source do
+        target[#target + 1] = source[index]
     end
     return target
 end
@@ -361,10 +372,10 @@ end
 --- Reverse an array
 -- @param tbl table - The array to reverse
 -- @return table - A new reversed array
-function LoolibTableUtil.Reverse(tbl)
+function TableUtil.Reverse(tbl)
     local reversed = {}
-    for i = #tbl, 1, -1 do
-        reversed[#reversed + 1] = tbl[i]
+    for index = #tbl, 1, -1 do
+        reversed[#reversed + 1] = tbl[index]
     end
     return reversed
 end
@@ -374,11 +385,11 @@ end
 -- @param startIndex number - The start index (inclusive)
 -- @param endIndex number - The end index (inclusive, optional)
 -- @return table - A new array slice
-function LoolibTableUtil.Slice(tbl, startIndex, endIndex)
+function TableUtil.Slice(tbl, startIndex, endIndex)
     endIndex = endIndex or #tbl
     local slice = {}
-    for i = startIndex, endIndex do
-        slice[#slice + 1] = tbl[i]
+    for index = startIndex, endIndex do
+        slice[#slice + 1] = tbl[index]
     end
     return slice
 end
@@ -391,19 +402,19 @@ end
 -- @param a table - First table
 -- @param b table - Second table
 -- @return boolean
-function LoolibTableUtil.Equals(a, b)
+function TableUtil.Equals(a, b)
     if type(a) ~= "table" or type(b) ~= "table" then
         return a == b
     end
 
-    for k, v in pairs(a) do
-        if b[k] ~= v then
+    for key, value in pairs(a) do
+        if b[key] ~= value then
             return false
         end
     end
 
-    for k in pairs(b) do
-        if a[k] == nil then
+    for key in pairs(b) do
+        if a[key] == nil then
             return false
         end
     end
@@ -416,7 +427,7 @@ end
 -- @param b table - Second table
 -- @param seen table - Internal tracking for circular references
 -- @return boolean
-function LoolibTableUtil.DeepEquals(a, b, seen)
+function TableUtil.DeepEquals(a, b, seen)
     if type(a) ~= "table" or type(b) ~= "table" then
         return a == b
     end
@@ -427,14 +438,14 @@ function LoolibTableUtil.DeepEquals(a, b, seen)
     end
     seen[a] = b
 
-    for k, v in pairs(a) do
-        if not LoolibTableUtil.DeepEquals(v, b[k], seen) then
+    for key, value in pairs(a) do
+        if not TableUtil.DeepEquals(value, b[key], seen) then
             return false
         end
     end
 
-    for k in pairs(b) do
-        if a[k] == nil then
+    for key in pairs(b) do
+        if a[key] == nil then
             return false
         end
     end
@@ -446,4 +457,6 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-Loolib:RegisterModule("TableUtil", LoolibTableUtil)
+Loolib.TableUtil = TableUtil
+
+Loolib:RegisterModule("Core.TableUtil", TableUtil)

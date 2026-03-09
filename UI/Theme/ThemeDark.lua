@@ -6,6 +6,9 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local Theme = Loolib.Theme or Loolib:GetOrCreateModule("Theme")
+local ThemeManager = assert(Loolib.ThemeManager or (Theme.Manager and Theme.Manager.Manager), "Loolib.ThemeManager is required for ThemeDark")
+local Backdrop = assert(Loolib.Backdrop or Theme.Backdrop, "Loolib.Backdrop is required for ThemeDark")
 
 --[[--------------------------------------------------------------------
     Dark Theme Definition
@@ -13,7 +16,7 @@ local Loolib = LibStub("Loolib")
     Inherits most values from Default, overrides colors and some settings.
 ----------------------------------------------------------------------]]
 
-LoolibThemeDark = {
+local ThemeDark = {
     name = "Dark",
     description = "Darker, low-contrast theme",
 
@@ -94,11 +97,11 @@ LoolibThemeDark = {
         Backdrops - Use flat for cleaner dark look
     ------------------------------------------------------------------]]
     backdrops = {
-        dialog = LoolibBackdrop.Flat,
-        tooltip = LoolibBackdrop.Flat,
-        panel = LoolibBackdrop.Flat,
-        flat = LoolibBackdrop.Flat,
-        border = LoolibBackdrop.TransparentBorder,
+        dialog = Backdrop.Flat,
+        tooltip = Backdrop.Flat,
+        panel = Backdrop.Flat,
+        flat = Backdrop.Flat,
+        border = Backdrop.TransparentBorder,
     },
 
     --[[----------------------------------------------------------------
@@ -273,4 +276,7 @@ LoolibThemeDark = {
     Register the Dark Theme
 ----------------------------------------------------------------------]]
 
-LoolibThemeManager:RegisterTheme("Dark", LoolibThemeDark)
+Theme.Dark = ThemeDark
+ThemeManager:RegisterTheme("Dark", ThemeDark)
+
+Loolib:RegisterModule("Theme.Dark", ThemeDark)

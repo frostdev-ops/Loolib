@@ -39,7 +39,7 @@ local Loolib = LibStub("Loolib")
 ---@field acceptedTypes table<string, boolean> Optional type-based filtering
 ---@field _isHovered boolean Internal hover state
 ---@field _highlightTexture Texture Internal highlight texture
-LoolibDropTargetMixin = {}
+local LoolibDropTargetMixin = {}
 
 --[[--------------------------------------------------------------------
     INITIALIZATION
@@ -362,4 +362,4 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-Loolib:RegisterModule("DropTargetMixin", LoolibDropTargetMixin)
+Loolib:RegisterModule("DragDrop.DropTargetMixin", LoolibDropTargetMixin)

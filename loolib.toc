@@ -2,7 +2,7 @@
 ## Title: Loolib
 ## Notes: Comprehensive addon library for WoW 12.0+ (Midnight expansion)
 ## Author: James Kueller
-## Version: 1.1.5
+## Version: 2.0.0
 ## X-Category: Library
 ## X-License: MIT
 ## SavedVariables: LoolibRecentColors
@@ -21,8 +21,8 @@ Core\TableUtil.lua
 Core\FunctionUtil.lua
 Core\Constants.lua
 Core\Timer.lua
-Core\TempTable.lua
 Core\Addon.lua
+Core\Compat.lua
 
 # ============================================================
 # Events - Callback and event system
@@ -33,122 +33,17 @@ Events\EventFrame.lua
 Events\Bucket.lua
 
 # ============================================================
-# UI Core - Frame and region utilities
-# ============================================================
-UI\Core\AnchorUtil.lua
-UI\Core\FrameUtil.lua
-UI\Core\RegionUtil.lua
-UI\Core\WindowUtil.lua
-
-# ============================================================
-# UI Pool - Object and frame pooling
-# ============================================================
-UI\Pool\PoolResetters.lua
-UI\Pool\ObjectPool.lua
-UI\Pool\FramePool.lua
-UI\Pool\PoolCollection.lua
-
-# ============================================================
-# UI Theme - Theme system
-# ============================================================
-UI\Theme\ThemeManager.lua
-UI\Theme\ThemeDefault.lua
-UI\Theme\ThemeDark.lua
-UI\Theme\ThemeMinimal.lua
-
-# ============================================================
-# UI Appearance - Skin and appearance management
-# ============================================================
-UI\Appearance.lua
-
-# ============================================================
-# UI Factory - Frame creation
-# ============================================================
-UI\Factory\FrameFactory.lua
-UI\Factory\WidgetBuilder.lua
-
-# ============================================================
-# UI Layout - Layout managers
-# ============================================================
-UI\Layout\LayoutBase.lua
-UI\Layout\VerticalLayout.lua
-UI\Layout\HorizontalLayout.lua
-UI\Layout\GridLayout.lua
-UI\Layout\FlowLayout.lua
-UI\Layout\LayoutBuilder.lua
-
-# ============================================================
-# Comm - Communication and Serialization
-# ============================================================
-Comm\Compressor.lua
-Comm\Serializer.lua
-Comm\AddonMessage.lua
-
-# ============================================================
 # Data - Data persistence and providers
 # ============================================================
 Data\DataProvider.lua
 Data\SavedVariables.lua
-Data\ProfileManager.lua
-Data\Migration.lua
 
 # ============================================================
-# UI Templates - Lua-based template initialization
+# Comm - Communication and Serialization
 # ============================================================
-UI\Templates\Templates.lua
-
-# ============================================================
-# UI Widgets - Fluent widget API
-# ============================================================
-UI\Widgets\WidgetMod.lua
-UI\Widgets\EnhancedSlider.lua
-UI\Widgets\PopupMenu.lua
-UI\Widgets\EnhancedDropdown.lua
-
-# ============================================================
-# UI DragDrop - Drag and drop functionality
-# ============================================================
-UI\DragDrop\DragContext.lua
-UI\DragDrop\DraggableMixin.lua
-UI\DragDrop\DropTargetMixin.lua
-UI\DragDrop\DragGhost.lua
-UI\DragDrop\ReorderableMixin.lua
-
-# ============================================================
-# UI Note - Conditional note markup system
-# ============================================================
-UI\Note\NoteParser.lua
-UI\Note\NoteMarkup.lua
-UI\Note\NoteRenderer.lua
-UI\Note\NoteTimer.lua
-UI\Note\NoteFrame.lua
-
-# ============================================================
-# UI Canvas - Sketch/drawing system
-# ============================================================
-UI\Canvas\CanvasElement.lua
-UI\Canvas\CanvasBrush.lua
-UI\Canvas\CanvasShape.lua
-UI\Canvas\CanvasText.lua
-UI\Canvas\CanvasIcon.lua
-UI\Canvas\CanvasImage.lua
-UI\Canvas\CanvasGroup.lua
-UI\Canvas\CanvasSelection.lua
-UI\Canvas\CanvasZoom.lua
-UI\Canvas\CanvasHistory.lua
-UI\Canvas\CanvasSync.lua
-UI\Canvas\CanvasToolbar.lua
-UI\Canvas\CanvasFrame.lua
-
-# ============================================================
-# UI Templates - Component implementations
-# ============================================================
-UI\Templates\ScrollableList.lua
-UI\Templates\TabbedPanel.lua
-UI\Templates\Tooltip.lua
-UI\Templates\Dialog.lua
-UI\Templates\Dropdown.lua
-UI\Templates\ColorSwatch.lua
+Comm\Serializer.lua
+Comm\Compressor.lua
+Comm\AddonMessage.lua
 
 # ============================================================
 # Config - Configuration system (AceConfig equivalent)
@@ -161,14 +56,11 @@ Config\ConfigDialog.lua
 Config\Config.lua
 
 # ============================================================
+# UI Templates - Component implementations
+# ============================================================
+UI\Templates\Dialog.lua
+
+# ============================================================
 # Utils - Utility modules
 # ============================================================
 Utils\SecretUtil.lua
-Utils\Transmog.lua
-
-# ============================================================
-# Debug - Debugging and inspection tools
-# ============================================================
-Debug\Logger.lua
-Debug\ErrorHandler.lua
-Debug\Dump.lua

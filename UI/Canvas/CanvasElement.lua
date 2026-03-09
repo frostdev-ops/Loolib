@@ -90,7 +90,7 @@ LOOLIB_CANVAS_COLORS = {
 --- Base mixin for all canvas elements
 --- Provides position, color, grouping, locking, and serialization
 --- @class LoolibCanvasElementMixin
-LoolibCanvasElementMixin = {}
+local LoolibCanvasElementMixin = {}
 
 --- Initialize element with default values
 --- Called automatically when element is created
@@ -420,7 +420,7 @@ end
 --- @return number r Red component (0-1)
 --- @return number g Green component (0-1)
 --- @return number b Blue component (0-1)
-function LoolibGetCanvasColor(colorIndex)
+local function LoolibGetCanvasColor(colorIndex)
     local color = LOOLIB_CANVAS_COLORS[colorIndex]
     if color then
         return color[1], color[2], color[3]
@@ -435,7 +435,7 @@ end
 --- @return number g Green component (0-1)
 --- @return number b Blue component (0-1)
 --- @return number a Alpha component (0-1)
-function LoolibGetCanvasColorRGBA(colorIndex, alpha)
+local function LoolibGetCanvasColorRGBA(colorIndex, alpha)
     local r, g, b = LoolibGetCanvasColor(colorIndex)
     return r, g, b, alpha or 1.0
 end
@@ -445,7 +445,7 @@ end
 --- @param g number Green component (0-1)
 --- @param b number Blue component (0-1)
 --- @return number Closest color index
-function LoolibFindClosestCanvasColor(r, g, b)
+local function LoolibFindClosestCanvasColor(r, g, b)
     local minDist = math.huge
     local closestIndex = 4  -- Default red
 
@@ -471,7 +471,7 @@ end
 --- Create a new canvas element with mixin applied
 --- @param elementType number Element type from LOOLIB_CANVAS_ELEMENT_TYPES
 --- @return table New canvas element
-function LoolibCreateCanvasElement(elementType)
+local function LoolibCreateCanvasElement(elementType)
     local element = {}
     LoolibMixin(element, LoolibCanvasElementMixin)
     element:OnLoad()

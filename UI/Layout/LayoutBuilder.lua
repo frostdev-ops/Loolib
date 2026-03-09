@@ -16,6 +16,13 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for LayoutBuilder")
+local CreateVerticalLayout = assert(Loolib.CreateVerticalLayout, "Loolib.CreateVerticalLayout is required for LayoutBuilder")
+local CreateHorizontalLayout = assert(Loolib.CreateHorizontalLayout, "Loolib.CreateHorizontalLayout is required for LayoutBuilder")
+local CreateGridLayout = assert(Loolib.CreateGridLayout, "Loolib.CreateGridLayout is required for LayoutBuilder")
+local CreateFlowLayout = assert(Loolib.CreateFlowLayout, "Loolib.CreateFlowLayout is required for LayoutBuilder")
+local Layout = Loolib.Layout or Loolib:GetOrCreateModule("Layout")
+local LayoutBuilderModule = Layout.LayoutBuilder or Loolib:GetModule("Layout.LayoutBuilder") or {}
 
 --[[--------------------------------------------------------------------
     LoolibLayoutBuilderMixin
@@ -23,11 +30,11 @@ local Loolib = LibStub("Loolib")
     Fluent builder for creating layout instances.
 ----------------------------------------------------------------------]]
 
-LoolibLayoutBuilderMixin = {}
+local LayoutBuilderMixin = LayoutBuilderModule.Mixin or {}
 
 --- Initialize the layout builder
 -- @param container Frame - Container frame for the layout
-function LoolibLayoutBuilderMixin:Init(container)
+function LayoutBuilderMixin:Init(container)
     self.container = container
     self.layoutType = "VERTICAL"
     self.config = {}
@@ -39,14 +46,14 @@ end
 
 --- Create a vertical layout
 -- @return self
-function LoolibLayoutBuilderMixin:Vertical()
+function LayoutBuilderMixin:Vertical()
     self.layoutType = "VERTICAL"
     return self
 end
 
 --- Create a horizontal layout
 -- @return self
-function LoolibLayoutBuilderMixin:Horizontal()
+function LayoutBuilderMixin:Horizontal()
     self.layoutType = "HORIZONTAL"
     return self
 end
@@ -54,7 +61,7 @@ end
 --- Create a grid layout
 -- @param columns number - Number of columns
 -- @return self
-function LoolibLayoutBuilderMixin:Grid(columns)
+function LayoutBuilderMixin:Grid(columns)
     self.layoutType = "GRID"
     self.config.columns = columns or 4
     return self
@@ -63,7 +70,7 @@ end
 --- Create a flow layout
 -- @param direction string - "HORIZONTAL" or "VERTICAL" (default HORIZONTAL)
 -- @return self
-function LoolibLayoutBuilderMixin:Flow(direction)
+function LayoutBuilderMixin:Flow(direction)
     self.layoutType = "FLOW"
     self.config.direction = direction or "HORIZONTAL"
     return self
@@ -76,7 +83,7 @@ end
 --- Set spacing between children
 -- @param spacing number - Spacing in pixels
 -- @return self
-function LoolibLayoutBuilderMixin:Spacing(spacing)
+function LayoutBuilderMixin:Spacing(spacing)
     self.config.spacing = spacing
     return self
 end
@@ -84,7 +91,7 @@ end
 --- Set uniform padding
 -- @param padding number - Padding for all sides
 -- @return self
-function LoolibLayoutBuilderMixin:Padding(padding)
+function LayoutBuilderMixin:Padding(padding)
     self.config.padding = padding
     return self
 end
@@ -95,7 +102,7 @@ end
 -- @param top number - Top padding
 -- @param bottom number - Bottom padding
 -- @return self
-function LoolibLayoutBuilderMixin:PaddingEach(left, right, top, bottom)
+function LayoutBuilderMixin:PaddingEach(left, right, top, bottom)
     self.config.paddingLeft = left
     self.config.paddingRight = right or left
     self.config.paddingTop = top or left
@@ -106,7 +113,7 @@ end
 --- Set auto-size behavior
 -- @param autoSize boolean - Whether container should auto-size to content
 -- @return self
-function LoolibLayoutBuilderMixin:AutoSize(autoSize)
+function LayoutBuilderMixin:AutoSize(autoSize)
     self.config.autoSize = autoSize
     return self
 end
@@ -120,7 +127,7 @@ end
 -- For Horizontal: TOP, CENTER, BOTTOM, STRETCH
 -- @param align string
 -- @return self
-function LoolibLayoutBuilderMixin:AlignItems(align)
+function LayoutBuilderMixin:AlignItems(align)
     self.config.alignItems = align
     return self
 end
@@ -129,7 +136,7 @@ end
 -- START, CENTER, END, SPACE_BETWEEN, SPACE_AROUND
 -- @param justify string
 -- @return self
-function LoolibLayoutBuilderMixin:JustifyContent(justify)
+function LayoutBuilderMixin:JustifyContent(justify)
     self.config.justifyContent = justify
     return self
 end
@@ -137,7 +144,7 @@ end
 --- Set layout direction for vertical/horizontal layouts
 -- @param direction string - DOWN/UP for vertical, RIGHT/LEFT for horizontal
 -- @return self
-function LoolibLayoutBuilderMixin:Direction(direction)
+function LayoutBuilderMixin:Direction(direction)
     self.config.direction = direction
     return self
 end
@@ -149,7 +156,7 @@ end
 --- Set number of columns (grid)
 -- @param columns number
 -- @return self
-function LoolibLayoutBuilderMixin:Columns(columns)
+function LayoutBuilderMixin:Columns(columns)
     self.config.columns = columns
     return self
 end
@@ -157,7 +164,7 @@ end
 --- Set number of rows (grid)
 -- @param rows number
 -- @return self
-function LoolibLayoutBuilderMixin:Rows(rows)
+function LayoutBuilderMixin:Rows(rows)
     self.config.rows = rows
     return self
 end
@@ -166,7 +173,7 @@ end
 -- @param width number
 -- @param height number
 -- @return self
-function LoolibLayoutBuilderMixin:CellSize(width, height)
+function LayoutBuilderMixin:CellSize(width, height)
     self.config.cellWidth = width
     self.config.cellHeight = height or width
     return self
@@ -176,7 +183,7 @@ end
 -- @param columnSpacing number
 -- @param rowSpacing number
 -- @return self
-function LoolibLayoutBuilderMixin:CellSpacing(columnSpacing, rowSpacing)
+function LayoutBuilderMixin:CellSpacing(columnSpacing, rowSpacing)
     self.config.columnSpacing = columnSpacing
     self.config.rowSpacing = rowSpacing or columnSpacing
     return self
@@ -185,7 +192,7 @@ end
 --- Set fill direction (grid)
 -- @param direction string - ROW or COLUMN
 -- @return self
-function LoolibLayoutBuilderMixin:FillDirection(direction)
+function LayoutBuilderMixin:FillDirection(direction)
     self.config.fillDirection = direction
     return self
 end
@@ -193,7 +200,7 @@ end
 --- Set whether to resize children to fit cells (grid)
 -- @param resize boolean
 -- @return self
-function LoolibLayoutBuilderMixin:ResizeToFit(resize)
+function LayoutBuilderMixin:ResizeToFit(resize)
     self.config.resizeToFit = resize ~= false
     return self
 end
@@ -205,7 +212,7 @@ end
 --- Set wrap spacing (flow)
 -- @param spacing number - Spacing between wrapped rows/columns
 -- @return self
-function LoolibLayoutBuilderMixin:WrapSpacing(spacing)
+function LayoutBuilderMixin:WrapSpacing(spacing)
     self.config.wrapSpacing = spacing
     return self
 end
@@ -213,7 +220,7 @@ end
 --- Set content alignment (flow)
 -- @param align string - START, CENTER, END
 -- @return self
-function LoolibLayoutBuilderMixin:AlignContent(align)
+function LayoutBuilderMixin:AlignContent(align)
     self.config.alignContent = align
     return self
 end
@@ -224,17 +231,17 @@ end
 
 --- Build and return the layout
 -- @return table - The layout instance
-function LoolibLayoutBuilderMixin:Build()
+function LayoutBuilderMixin:Build()
     local layout
 
     if self.layoutType == "VERTICAL" then
-        layout = CreateLoolibVerticalLayout(self.container, self.config)
+        layout = CreateVerticalLayout(self.container, self.config)
     elseif self.layoutType == "HORIZONTAL" then
-        layout = CreateLoolibHorizontalLayout(self.container, self.config)
+        layout = CreateHorizontalLayout(self.container, self.config)
     elseif self.layoutType == "GRID" then
-        layout = CreateLoolibGridLayout(self.container, self.config)
+        layout = CreateGridLayout(self.container, self.config)
     elseif self.layoutType == "FLOW" then
-        layout = CreateLoolibFlowLayout(self.container, self.config)
+        layout = CreateFlowLayout(self.container, self.config)
     else
         error("LoolibLayoutBuilder: Unknown layout type: " .. tostring(self.layoutType))
     end
@@ -248,7 +255,7 @@ end
 --- Build the layout and add children
 -- @param ... Region - Children to add
 -- @return table - The layout instance
-function LoolibLayoutBuilderMixin:BuildWithChildren(...)
+function LayoutBuilderMixin:BuildWithChildren(...)
     local layout = self:Build()
 
     for i = 1, select("#", ...) do
@@ -266,8 +273,8 @@ end
 --- Create a new layout builder
 -- @param container Frame - Container frame
 -- @return LoolibLayoutBuilderMixin
-function CreateLoolibLayoutBuilder(container)
-    local builder = LoolibCreateFromMixins(LoolibLayoutBuilderMixin)
+local function CreateLayoutBuilder(container)
+    local builder = CreateFromMixins(LayoutBuilderMixin)
     builder:Init(container)
     return builder
 end
@@ -279,29 +286,29 @@ end
 --- UI.Layout() - Entry point for fluent layout creation
 -- @param container Frame - Container frame
 -- @return LoolibLayoutBuilderMixin
-function LoolibLayout(container)
-    return CreateLoolibLayoutBuilder(container)
+local function BuildLayout(container)
+    return CreateLayoutBuilder(container)
 end
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local LayoutBuilderModule = {
-    Mixin = LoolibLayoutBuilderMixin,
-    Create = CreateLoolibLayoutBuilder,
-    Layout = LoolibLayout,
-}
+LayoutBuilderModule.Mixin = LayoutBuilderMixin
+LayoutBuilderModule.Create = CreateLayoutBuilder
+LayoutBuilderModule.Layout = BuildLayout
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.LayoutBuilder = LayoutBuilderModule
-UI.Layout = LoolibLayout
+UI.Layout = BuildLayout
+UI.CreateVerticalLayout = CreateVerticalLayout
+UI.CreateHorizontalLayout = CreateHorizontalLayout
+UI.CreateGridLayout = CreateGridLayout
+UI.CreateFlowLayout = CreateFlowLayout
 
--- Also expose individual layout creation functions
-UI.CreateVerticalLayout = CreateLoolibVerticalLayout
-UI.CreateHorizontalLayout = CreateLoolibHorizontalLayout
-UI.CreateGridLayout = CreateLoolibGridLayout
-UI.CreateFlowLayout = CreateLoolibFlowLayout
+Layout.LayoutBuilder = LayoutBuilderModule
+Loolib.LayoutBuilderMixin = LayoutBuilderMixin
+Loolib.CreateLayoutBuilder = CreateLayoutBuilder
+Loolib.LayoutBuilder = BuildLayout
 
-Loolib:RegisterModule("LayoutBuilder", LayoutBuilderModule)
+Loolib:RegisterModule("Layout.LayoutBuilder", LayoutBuilderModule)

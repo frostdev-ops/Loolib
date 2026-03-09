@@ -1,3 +1,6 @@
+local Loolib = LibStub("Loolib")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
+
 --[[--------------------------------------------------------------------
     Loolib - WoW 12.0+ Addon Library
     Templates - Lua-based template initialization functions
@@ -8,12 +11,12 @@
 ----------------------------------------------------------------------]]
 
 -- Version guard: if a newer or equal version already loaded, bail out
-if _G.LOOLIB_TEMPLATES_VERSION and _G.LOOLIB_TEMPLATES_VERSION >= 1 then
+if Loolib.templatesVersion and Loolib.templatesVersion >= 1 then
     return
 end
-_G.LOOLIB_TEMPLATES_VERSION = 1
+Loolib.templatesVersion = 1
 
-LoolibTemplates = {}
+local LoolibTemplates = {}
 
 --[[--------------------------------------------------------------------
     LoolibPanelTemplate
@@ -328,3 +331,8 @@ function LoolibTemplates.InitInputDialog(frame)
     end)
     frame.EditBox = editBox
 end
+
+UI.Templates = LoolibTemplates
+Loolib.Templates = LoolibTemplates
+
+Loolib:RegisterModule("UI.Templates", LoolibTemplates)

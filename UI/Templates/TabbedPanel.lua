@@ -11,12 +11,18 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibCreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for TabbedPanel")
+local LoolibCallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib.CallbackRegistryMixin is required for TabbedPanel")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for TabbedPanel")
+local LoolibTemplates = assert(Loolib.Templates or (Loolib.UI and Loolib.UI.Templates), "Loolib.Templates is required for TabbedPanel")
+local CreateLoolibObjectPool = assert(Loolib.CreateObjectPool, "Loolib.CreateObjectPool is required for TabbedPanel")
+local LoolibGetResetterForFrameType = assert(Loolib.GetResetterForFrameType, "Loolib.GetResetterForFrameType is required for TabbedPanel")
 
 --[[--------------------------------------------------------------------
     LoolibTabbedPanelMixin
 ----------------------------------------------------------------------]]
 
-LoolibTabbedPanelMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local LoolibTabbedPanelMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
 
 local TABBED_PANEL_EVENTS = {
     "OnTabChanged",
@@ -399,7 +405,7 @@ end
 --- Create a tabbed panel
 -- @param parent Frame - Parent frame
 -- @return Frame - The tabbed panel
-function CreateLoolibTabbedPanel(parent)
+local function CreateLoolibTabbedPanel(parent)
     local panel = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     LoolibTemplates.InitTabbedPanel(panel)
     LoolibMixin(panel, LoolibTabbedPanelMixin)
@@ -411,7 +417,7 @@ end
     Builder Pattern
 ----------------------------------------------------------------------]]
 
-LoolibTabbedPanelBuilderMixin = {}
+local LoolibTabbedPanelBuilderMixin = {}
 
 function LoolibTabbedPanelBuilderMixin:Init(parent)
     self.parent = parent
@@ -452,7 +458,7 @@ function LoolibTabbedPanelBuilderMixin:Build()
     return panel
 end
 
-function LoolibTabbedPanel(parent)
+local function LoolibTabbedPanel(parent)
     local builder = LoolibCreateFromMixins(LoolibTabbedPanelBuilderMixin)
     builder:Init(parent)
     return builder
@@ -469,8 +475,8 @@ local TabbedPanelModule = {
     Builder = LoolibTabbedPanel,
 }
 
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.TabbedPanel = TabbedPanelModule
 UI.CreateTabbedPanel = CreateLoolibTabbedPanel
 
-Loolib:RegisterModule("TabbedPanel", TabbedPanelModule)
+Loolib:RegisterModule("UI.TabbedPanel", TabbedPanelModule)

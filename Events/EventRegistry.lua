@@ -9,16 +9,34 @@
 
 local Loolib = LibStub("Loolib")
 
+local Events = Loolib.Events or Loolib:GetOrCreateModule("Events")
+Loolib.Events = Events
+
+-- FIX(critical-01): Use Loolib.CreateFromMixins directly instead of unstable "Mixin" module lookup
+local CallbackRegistryModule = Events.CallbackRegistry
+    or Loolib:GetModule("Events.CallbackRegistry")
+    or Loolib:GetModule("CallbackRegistry")
+
+assert(Loolib.CreateFromMixins, "Loolib/Core/Mixin.lua must be loaded before EventRegistry")
+assert(CallbackRegistryModule and CallbackRegistryModule.Mixin, "Loolib/Events/CallbackRegistry.lua must be loaded before EventRegistry")
+
+local CallbackRegistryMixin = Events.CallbackRegistryMixin or CallbackRegistryModule.Mixin
+local CreateFromMixins = Loolib.CreateFromMixins
+local CreateFrame = CreateFrame
+local ipairs = ipairs
+local pairs = pairs
+local unpack = unpack or table.unpack
+
 --[[--------------------------------------------------------------------
-    LoolibEventRegistryMixin
+    EventRegistryMixin
 
     A mixin for handling WoW game events with callback support.
 ----------------------------------------------------------------------]]
 
-LoolibEventRegistryMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local EventRegistryMixin = CreateFromMixins(CallbackRegistryMixin)
 
-function LoolibEventRegistryMixin:Init()
-    LoolibCallbackRegistryMixin.OnLoad(self)
+function EventRegistryMixin:Init()
+    CallbackRegistryMixin.OnLoad(self)
 
     -- Allow any WoW event to be used
     self:SetUndefinedEventsAllowed(true)
@@ -40,7 +58,7 @@ end
 --- Called when a WoW event fires
 -- @param event string - The event name
 -- @param ... - Event arguments
-function LoolibEventRegistryMixin:OnEvent(event, ...)
+function EventRegistryMixin:OnEvent(event, ...)
     self:TriggerEvent(event, ...)
 end
 
@@ -54,12 +72,25 @@ end
 -- @param owner any - The owner for unregistration
 -- @param ... - Optional captured arguments
 -- @return any - The owner
-function LoolibEventRegistryMixin:RegisterEventCallback(event, callback, owner, ...)
-    -- Register with the callback system
+function EventRegistryMixin:RegisterEventCallback(event, callback, owner, ...)
+    -- FIX(Area5-1): RegisterCallback internally calls UnregisterCallback first for the
+    -- same (event, owner). Only increment the ref count when this is a genuinely new
+    -- registration, not a replacement, to prevent count inflation that leaks WoW events.
+    local isReplacement = false
+    if owner ~= nil then
+        for _, callbackTable in pairs(self.callbackTables or {}) do
+            if callbackTable[event] and callbackTable[event][owner] then
+                isReplacement = true
+                break
+            end
+        end
+    end
+
     owner = self:RegisterCallback(event, callback, owner, ...)
 
-    -- Track this event
-    self.registeredEvents[event] = (self.registeredEvents[event] or 0) + 1
+    if not isReplacement then
+        self.registeredEvents[event] = (self.registeredEvents[event] or 0) + 1
+    end
 
     -- Register with WoW if this is the first callback for this event
     if self.registeredEvents[event] == 1 then
@@ -73,7 +104,7 @@ end
 -- @param event string - The WoW event name
 -- @param owner any - The owner that registered the callback
 -- @return boolean - True if a callback was removed
-function LoolibEventRegistryMixin:UnregisterEventCallback(event, owner)
+function EventRegistryMixin:UnregisterEventCallback(event, owner)
     local removed = self:UnregisterCallback(event, owner)
 
     if removed then
@@ -95,7 +126,7 @@ end
 -- @param owner any - The owner
 -- @param ... - Optional captured arguments
 -- @return table - Handle with Unregister() method
-function LoolibEventRegistryMixin:RegisterEventCallbackWithHandle(event, callback, owner, ...)
+function EventRegistryMixin:RegisterEventCallbackWithHandle(event, callback, owner, ...)
     owner = self:RegisterEventCallback(event, callback, owner, ...)
 
     local registry = self
@@ -108,14 +139,12 @@ end
 
 --- Unregister all event callbacks for an owner
 -- @param owner any - The owner
-function LoolibEventRegistryMixin:UnregisterAllEventsForOwner(owner)
-    -- Get events this owner is registered for
+function EventRegistryMixin:UnregisterAllEventsForOwner(owner)
     local eventsToCheck = {}
     for event in pairs(self.registeredEvents) do
         eventsToCheck[#eventsToCheck + 1] = event
     end
 
-    -- Unregister from each event
     for _, event in ipairs(eventsToCheck) do
         self:UnregisterEventCallback(event, owner)
     end
@@ -128,20 +157,20 @@ end
 --- Check if an event is currently being listened for
 -- @param event string - The WoW event name
 -- @return boolean
-function LoolibEventRegistryMixin:IsEventRegistered(event)
+function EventRegistryMixin:IsEventRegistered(event)
     return self.registeredEvents[event] and self.registeredEvents[event] > 0
 end
 
 --- Get the count of callbacks for a specific event
 -- @param event string - The WoW event name
 -- @return number
-function LoolibEventRegistryMixin:GetEventCallbackCount(event)
+function EventRegistryMixin:GetEventCallbackCount(event)
     return self.registeredEvents[event] or 0
 end
 
 --- Get all currently registered WoW events
 -- @return table - Array of event names
-function LoolibEventRegistryMixin:GetAllRegisteredEvents()
+function EventRegistryMixin:GetAllRegisteredEvents()
     local events = {}
     for event in pairs(self.registeredEvents) do
         events[#events + 1] = event
@@ -159,17 +188,13 @@ end
 -- @param owner any - The owner
 -- @param ... - Optional captured arguments
 -- @return any - The owner
-function LoolibEventRegistryMixin:RegisterOneShotEvent(event, callback, owner, ...)
+function EventRegistryMixin:RegisterOneShotEvent(event, callback, owner, ...)
     local registry = self
     local capturedArgs = {...}
-    local capturedOwner = owner
 
-    -- Create a wrapper that unregisters after firing
     local wrapper = function(actualOwner, ...)
-        -- Unregister first (in case callback errors)
         registry:UnregisterEventCallback(event, actualOwner)
 
-        -- Call the original callback
         if #capturedArgs > 0 then
             callback(actualOwner, unpack(capturedArgs), ...)
         else
@@ -190,7 +215,7 @@ end
 -- @param callback function - The callback function (called if filter returns true)
 -- @param owner any - The owner
 -- @return any - The owner
-function LoolibEventRegistryMixin:RegisterFilteredEvent(event, filter, callback, owner)
+function EventRegistryMixin:RegisterFilteredEvent(event, filter, callback, owner)
     local wrapper = function(actualOwner, ...)
         if filter(actualOwner, ...) then
             callback(actualOwner, ...)
@@ -204,21 +229,24 @@ end
     Singleton Instance
 ----------------------------------------------------------------------]]
 
--- Create the global singleton
-LoolibEventRegistry = LoolibCreateFromMixins(LoolibEventRegistryMixin)
-LoolibEventRegistry:Init()
+local EventRegistry = CreateFromMixins(EventRegistryMixin)
+EventRegistry:Init()
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
 local EventRegistryModule = {
-    Mixin = LoolibEventRegistryMixin,
-    Registry = LoolibEventRegistry,
+    Mixin = EventRegistryMixin,
+    Registry = EventRegistry,
 }
 
-Loolib:RegisterModule("EventRegistry", EventRegistryModule)
+Loolib.Events.EventRegistry = EventRegistryModule
+Loolib.Events.EventRegistryMixin = EventRegistryMixin
+Loolib.Events.Registry = EventRegistry
 
--- Also register the singleton for easy access
-local Events = Loolib:GetOrCreateModule("Events")
-Events.Registry = LoolibEventRegistry
+Loolib.EventRegistryMixin = EventRegistryMixin
+Loolib.EventRegistry = EventRegistry
+
+Loolib:RegisterModule("EventRegistry", EventRegistryModule)
+Loolib:RegisterModule("Events.EventRegistry", EventRegistryModule)

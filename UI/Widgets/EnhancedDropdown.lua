@@ -16,12 +16,13 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for EnhancedDropdown")
 
 --[[--------------------------------------------------------------------
     DROPDOWN OPTION STRUCTURE
 ----------------------------------------------------------------------]]
 --[[
-DropdownOption = {
+Example DropdownOption structure: {
     text = "Label",               -- Display text (required)
     value = any,                  -- Value to store/return
     icon = "path" or atlasName,   -- Left-side icon
@@ -50,7 +51,7 @@ DropdownOption = {
 ----------------------------------------------------------------------]]
 
 ---@class LoolibEnhancedDropdownMixin
-LoolibEnhancedDropdownMixin = {}
+local LoolibEnhancedDropdownMixin = {}
 
 -- ============================================================
 -- INITIALIZATION
@@ -674,7 +675,7 @@ end
 ---@param parent Frame
 ---@param name string?
 ---@return Frame
-function LoolibCreateEnhancedDropdown(parent, name)
+local function LoolibCreateEnhancedDropdown(parent, name)
     local dropdown = CreateFrame("Button", name, parent, "BackdropTemplate")
     LoolibMixin(dropdown, LoolibEnhancedDropdownMixin)
 
@@ -691,7 +692,7 @@ function LoolibCreateEnhancedDropdown(parent, name)
 end
 
 -- Register with Loolib
-Loolib:RegisterModule("EnhancedDropdown", {
+Loolib:RegisterModule("Widgets.EnhancedDropdown", {
     Mixin = LoolibEnhancedDropdownMixin,
     Create = LoolibCreateEnhancedDropdown,
 })

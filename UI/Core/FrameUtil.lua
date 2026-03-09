@@ -4,8 +4,11 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
-
-LoolibFrameUtil = {}
+local Mixin = assert(Loolib.Mixin, "Loolib.Mixin is required for FrameUtil")
+local ReflectScriptHandlers = assert(Loolib.ReflectScriptHandlers, "Loolib.ReflectScriptHandlers is required for FrameUtil")
+local Backdrop = assert(Loolib.Backdrop or (Loolib.Theme and Loolib.Theme.Backdrop), "Loolib.Backdrop is required for FrameUtil")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
+local FrameUtil = UI.FrameUtil or Loolib:GetModule("UI.FrameUtil") or {}
 
 --[[--------------------------------------------------------------------
     Frame Creation
@@ -18,11 +21,11 @@ LoolibFrameUtil = {}
 -- @param template string - Optional XML template
 -- @param ... - Mixins to apply
 -- @return Frame - The created frame
-function LoolibFrameUtil.CreateFrameWithMixins(frameType, name, parent, template, ...)
+function FrameUtil.CreateFrameWithMixins(frameType, name, parent, template, ...)
     local frame = CreateFrame(frameType, name, parent, template)
 
-    LoolibMixin(frame, ...)
-    LoolibReflectScriptHandlers(frame)
+    Mixin(frame, ...)
+    ReflectScriptHandlers(frame)
 
     if frame.OnLoad then
         frame:OnLoad()
@@ -35,10 +38,10 @@ end
 -- @param parent Frame - Parent frame
 -- @param backdrop table - Backdrop info (or use default)
 -- @return Frame - The created frame
-function LoolibFrameUtil.CreateBackdropFrame(parent, backdrop)
+function FrameUtil.CreateBackdropFrame(parent, backdrop)
     local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
 
-    backdrop = backdrop or LoolibBackdrop.Panel
+    backdrop = backdrop or Backdrop.Panel
     if backdrop then
         frame:SetBackdrop(backdrop)
         frame:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
@@ -69,7 +72,7 @@ local STANDARD_SCRIPT_HANDLERS = {
 
 --- Get the list of standard script handler names
 -- @return table - Array of script handler names
-function LoolibFrameUtil.GetStandardScriptHandlers()
+function FrameUtil.GetStandardScriptHandlers()
     return STANDARD_SCRIPT_HANDLERS
 end
 
@@ -77,7 +80,7 @@ end
 -- @param frame Frame - The frame to check
 -- @param scriptName string - The script name
 -- @return boolean
-function LoolibFrameUtil.SupportsScript(frame, scriptName)
+function FrameUtil.SupportsScript(frame, scriptName)
     return frame.HasScript and frame:HasScript(scriptName)
 end
 
@@ -85,8 +88,8 @@ end
 -- @param frame Frame - The frame
 -- @param scriptName string - The script name
 -- @param handler function - The handler to add
-function LoolibFrameUtil.HookScript(frame, scriptName, handler)
-    if LoolibFrameUtil.SupportsScript(frame, scriptName) then
+function FrameUtil.HookScript(frame, scriptName, handler)
+    if FrameUtil.SupportsScript(frame, scriptName) then
         frame:HookScript(scriptName, handler)
     end
 end
@@ -95,8 +98,8 @@ end
 -- @param frame Frame - The frame
 -- @param scriptName string - The script name
 -- @param handler function - The handler (or nil to clear)
-function LoolibFrameUtil.SetScript(frame, scriptName, handler)
-    if LoolibFrameUtil.SupportsScript(frame, scriptName) then
+function FrameUtil.SetScript(frame, scriptName, handler)
+    if FrameUtil.SupportsScript(frame, scriptName) then
         frame:SetScript(scriptName, handler)
     end
 end
@@ -108,7 +111,7 @@ end
 --- Make a frame movable by dragging
 -- @param frame Frame - The frame to make movable
 -- @param clampToScreen boolean - Whether to clamp to screen (default true)
-function LoolibFrameUtil.MakeMovable(frame, clampToScreen)
+function FrameUtil.MakeMovable(frame, clampToScreen)
     frame:SetMovable(true)
     frame:EnableMouse(true)
     frame:RegisterForDrag("LeftButton")
@@ -129,7 +132,7 @@ end
 -- @param minHeight number - Minimum height
 -- @param maxWidth number - Maximum width (optional)
 -- @param maxHeight number - Maximum height (optional)
-function LoolibFrameUtil.MakeResizable(frame, minWidth, minHeight, maxWidth, maxHeight)
+function FrameUtil.MakeResizable(frame, minWidth, minHeight, maxWidth, maxHeight)
     frame:SetResizable(true)
 
     if minWidth and minHeight then
@@ -159,7 +162,7 @@ end
 -- @param frame Frame - The frame
 -- @param onClose function - Optional close callback
 -- @return Button - The close button
-function LoolibFrameUtil.AddCloseButton(frame, onClose)
+function FrameUtil.AddCloseButton(frame, onClose)
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", -3, -3)
 
@@ -179,7 +182,7 @@ end
 -- @param title string - The title text
 -- @param fontObject string - Font object name (default "GameFontNormal")
 -- @return FontString - The title font string
-function LoolibFrameUtil.AddTitle(frame, title, fontObject)
+function FrameUtil.AddTitle(frame, title, fontObject)
     local titleText = frame:CreateFontString(nil, "OVERLAY", fontObject or "GameFontNormal")
     titleText:SetPoint("TOP", 0, -10)
     titleText:SetText(title)
@@ -195,7 +198,7 @@ end
 --- Check if a frame is currently visible on screen
 -- @param frame Frame - The frame to check
 -- @return boolean
-function LoolibFrameUtil.IsVisibleOnScreen(frame)
+function FrameUtil.IsVisibleOnScreen(frame)
     if not frame:IsShown() then
         return false
     end
@@ -215,7 +218,7 @@ end
 --- Get the effective alpha of a frame (including parent alpha)
 -- @param frame Frame - The frame
 -- @return number - The effective alpha
-function LoolibFrameUtil.GetEffectiveAlpha(frame)
+function FrameUtil.GetEffectiveAlpha(frame)
     local alpha = frame:GetAlpha()
     local parent = frame:GetParent()
 
@@ -230,7 +233,7 @@ end
 --- Get the absolute position of a frame on screen
 -- @param frame Frame - The frame
 -- @return number, number, number, number - left, bottom, width, height
-function LoolibFrameUtil.GetAbsolutePosition(frame)
+function FrameUtil.GetAbsolutePosition(frame)
     local scale = frame:GetEffectiveScale()
     local left = frame:GetLeft() * scale
     local bottom = frame:GetBottom() * scale
@@ -247,7 +250,7 @@ end
 --- Get all children of a frame
 -- @param frame Frame - The frame
 -- @return table - Array of child frames
-function LoolibFrameUtil.GetAllChildren(frame)
+function FrameUtil.GetAllChildren(frame)
     local children = {}
     for i = 1, frame:GetNumChildren() do
         local child = select(i, frame:GetChildren())
@@ -259,7 +262,7 @@ end
 --- Get all regions of a frame
 -- @param frame Frame - The frame
 -- @return table - Array of regions
-function LoolibFrameUtil.GetAllRegions(frame)
+function FrameUtil.GetAllRegions(frame)
     local regions = {}
     for i = 1, frame:GetNumRegions() do
         local region = select(i, frame:GetRegions())
@@ -272,7 +275,7 @@ end
 -- @param frame Frame - The parent frame
 -- @param pattern string - Name pattern to match
 -- @return Frame|nil - The matching child or nil
-function LoolibFrameUtil.FindChild(frame, pattern)
+function FrameUtil.FindChild(frame, pattern)
     for i = 1, frame:GetNumChildren() do
         local child = select(i, frame:GetChildren())
         local name = child:GetName()
@@ -286,12 +289,12 @@ end
 --- Execute a function on a frame and all its descendants
 -- @param frame Frame - The root frame
 -- @param func function - Function(frame) to execute
-function LoolibFrameUtil.ForEachDescendant(frame, func)
+function FrameUtil.ForEachDescendant(frame, func)
     func(frame)
 
     for i = 1, frame:GetNumChildren() do
         local child = select(i, frame:GetChildren())
-        LoolibFrameUtil.ForEachDescendant(child, func)
+        FrameUtil.ForEachDescendant(child, func)
     end
 end
 
@@ -303,7 +306,7 @@ end
 -- @param frame Frame - The frame to show
 -- @param duration number - Fade duration (0 for instant)
 -- @param onComplete function - Optional callback when complete
-function LoolibFrameUtil.ShowWithFade(frame, duration, onComplete)
+function FrameUtil.ShowWithFade(frame, duration, onComplete)
     if duration and duration > 0 then
         frame:SetAlpha(0)
         frame:Show()
@@ -334,7 +337,7 @@ end
 -- @param frame Frame - The frame to hide
 -- @param duration number - Fade duration (0 for instant)
 -- @param onComplete function - Optional callback when complete
-function LoolibFrameUtil.HideWithFade(frame, duration, onComplete)
+function FrameUtil.HideWithFade(frame, duration, onComplete)
     if duration and duration > 0 then
         local startAlpha = frame:GetAlpha()
         local elapsed = 0
@@ -367,7 +370,7 @@ end
 
 --- Bring a frame to the front of its strata
 -- @param frame Frame - The frame
-function LoolibFrameUtil.BringToFront(frame)
+function FrameUtil.BringToFront(frame)
     local maxLevel = 0
     local parent = frame:GetParent()
 
@@ -387,8 +390,7 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
-UI.FrameUtil = LoolibFrameUtil
+UI.FrameUtil = FrameUtil
+Loolib.FrameUtil = FrameUtil
 
-Loolib:RegisterModule("FrameUtil", LoolibFrameUtil)
+Loolib:RegisterModule("UI.FrameUtil", FrameUtil)

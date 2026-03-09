@@ -7,6 +7,7 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for DragGhost")
 
 --[[--------------------------------------------------------------------
     LoolibDragGhostMixin
@@ -16,7 +17,7 @@ local Loolib = LibStub("Loolib")
 ----------------------------------------------------------------------]]
 
 ---@class LoolibDragGhostMixin
-LoolibDragGhostMixin = {}
+local LoolibDragGhostMixin = {}
 
 -- ============================================================
 -- INITIALIZATION
@@ -346,7 +347,7 @@ end
 ---@param parent Frame? Parent frame (defaults to UIParent)
 ---@param name string? Optional global frame name
 ---@return Frame Ghost frame with LoolibDragGhostMixin
-function LoolibCreateDragGhost(parent, name)
+local function LoolibCreateDragGhost(parent, name)
     local ghost = CreateFrame("Frame", name, parent or UIParent, "BackdropTemplate")
     LoolibMixin(ghost, LoolibDragGhostMixin)
     ghost:OnLoad()
@@ -366,7 +367,7 @@ local sharedGhost = nil
 
 ---Get or create shared drag ghost frame
 ---@return Frame Shared drag ghost instance
-function LoolibGetSharedDragGhost()
+local function LoolibGetSharedDragGhost()
     if not sharedGhost then
         sharedGhost = LoolibCreateDragGhost(UIParent, "LoolibSharedDragGhost")
     end
@@ -384,9 +385,9 @@ local DragGhostModule = {
 }
 
 -- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.DragGhost = DragGhostModule
 UI.CreateDragGhost = LoolibCreateDragGhost
 UI.GetSharedDragGhost = LoolibGetSharedDragGhost
 
-Loolib:RegisterModule("DragGhost", DragGhostModule)
+Loolib:RegisterModule("DragDrop.DragGhost", DragGhostModule)

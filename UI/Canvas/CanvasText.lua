@@ -46,7 +46,7 @@ if not Loolib then return end
 -- @field _text_SYNC table Parallel array: Sync IDs for network operations
 -- @field _nextSyncId number Next available sync ID
 -------------------------------------------------------------------------------
-LoolibCanvasTextMixin = {}
+local LoolibCanvasTextMixin = {}
 
 -------------------------------------------------------------------------------
 -- Initializes the text manager with default settings and storage.
@@ -496,7 +496,7 @@ end
 -- @return table Initialized CanvasText manager
 -- @usage local textManager = LoolibCreateCanvasText()
 -------------------------------------------------------------------------------
-function LoolibCreateCanvasText()
+local function LoolibCreateCanvasText()
 	local textManager = {}
 	LoolibMixin(textManager, LoolibCanvasTextMixin)
 	textManager:OnLoad()

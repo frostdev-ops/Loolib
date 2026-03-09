@@ -1,22 +1,25 @@
+local Loolib = LibStub("Loolib")
+
 --[[--------------------------------------------------------------------
     Loolib - WoW 12.0+ Addon Library
     Library constants and enumerations
 ----------------------------------------------------------------------]]
 
-local Loolib = LibStub("Loolib")
-
 --[[--------------------------------------------------------------------
     Library Information
 ----------------------------------------------------------------------]]
 
-LOOLIB_NAME = "Loolib"
-LOOLIB_INTERFACE = 120000  -- WoW 12.0
+Loolib.NAME = "Loolib"
+Loolib.INTERFACE = 120000 -- WoW 12.0
+
+Loolib.Enum = Loolib.Enum or {}
+local Enum = Loolib.Enum
 
 --[[--------------------------------------------------------------------
     Frame Types
 ----------------------------------------------------------------------]]
 
-LoolibFrameType = {
+Loolib.Enum.FrameType = {
     Frame = "Frame",
     Button = "Button",
     CheckButton = "CheckButton",
@@ -37,7 +40,7 @@ LoolibFrameType = {
     Draw Layers
 ----------------------------------------------------------------------]]
 
-LoolibDrawLayer = {
+Loolib.Enum.DrawLayer = {
     Background = "BACKGROUND",
     Border = "BORDER",
     Artwork = "ARTWORK",
@@ -49,7 +52,7 @@ LoolibDrawLayer = {
     Frame Strata
 ----------------------------------------------------------------------]]
 
-LoolibFrameStrata = {
+Loolib.Enum.FrameStrata = {
     World = "WORLD",
     Background = "BACKGROUND",
     Low = "LOW",
@@ -65,7 +68,7 @@ LoolibFrameStrata = {
     Anchor Points
 ----------------------------------------------------------------------]]
 
-LoolibAnchorPoint = {
+Loolib.Enum.AnchorPoint = {
     TopLeft = "TOPLEFT",
     Top = "TOP",
     TopRight = "TOPRIGHT",
@@ -81,7 +84,7 @@ LoolibAnchorPoint = {
     Tooltip Anchors
 ----------------------------------------------------------------------]]
 
-LoolibTooltipAnchor = {
+Loolib.Enum.TooltipAnchor = {
     Top = "ANCHOR_TOP",
     Bottom = "ANCHOR_BOTTOM",
     Left = "ANCHOR_LEFT",
@@ -99,19 +102,19 @@ LoolibTooltipAnchor = {
     Layout Directions
 ----------------------------------------------------------------------]]
 
-LoolibLayoutDirection = {
+Loolib.Enum.LayoutDirection = {
     Vertical = "VERTICAL",
     Horizontal = "HORIZONTAL",
 }
 
-LoolibLayoutAlign = {
+Loolib.Enum.LayoutAlign = {
     Start = "START",
     Center = "CENTER",
     End = "END",
     Stretch = "STRETCH",
 }
 
-LoolibLayoutJustify = {
+Loolib.Enum.LayoutJustify = {
     Start = "START",
     Center = "CENTER",
     End = "END",
@@ -124,7 +127,7 @@ LoolibLayoutJustify = {
     Grid Layout Directions
 ----------------------------------------------------------------------]]
 
-LoolibGridDirection = {
+Loolib.Enum.GridDirection = {
     TopLeftToBottomRight = 1,
     TopRightToBottomLeft = 2,
     BottomLeftToTopRight = 3,
@@ -139,7 +142,7 @@ LoolibGridDirection = {
     Selection Modes
 ----------------------------------------------------------------------]]
 
-LoolibSelectionMode = {
+Loolib.Enum.SelectionMode = {
     None = "NONE",
     Single = "SINGLE",
     Multiple = "MULTIPLE",
@@ -149,7 +152,7 @@ LoolibSelectionMode = {
     Tab Positions
 ----------------------------------------------------------------------]]
 
-LoolibTabPosition = {
+Loolib.Enum.TabPosition = {
     Top = "TOP",
     Bottom = "BOTTOM",
     Left = "LEFT",
@@ -160,7 +163,7 @@ LoolibTabPosition = {
     Dialog Button Types
 ----------------------------------------------------------------------]]
 
-LoolibDialogButtonType = {
+Loolib.Enum.DialogButtonType = {
     Default = "DEFAULT",
     Danger = "DANGER",
     Success = "SUCCESS",
@@ -171,7 +174,7 @@ LoolibDialogButtonType = {
     Standard Backdrops
 ----------------------------------------------------------------------]]
 
-LoolibBackdrop = {
+Loolib.Enum.Backdrop = {
     Panel = {
         bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
@@ -202,7 +205,7 @@ LoolibBackdrop = {
     Standard Colors
 ----------------------------------------------------------------------]]
 
-LoolibColor = {
+Loolib.Enum.Color = {
     White = { r = 1, g = 1, b = 1, a = 1 },
     Black = { r = 0, g = 0, b = 0, a = 1 },
     Red = { r = 1, g = 0.2, b = 0.2, a = 1 },
@@ -219,8 +222,8 @@ LoolibColor = {
     -- Semantic colors
     Text = { r = 1, g = 1, b = 1, a = 1 },
     TextDisabled = { r = 0.5, g = 0.5, b = 0.5, a = 1 },
-    TextHighlight = { r = 1, g = 0.82, b = 0, a = 1 },  -- Gold
-    Accent = { r = 0, g = 0.44, b = 0.87, a = 1 },  -- Blue
+    TextHighlight = { r = 1, g = 0.82, b = 0, a = 1 },
+    Accent = { r = 0, g = 0.44, b = 0.87, a = 1 },
     Danger = { r = 0.8, g = 0.2, b = 0.2, a = 1 },
     Success = { r = 0.2, g = 0.8, b = 0.2, a = 1 },
     Warning = { r = 1, g = 0.5, b = 0, a = 1 },
@@ -235,7 +238,7 @@ LoolibColor = {
     Font Objects
 ----------------------------------------------------------------------]]
 
-LoolibFont = {
+Loolib.Enum.Font = {
     Title = "GameFontNormalLarge",
     Header = "GameFontNormal",
     Body = "GameFontHighlight",
@@ -249,7 +252,7 @@ LoolibFont = {
     Mouse Buttons
 ----------------------------------------------------------------------]]
 
-LoolibMouseButton = {
+Loolib.Enum.MouseButton = {
     Left = "LeftButton",
     Right = "RightButton",
     Middle = "MiddleButton",
@@ -261,7 +264,7 @@ LoolibMouseButton = {
     Event Types (for CallbackRegistry)
 ----------------------------------------------------------------------]]
 
-LoolibEventType = {
+Loolib.Enum.EventType = {
     -- Lifecycle
     OnLoad = "OnLoad",
     OnShow = "OnShow",
@@ -301,7 +304,7 @@ LoolibEventType = {
     Utility: Unpack color table to r, g, b, a
 ----------------------------------------------------------------------]]
 
-function LoolibUnpackColor(color)
+function Enum.UnpackColor(color)
     return color.r, color.g, color.b, color.a or 1
 end
 
@@ -309,25 +312,6 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local Constants = {
-    FrameType = LoolibFrameType,
-    DrawLayer = LoolibDrawLayer,
-    FrameStrata = LoolibFrameStrata,
-    AnchorPoint = LoolibAnchorPoint,
-    TooltipAnchor = LoolibTooltipAnchor,
-    LayoutDirection = LoolibLayoutDirection,
-    LayoutAlign = LoolibLayoutAlign,
-    LayoutJustify = LoolibLayoutJustify,
-    GridDirection = LoolibGridDirection,
-    SelectionMode = LoolibSelectionMode,
-    TabPosition = LoolibTabPosition,
-    DialogButtonType = LoolibDialogButtonType,
-    Backdrop = LoolibBackdrop,
-    Color = LoolibColor,
-    Font = LoolibFont,
-    MouseButton = LoolibMouseButton,
-    EventType = LoolibEventType,
-    UnpackColor = LoolibUnpackColor,
-}
+Loolib.Enum = Enum
 
-Loolib:RegisterModule("Constants", Constants)
+Loolib:RegisterModule("Core.Constants", Enum)

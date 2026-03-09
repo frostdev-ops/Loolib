@@ -7,6 +7,7 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for NoteMarkup")
 
 --[[--------------------------------------------------------------------
     LoolibNoteMarkupMixin
@@ -15,7 +16,7 @@ local Loolib = LibStub("Loolib")
     whether content should be displayed based on player context.
 ----------------------------------------------------------------------]]
 
-LoolibNoteMarkupMixin = {}
+local LoolibNoteMarkupMixin = {}
 
 function LoolibNoteMarkupMixin:OnLoad()
     self._customHandlers = {}
@@ -663,7 +664,7 @@ end
 
 --- Create a new markup processor instance
 -- @return table Processor
-function LoolibCreateNoteMarkup()
+local function LoolibCreateNoteMarkup()
     local processor = {}
     LoolibMixin(processor, LoolibNoteMarkupMixin)
     processor:OnLoad()
@@ -675,7 +676,7 @@ local defaultProcessor = nil
 
 --- Get default processor instance
 -- @return table Processor
-function LoolibGetNoteMarkup()
+local function LoolibGetNoteMarkup()
     if not defaultProcessor then
         defaultProcessor = LoolibCreateNoteMarkup()
     end
@@ -686,7 +687,7 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-Loolib:RegisterModule("NoteMarkup", {
+Loolib:RegisterModule("Note.NoteMarkup", {
     Mixin = LoolibNoteMarkupMixin,
     Create = LoolibCreateNoteMarkup,
     Get = LoolibGetNoteMarkup,

@@ -16,12 +16,13 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local Core = Loolib.Core or Loolib:GetOrCreateModule("Core")
 
 --[[--------------------------------------------------------------------
     TempTable Module
 ----------------------------------------------------------------------]]
 
-local TempTable = {}
+local TempTable = Core.TempTable or Loolib:GetModule("Core.TempTable") or {}
 
 -- Pool configuration
 local POOL_SIZE = 100
@@ -214,4 +215,7 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-Loolib:RegisterModule("TempTable", TempTable)
+Core.TempTable = TempTable
+Loolib.TempTable = TempTable
+
+Loolib:RegisterModule("Core.TempTable", TempTable)

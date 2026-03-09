@@ -20,7 +20,7 @@
 
 local Loolib = LibStub("Loolib")
 
-LoolibSecretUtil = {}
+local SecretUtil = {}
 
 --[[--------------------------------------------------------------------
     Core Detection
@@ -28,14 +28,14 @@ LoolibSecretUtil = {}
 
 --- Check whether the issecretvalue API is available
 -- @return boolean
-function LoolibSecretUtil.IsAvailable()
+function SecretUtil.IsAvailable()
     return issecretvalue ~= nil
 end
 
 --- Check if any of the given values are WoW secret values
 -- @param ... - Values to check
 -- @return boolean - True if any value is secret
-function LoolibSecretUtil.IsSecretValue(...)
+function SecretUtil.IsSecretValue(...)
     if not issecretvalue then return false end
     for i = 1, select("#", ...) do
         if issecretvalue(select(i, ...)) then return true end
@@ -47,7 +47,7 @@ end
 -- Non-secret values are tostring()'d. Passthrough when issecretvalue is nil.
 -- @param ... - Values to sanitize
 -- @return ... - Sanitized values
-function LoolibSecretUtil.SecretsForPrint(...)
+function SecretUtil.SecretsForPrint(...)
     if not issecretvalue then return ... end
     local n = select("#", ...)
     if n == 0 then return end
@@ -63,7 +63,7 @@ end
 -- @param value any - Value to guard
 -- @param fallback any - Fallback if value is secret (default nil)
 -- @return any
-function LoolibSecretUtil.Guard(value, fallback)
+function SecretUtil.Guard(value, fallback)
     if not issecretvalue then return value end
     if issecretvalue(value) then return fallback end
     return value
@@ -73,7 +73,7 @@ end
 -- @param value any - Value to guard
 -- @param placeholder string - Placeholder if secret (default "<secret>")
 -- @return string
-function LoolibSecretUtil.GuardToString(value, placeholder)
+function SecretUtil.GuardToString(value, placeholder)
     if not issecretvalue then return tostring(value) end
     if issecretvalue(value) then return placeholder or "<secret>" end
     return tostring(value)
@@ -89,7 +89,7 @@ end
 -- @param showServerName boolean|nil - If truthy, use GetUnitName(unit, true)
 -- @return string|nil name
 -- @return string|nil realm
-function LoolibSecretUtil.SafeUnitName(unit, showServerName)
+function SecretUtil.SafeUnitName(unit, showServerName)
     local name, realm
     if showServerName then
         name = GetUnitName(unit, true)
@@ -109,7 +109,7 @@ end
 -- @return string|nil localizedClass
 -- @return string|nil englishClass
 -- @return number|nil classID
-function LoolibSecretUtil.SafeUnitClass(unit)
+function SecretUtil.SafeUnitClass(unit)
     local localizedClass, englishClass, classID = UnitClass(unit)
 
     if not issecretvalue then return localizedClass, englishClass, classID end
@@ -123,7 +123,7 @@ end
 -- If the name return is secret, the entire result returns nil.
 -- @param index number - Raid roster index
 -- @return string|nil name, ... (all 14 returns from GetRaidRosterInfo)
-function LoolibSecretUtil.SafeGetRaidRosterInfo(index)
+function SecretUtil.SafeGetRaidRosterInfo(index)
     local name, rank, subgroup, level, class, fileName, zone,
           online, isDead, role, isML, combatRole = GetRaidRosterInfo(index)
 
@@ -151,7 +151,7 @@ end
 -- @return string|nil localizedClass, string|nil englishClass,
 --         number|nil localizedRace, string|nil englishRace,
 --         number|nil sex, string|nil name, string|nil realmName
-function LoolibSecretUtil.SafeGetPlayerInfoByGUID(guid)
+function SecretUtil.SafeGetPlayerInfoByGUID(guid)
     if not GetPlayerInfoByGUID then return nil end
 
     local localizedClass, englishClass, localizedRace, englishRace,
@@ -179,4 +179,8 @@ end
     Module Registration
 ----------------------------------------------------------------------]]
 
-Loolib:RegisterModule("SecretUtil", LoolibSecretUtil)
+Loolib.Utils = Loolib.Utils or {}
+Loolib.Utils.SecretUtil = SecretUtil
+Loolib.SecretUtil = SecretUtil
+
+Loolib:RegisterModule("Utils.SecretUtil", SecretUtil)

@@ -17,12 +17,19 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibCreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for ScrollableList")
+local LoolibCallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib.CallbackRegistryMixin is required for ScrollableList")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for ScrollableList")
+local LoolibTemplates = assert(Loolib.Templates or (Loolib.UI and Loolib.UI.Templates), "Loolib.Templates is required for ScrollableList")
+local CreateLoolibFramePool = assert(Loolib.CreateFramePool, "Loolib.CreateFramePool is required for ScrollableList")
+local CreateLoolibObjectPool = assert(Loolib.CreateObjectPool, "Loolib.CreateObjectPool is required for ScrollableList")
+local LoolibGetResetterForFrameType = assert(Loolib.GetResetterForFrameType, "Loolib.GetResetterForFrameType is required for ScrollableList")
 
 --[[--------------------------------------------------------------------
     LoolibScrollableListMixin
 ----------------------------------------------------------------------]]
 
-LoolibScrollableListMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local LoolibScrollableListMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
 
 local LIST_EVENTS = {
     "OnSelectionChanged",
@@ -700,7 +707,7 @@ end
 --- Create a scrollable list
 -- @param parent Frame - Parent frame
 -- @return Frame - The list frame
-function CreateLoolibScrollableList(parent)
+local function CreateLoolibScrollableList(parent)
     local list = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     LoolibTemplates.InitScrollableList(list)
     LoolibMixin(list, LoolibScrollableListMixin)
@@ -712,7 +719,7 @@ end
     Builder Pattern
 ----------------------------------------------------------------------]]
 
-LoolibScrollableListBuilderMixin = {}
+local LoolibScrollableListBuilderMixin = {}
 
 function LoolibScrollableListBuilderMixin:Init(parent)
     self.parent = parent
@@ -774,7 +781,7 @@ function LoolibScrollableListBuilderMixin:Build()
     return list
 end
 
-function LoolibScrollableList(parent)
+local function LoolibScrollableList(parent)
     local builder = LoolibCreateFromMixins(LoolibScrollableListBuilderMixin)
     builder:Init(parent)
     return builder
@@ -791,8 +798,10 @@ local ScrollableListModule = {
     Builder = LoolibScrollableList,
 }
 
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.ScrollableList = ScrollableListModule
 UI.CreateScrollableList = CreateLoolibScrollableList
 
-Loolib:RegisterModule("ScrollableList", ScrollableListModule)
+Loolib.ScrollableListMixin = LoolibScrollableListMixin
+
+Loolib:RegisterModule("UI.ScrollableList", ScrollableListModule)

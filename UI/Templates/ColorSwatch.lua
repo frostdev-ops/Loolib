@@ -12,6 +12,9 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibCreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for ColorSwatch")
+local LoolibCallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib.CallbackRegistryMixin is required for ColorSwatch")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for ColorSwatch")
 
 --[[--------------------------------------------------------------------
     Color Presets
@@ -93,7 +96,7 @@ end
     LoolibColorSwatchMixin - Simple color swatch
 ----------------------------------------------------------------------]]
 
-LoolibColorSwatchMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local LoolibColorSwatchMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
 
 local COLOR_SWATCH_EVENTS = {
     "OnColorChanged",
@@ -242,7 +245,7 @@ end
     LoolibColorSwatchWithPresetsMixin - Extended version with presets
 ----------------------------------------------------------------------]]
 
-LoolibColorSwatchWithPresetsMixin = LoolibCreateFromMixins(LoolibColorSwatchMixin)
+local LoolibColorSwatchWithPresetsMixin = LoolibCreateFromMixins(LoolibColorSwatchMixin)
 
 --- Initialize the color swatch with presets
 function LoolibColorSwatchWithPresetsMixin:OnLoad()
@@ -491,7 +494,7 @@ function LoolibColorSwatchWithPresetsMixin:SaveRecentColors()
 
     -- Initialize SavedVariable if it doesn't exist
     if not LoolibRecentColors then
-        LoolibRecentColors = {}
+        _G.LoolibRecentColors = {}
     end
 
     LoolibRecentColors[self.recentColorsKey] = self.recentColors
@@ -505,7 +508,7 @@ function LoolibColorSwatchWithPresetsMixin:LoadRecentColors()
 
     -- Initialize SavedVariable if it doesn't exist
     if not LoolibRecentColors then
-        LoolibRecentColors = {}
+        _G.LoolibRecentColors = {}
     end
 
     -- Load saved colors if they exist
@@ -614,7 +617,7 @@ end
 -- @param parent Frame - Parent frame
 -- @param options table - Optional configuration
 -- @return Frame
-function CreateLoolibColorSwatch(parent, options)
+local function CreateLoolibColorSwatch(parent, options)
     options = options or {}
 
     local swatch = CreateFrame("Frame", nil, parent)
@@ -640,7 +643,7 @@ end
 -- @param parent Frame - Parent frame
 -- @param options table - Optional configuration
 -- @return Frame
-function CreateLoolibColorSwatchWithPresets(parent, options)
+local function CreateLoolibColorSwatchWithPresets(parent, options)
     options = options or {}
 
     local swatch = CreateFrame("Frame", nil, parent)
@@ -670,11 +673,11 @@ end
     Public API
 ----------------------------------------------------------------------]]
 
-LoolibColorSwatch = {
+local LoolibColorSwatch = {
     Create = CreateLoolibColorSwatch,
 }
 
-LoolibColorSwatchWithPresets = {
+local LoolibColorSwatchWithPresets = {
     Create = CreateLoolibColorSwatchWithPresets,
 }
 
@@ -689,9 +692,9 @@ local ColorSwatchModule = {
     CreateWithPresets = CreateLoolibColorSwatchWithPresets,
 }
 
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.ColorSwatch = ColorSwatchModule
 UI.CreateColorSwatch = CreateLoolibColorSwatch
 UI.CreateColorSwatchWithPresets = CreateLoolibColorSwatchWithPresets
 
-Loolib:RegisterModule("ColorSwatch", ColorSwatchModule)
+Loolib:RegisterModule("UI.ColorSwatch", ColorSwatchModule)

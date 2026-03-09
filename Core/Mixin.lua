@@ -16,7 +16,7 @@ local Loolib = LibStub("Loolib")
 -- @param object table - The target object
 -- @param ... - One or more mixin tables to apply
 -- @return table - The modified object
-function LoolibMixin(object, ...)
+local function ApplyMixins(object, ...)
     for i = 1, select("#", ...) do
         local mixin = select(i, ...)
         if mixin then
@@ -31,16 +31,16 @@ end
 --- Create a new object from one or more mixins
 -- @param ... - One or more mixin tables
 -- @return table - A new table with all mixin members
-function LoolibCreateFromMixins(...)
-    return LoolibMixin({}, ...)
+local function CreateFromMixins(...)
+    return ApplyMixins({}, ...)
 end
 
 --- Create a new object from a mixin and initialize it
 -- @param mixin table - The mixin to use
 -- @param ... - Arguments passed to Init()
 -- @return table - The initialized object
-function LoolibCreateAndInitFromMixin(mixin, ...)
-    local object = LoolibCreateFromMixins(mixin)
+local function CreateAndInitFromMixin(mixin, ...)
+    local object = CreateFromMixins(mixin)
     if object.Init then
         object:Init(...)
     end
@@ -81,7 +81,7 @@ local STANDARD_SCRIPTS = {
 
 --- Reflect standard script handlers from object methods to frame scripts
 -- @param frame Frame - The frame to set scripts on
-function LoolibReflectScriptHandlers(frame)
+local function ReflectScriptHandlers(frame)
     for _, scriptName in ipairs(STANDARD_SCRIPTS) do
         local handler = frame[scriptName]
         if handler and type(handler) == "function" then
@@ -97,9 +97,9 @@ end
 -- @param frame Frame - The target frame
 -- @param ... - One or more mixin tables to apply
 -- @return Frame - The modified frame
-function LoolibSpecializeFrameWithMixins(frame, ...)
-    LoolibMixin(frame, ...)
-    LoolibReflectScriptHandlers(frame)
+local function SpecializeFrameWithMixins(frame, ...)
+    ApplyMixins(frame, ...)
+    ReflectScriptHandlers(frame)
     return frame
 end
 
@@ -111,7 +111,7 @@ end
 -- @param object table - The object to check
 -- @param mixin table - The mixin to validate against
 -- @return boolean - True if all mixin methods exist on the object
-function LoolibValidateMixin(object, mixin)
+local function ValidateMixin(object, mixin)
     for key, value in pairs(mixin) do
         if type(value) == "function" and type(object[key]) ~= "function" then
             return false, key
@@ -124,8 +124,8 @@ end
 -- @param object table - The object to check
 -- @param mixin table - The mixin to validate against
 -- @param mixinName string - Name for error messages
-function LoolibAssertMixin(object, mixin, mixinName)
-    local valid, missing = LoolibValidateMixin(object, mixin)
+local function AssertMixin(object, mixin, mixinName)
+    local valid, missing = ValidateMixin(object, mixin)
     if not valid then
         error(string.format("Object missing required method '%s' from %s", missing, mixinName or "mixin"), 2)
     end
@@ -139,8 +139,8 @@ end
 -- @param baseMixin table - The base mixin to inherit from
 -- @param ... - Additional mixins to include
 -- @return table - A new mixin combining all sources
-function LoolibExtendMixin(baseMixin, ...)
-    return LoolibCreateFromMixins(baseMixin, ...)
+local function ExtendMixin(baseMixin, ...)
+    return CreateFromMixins(baseMixin, ...)
 end
 
 --- Call a parent mixin's method
@@ -149,7 +149,7 @@ end
 -- @param methodName string - The method to call
 -- @param ... - Arguments to pass
 -- @return any - The method's return value
-function LoolibCallParentMethod(self, mixin, methodName, ...)
+local function CallParentMethod(self, mixin, methodName, ...)
     local method = mixin[methodName]
     if method then
         return method(self, ...)
@@ -161,15 +161,28 @@ end
 ----------------------------------------------------------------------]]
 
 local MixinModule = {
-    Mixin = LoolibMixin,
-    CreateFromMixins = LoolibCreateFromMixins,
-    CreateAndInitFromMixin = LoolibCreateAndInitFromMixin,
-    ReflectScriptHandlers = LoolibReflectScriptHandlers,
-    SpecializeFrameWithMixins = LoolibSpecializeFrameWithMixins,
-    ValidateMixin = LoolibValidateMixin,
-    AssertMixin = LoolibAssertMixin,
-    ExtendMixin = LoolibExtendMixin,
-    CallParentMethod = LoolibCallParentMethod,
+    Mixin = ApplyMixins,
+    CreateFromMixins = CreateFromMixins,
+    CreateAndInitFromMixin = CreateAndInitFromMixin,
+    ReflectScriptHandlers = ReflectScriptHandlers,
+    SpecializeFrameWithMixins = SpecializeFrameWithMixins,
+    ValidateMixin = ValidateMixin,
+    AssertMixin = AssertMixin,
+    ExtendMixin = ExtendMixin,
+    CallParentMethod = CallParentMethod,
 }
 
-Loolib:RegisterModule("Mixin", MixinModule)
+Loolib.Core = Loolib.Core or {}
+Loolib.Core.Mixin = MixinModule
+
+Loolib.Mixin = ApplyMixins
+Loolib.CreateFromMixins = CreateFromMixins
+Loolib.CreateAndInitFromMixin = CreateAndInitFromMixin
+Loolib.ReflectScriptHandlers = ReflectScriptHandlers
+Loolib.SpecializeFrameWithMixins = SpecializeFrameWithMixins
+Loolib.ValidateMixin = ValidateMixin
+Loolib.AssertMixin = AssertMixin
+Loolib.ExtendMixin = ExtendMixin
+Loolib.CallParentMethod = CallParentMethod
+
+Loolib:RegisterModule("Core.Mixin", MixinModule)

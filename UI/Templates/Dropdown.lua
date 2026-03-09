@@ -15,6 +15,10 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibCreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for Dropdown")
+local LoolibCallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib.CallbackRegistryMixin is required for Dropdown")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for Dropdown")
+local LoolibTemplates = assert(Loolib.Templates or (Loolib.UI and Loolib.UI.Templates), "Loolib.Templates is required for Dropdown")
 
 --[[--------------------------------------------------------------------
     Dropdown Menu Frame (Shared)
@@ -66,7 +70,7 @@ end
     LoolibDropdownMixin
 ----------------------------------------------------------------------]]
 
-LoolibDropdownMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local LoolibDropdownMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
 
 local DROPDOWN_EVENTS = {
     "OnSelect",
@@ -469,7 +473,7 @@ end
 --- Create a dropdown
 -- @param parent Frame - Parent frame
 -- @return Frame - The dropdown frame
-function CreateLoolibDropdown(parent)
+local function CreateLoolibDropdown(parent)
     local dropdown = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     LoolibTemplates.InitDropdown(dropdown)
     LoolibMixin(dropdown, LoolibDropdownMixin)
@@ -481,7 +485,7 @@ end
     Builder Pattern
 ----------------------------------------------------------------------]]
 
-LoolibDropdownBuilderMixin = {}
+local LoolibDropdownBuilderMixin = {}
 
 function LoolibDropdownBuilderMixin:Init(parent)
     self.parent = parent
@@ -539,7 +543,7 @@ function LoolibDropdownBuilderMixin:Build()
     return dropdown
 end
 
-function LoolibDropdown(parent)
+local function LoolibDropdown(parent)
     local builder = LoolibCreateFromMixins(LoolibDropdownBuilderMixin)
     builder:Init(parent)
     return builder
@@ -556,8 +560,8 @@ local DropdownModule = {
     Builder = LoolibDropdown,
 }
 
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.Dropdown = DropdownModule
 UI.CreateDropdown = CreateLoolibDropdown
 
-Loolib:RegisterModule("Dropdown", DropdownModule)
+Loolib:RegisterModule("UI.Dropdown", DropdownModule)

@@ -73,7 +73,7 @@ LOOLIB_CANVAS_MAX_ZOOM = 7
 
 --- Canvas zoom and pan controller
 --- @class LoolibCanvasZoomMixin
-LoolibCanvasZoomMixin = {}
+local LoolibCanvasZoomMixin = {}
 
 --- Initialize the zoom controller
 function LoolibCanvasZoomMixin:OnLoad()
@@ -506,7 +506,7 @@ end
 
 --- Create a new canvas zoom controller
 --- @return LoolibCanvasZoomMixin
-function LoolibCreateCanvasZoom()
+local function LoolibCreateCanvasZoom()
     local zoom = {}
     LoolibMixin(zoom, LoolibCanvasZoomMixin)
     zoom:OnLoad()

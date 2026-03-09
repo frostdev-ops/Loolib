@@ -6,13 +6,16 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local Theme = Loolib.Theme or Loolib:GetOrCreateModule("Theme")
+local ThemeManager = assert(Loolib.ThemeManager or (Theme.Manager and Theme.Manager.Manager), "Loolib.ThemeManager is required for ThemeMinimal")
+local Backdrop = Loolib.Backdrop or Theme.Backdrop or {}
 
 --[[--------------------------------------------------------------------
     Minimal Backdrop
     Ultra-thin borders, no decorative elements
 ----------------------------------------------------------------------]]
 
-LoolibBackdrop.Minimal = {
+Backdrop.Minimal = {
     bgFile = "Interface\\Buttons\\WHITE8x8",
     edgeFile = "Interface\\Buttons\\WHITE8x8",
     tile = false,
@@ -20,7 +23,7 @@ LoolibBackdrop.Minimal = {
     insets = { left = 0, right = 0, top = 0, bottom = 0 },
 }
 
-LoolibBackdrop.MinimalThick = {
+Backdrop.MinimalThick = {
     bgFile = "Interface\\Buttons\\WHITE8x8",
     edgeFile = "Interface\\Buttons\\WHITE8x8",
     tile = false,
@@ -34,7 +37,7 @@ LoolibBackdrop.MinimalThick = {
     Clean, flat design with sharp edges and minimal decoration.
 ----------------------------------------------------------------------]]
 
-LoolibThemeMinimal = {
+local ThemeMinimal = {
     name = "Minimal",
     description = "Clean, flat modern design",
 
@@ -120,12 +123,12 @@ LoolibThemeMinimal = {
         Backdrops - Minimal flat backdrops
     ------------------------------------------------------------------]]
     backdrops = {
-        dialog = LoolibBackdrop.Minimal,
-        tooltip = LoolibBackdrop.Minimal,
-        panel = LoolibBackdrop.Minimal,
-        flat = LoolibBackdrop.Minimal,
-        border = LoolibBackdrop.Minimal,
-        thick = LoolibBackdrop.MinimalThick,
+        dialog = Backdrop.Minimal,
+        tooltip = Backdrop.Minimal,
+        panel = Backdrop.Minimal,
+        flat = Backdrop.Minimal,
+        border = Backdrop.Minimal,
+        thick = Backdrop.MinimalThick,
     },
 
     --[[----------------------------------------------------------------
@@ -326,4 +329,10 @@ LoolibThemeMinimal = {
     Register the Minimal Theme
 ----------------------------------------------------------------------]]
 
-LoolibThemeManager:RegisterTheme("Minimal", LoolibThemeMinimal)
+Theme.Backdrop = Backdrop
+Theme.Minimal = ThemeMinimal
+Loolib.Backdrop = Backdrop
+
+ThemeManager:RegisterTheme("Minimal", ThemeMinimal)
+
+Loolib:RegisterModule("Theme.Minimal", ThemeMinimal)

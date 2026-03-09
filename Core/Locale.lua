@@ -1,15 +1,17 @@
+local Loolib = LibStub("Loolib")
+
 --[[--------------------------------------------------------------------
     Loolib Locale System - AceLocale-3.0 equivalent
     Multilingual support with fallback to default locale
 ----------------------------------------------------------------------]]
 
-LoolibLocaleMixin = {}
+local LocaleMixin = Loolib.Locale or Loolib:GetModule("Locale") or {}
 
 -- Locale registry: locales[application][locale] = locale_table
-LoolibLocaleMixin.locales = LoolibLocaleMixin.locales or {}
+LocaleMixin.locales = LocaleMixin.locales or {}
 
 -- Default locale tracking per application
-LoolibLocaleMixin.defaults = LoolibLocaleMixin.defaults or {}
+LocaleMixin.defaults = LocaleMixin.defaults or {}
 
 --[[--------------------------------------------------------------------
     Create or get a locale table for an application
@@ -20,7 +22,7 @@ LoolibLocaleMixin.defaults = LoolibLocaleMixin.defaults or {}
     @param silent (boolean): Suppress warnings?
     @return (table|nil): Locale table, or nil if not current locale
 ----------------------------------------------------------------------]]
-function LoolibLocaleMixin:NewLocale(application, locale, isDefault, silent)
+function LocaleMixin:NewLocale(application, locale, isDefault, silent)
     assert(type(application) == "string", "Application name must be a string")
     assert(type(locale) == "string", "Locale code must be a string")
 
@@ -81,7 +83,7 @@ end
     @param silent (boolean): Suppress warnings if not found?
     @return (table): Locale table for current locale or default
 ----------------------------------------------------------------------]]
-function LoolibLocaleMixin:GetLocale(application, silent)
+function LocaleMixin:GetLocale(application, silent)
     assert(type(application) == "string", "Application name must be a string")
 
     if not self.locales[application] then
@@ -125,7 +127,7 @@ end
     @param application (string): Addon name
     @return (table): Table of {locale = locale_table, ...}
 ----------------------------------------------------------------------]]
-function LoolibLocaleMixin:GetLocales(application)
+function LocaleMixin:GetLocales(application)
     assert(type(application) == "string", "Application name must be a string")
     return self.locales[application] or {}
 end
@@ -136,11 +138,10 @@ end
     @param application (string): Addon name
     @return (string): Locale code of default locale, or nil
 ----------------------------------------------------------------------]]
-function LoolibLocaleMixin:GetDefaultLocale(application)
+function LocaleMixin:GetDefaultLocale(application)
     assert(type(application) == "string", "Application name must be a string")
     return self.defaults[application]
 end
 
--- Register the module
-local Loolib = LibStub("Loolib")
-Loolib:RegisterModule("Locale", LoolibLocaleMixin)
+Loolib.Locale = LocaleMixin
+Loolib:RegisterModule("Locale", LocaleMixin)

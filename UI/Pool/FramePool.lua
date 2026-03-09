@@ -7,6 +7,14 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateObjectPool = assert(Loolib.CreateObjectPool, "Loolib.CreateObjectPool is required for FramePool")
+local GetResetterForFrameType = assert(Loolib.GetResetterForFrameType, "Loolib.GetResetterForFrameType is required for FramePool")
+local ResetTexture = assert(Loolib.PoolReset_Texture, "Loolib.PoolReset_Texture is required for FramePool")
+local ResetFontString = assert(Loolib.PoolReset_FontString, "Loolib.PoolReset_FontString is required for FramePool")
+local Mixin = assert(Loolib.Mixin, "Loolib.Mixin is required for FramePool")
+local ReflectScriptHandlers = assert(Loolib.ReflectScriptHandlers, "Loolib.ReflectScriptHandlers is required for FramePool")
+local Pool = Loolib.Pool or Loolib:GetOrCreateModule("Pool")
+local FramePoolModule = Pool.FramePool or Loolib:GetModule("Pool.FramePool") or {}
 
 --[[--------------------------------------------------------------------
     Frame Pool
@@ -19,12 +27,12 @@ local Loolib = LibStub("Loolib")
 -- @param resetFunc function - Optional reset function
 -- @param capacity number - Optional maximum capacity
 -- @return table - A new FramePool instance
-function CreateLoolibFramePool(frameType, parent, template, resetFunc, capacity)
+local function CreateFramePool(frameType, parent, template, resetFunc, capacity)
     frameType = frameType or "Frame"
 
     -- Default reset function based on frame type
     if not resetFunc then
-        resetFunc = LoolibGetResetterForFrameType(frameType)
+        resetFunc = GetResetterForFrameType(frameType)
     end
 
     -- Create function
@@ -34,7 +42,7 @@ function CreateLoolibFramePool(frameType, parent, template, resetFunc, capacity)
     end
 
     -- Create and return the pool
-    local pool = CreateLoolibObjectPool(createFunc, resetFunc, capacity)
+    local pool = CreateObjectPool(createFunc, resetFunc, capacity)
 
     -- Store metadata
     pool.frameType = frameType
@@ -52,12 +60,12 @@ end
 -- @param mixins table - Mixins to apply to each frame
 -- @param capacity number - Optional maximum capacity
 -- @return table - A new FramePool instance
-function CreateLoolibFramePoolWithMixins(frameType, parent, template, resetFunc, mixins, capacity)
+local function CreateFramePoolWithMixins(frameType, parent, template, resetFunc, mixins, capacity)
     frameType = frameType or "Frame"
 
     -- Default reset function
     if not resetFunc then
-        resetFunc = LoolibGetResetterForFrameType(frameType)
+        resetFunc = GetResetterForFrameType(frameType)
     end
 
     -- Create function with mixin application
@@ -67,14 +75,14 @@ function CreateLoolibFramePoolWithMixins(frameType, parent, template, resetFunc,
         if mixins then
             if type(mixins) == "table" and mixins[1] then
                 -- Array of mixins
-                LoolibMixin(frame, unpack(mixins))
+                Mixin(frame, unpack(mixins))
             else
                 -- Single mixin
-                LoolibMixin(frame, mixins)
+                Mixin(frame, mixins)
             end
 
             -- Reflect script handlers from mixins
-            LoolibReflectScriptHandlers(frame)
+            ReflectScriptHandlers(frame)
 
             -- Call Init if available
             if frame.Init then
@@ -85,7 +93,7 @@ function CreateLoolibFramePoolWithMixins(frameType, parent, template, resetFunc,
         return frame
     end
 
-    local pool = CreateLoolibObjectPool(createFunc, resetFunc, capacity)
+    local pool = CreateObjectPool(createFunc, resetFunc, capacity)
 
     -- Store metadata
     pool.frameType = frameType
@@ -108,13 +116,13 @@ end
 -- @param resetFunc function - Optional reset function
 -- @param capacity number - Optional maximum capacity
 -- @return table - A new TexturePool instance
-function CreateLoolibTexturePool(parent, layer, subLayer, template, resetFunc, capacity)
+local function CreateTexturePool(parent, layer, subLayer, template, resetFunc, capacity)
     layer = layer or "ARTWORK"
     subLayer = subLayer or 0
 
     -- Default reset function
     if not resetFunc then
-        resetFunc = LoolibPoolReset_Texture
+        resetFunc = ResetTexture
     end
 
     -- Create function
@@ -123,7 +131,7 @@ function CreateLoolibTexturePool(parent, layer, subLayer, template, resetFunc, c
         return texture
     end
 
-    local pool = CreateLoolibObjectPool(createFunc, resetFunc, capacity)
+    local pool = CreateObjectPool(createFunc, resetFunc, capacity)
 
     -- Store metadata
     pool.parent = parent
@@ -146,13 +154,13 @@ end
 -- @param resetFunc function - Optional reset function
 -- @param capacity number - Optional maximum capacity
 -- @return table - A new FontStringPool instance
-function CreateLoolibFontStringPool(parent, layer, subLayer, template, resetFunc, capacity)
+local function CreateFontStringPool(parent, layer, subLayer, template, resetFunc, capacity)
     layer = layer or "OVERLAY"
     subLayer = subLayer or 0
 
     -- Default reset function
     if not resetFunc then
-        resetFunc = LoolibPoolReset_FontString
+        resetFunc = ResetFontString
     end
 
     -- Create function
@@ -161,7 +169,7 @@ function CreateLoolibFontStringPool(parent, layer, subLayer, template, resetFunc
         return fontString
     end
 
-    local pool = CreateLoolibObjectPool(createFunc, resetFunc, capacity)
+    local pool = CreateObjectPool(createFunc, resetFunc, capacity)
 
     -- Store metadata
     pool.parent = parent
@@ -184,7 +192,7 @@ end
 -- @param resetFunc function - Optional reset function
 -- @param capacity number - Optional maximum capacity
 -- @return table - A new LinePool instance
-function CreateLoolibLinePool(parent, layer, subLayer, template, resetFunc, capacity)
+local function CreateLinePool(parent, layer, subLayer, template, resetFunc, capacity)
     layer = layer or "ARTWORK"
     subLayer = subLayer or 0
 
@@ -204,7 +212,7 @@ function CreateLoolibLinePool(parent, layer, subLayer, template, resetFunc, capa
         return line
     end
 
-    local pool = CreateLoolibObjectPool(createFunc, resetFunc, capacity)
+    local pool = CreateObjectPool(createFunc, resetFunc, capacity)
 
     -- Store metadata
     pool.parent = parent
@@ -224,7 +232,7 @@ end
 -- @param resetFunc function - Optional reset function
 -- @param capacity number - Optional maximum capacity
 -- @return table - A new ActorPool instance
-function CreateLoolibActorPool(modelScene, resetFunc, capacity)
+local function CreateActorPool(modelScene, resetFunc, capacity)
     -- Default reset function
     if not resetFunc then
         resetFunc = function(pool, actor)
@@ -238,7 +246,7 @@ function CreateLoolibActorPool(modelScene, resetFunc, capacity)
         return modelScene:CreateActor()
     end
 
-    local pool = CreateLoolibObjectPool(createFunc, resetFunc, capacity)
+    local pool = CreateObjectPool(createFunc, resetFunc, capacity)
 
     -- Store metadata
     pool.modelScene = modelScene
@@ -254,7 +262,7 @@ end
 -- @param pool table - The frame pool
 -- @param initializer function - Called with (frame) on first acquire
 -- @return Frame, boolean - The frame and whether it was newly created
-function LoolibAcquireFrame(pool, initializer)
+local function AcquireFrame(pool, initializer)
     local frame, isNew = pool:Acquire()
 
     if isNew and initializer then
@@ -268,23 +276,29 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local FramePoolModule = {
-    CreateFramePool = CreateLoolibFramePool,
-    CreateFramePoolWithMixins = CreateLoolibFramePoolWithMixins,
-    CreateTexturePool = CreateLoolibTexturePool,
-    CreateFontStringPool = CreateLoolibFontStringPool,
-    CreateLinePool = CreateLoolibLinePool,
-    CreateActorPool = CreateLoolibActorPool,
-    AcquireFrame = LoolibAcquireFrame,
-}
+FramePoolModule.CreateFramePool = CreateFramePool
+FramePoolModule.CreateFramePoolWithMixins = CreateFramePoolWithMixins
+FramePoolModule.CreateTexturePool = CreateTexturePool
+FramePoolModule.CreateFontStringPool = CreateFontStringPool
+FramePoolModule.CreateLinePool = CreateLinePool
+FramePoolModule.CreateActorPool = CreateActorPool
+FramePoolModule.AcquireFrame = AcquireFrame
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
-UI.CreateFramePool = CreateLoolibFramePool
-UI.CreateFramePoolWithMixins = CreateLoolibFramePoolWithMixins
-UI.CreateTexturePool = CreateLoolibTexturePool
-UI.CreateFontStringPool = CreateLoolibFontStringPool
-UI.CreateLinePool = CreateLoolibLinePool
-UI.CreateActorPool = CreateLoolibActorPool
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
+UI.CreateFramePool = CreateFramePool
+UI.CreateFramePoolWithMixins = CreateFramePoolWithMixins
+UI.CreateTexturePool = CreateTexturePool
+UI.CreateFontStringPool = CreateFontStringPool
+UI.CreateLinePool = CreateLinePool
+UI.CreateActorPool = CreateActorPool
 
-Loolib:RegisterModule("FramePool", FramePoolModule)
+Pool.FramePool = FramePoolModule
+Loolib.CreateFramePool = CreateFramePool
+Loolib.CreateFramePoolWithMixins = CreateFramePoolWithMixins
+Loolib.CreateTexturePool = CreateTexturePool
+Loolib.CreateFontStringPool = CreateFontStringPool
+Loolib.CreateLinePool = CreateLinePool
+Loolib.CreateActorPool = CreateActorPool
+Loolib.AcquireFrame = AcquireFrame
+
+Loolib:RegisterModule("Pool.FramePool", FramePoolModule)

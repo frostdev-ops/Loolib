@@ -8,6 +8,11 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for Appearance")
+local CallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib.CallbackRegistryMixin is required for Appearance")
+local TableUtil = assert(Loolib.TableUtil, "Loolib.TableUtil is required for Appearance")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
+local AppearanceModule = UI.Appearance or Loolib:GetModule("UI.Appearance") or {}
 
 --[[--------------------------------------------------------------------
     Default Skin Definition
@@ -58,23 +63,23 @@ local APPEARANCE_EVENTS = {
     A mixin that provides skin management for UI appearance.
 ----------------------------------------------------------------------]]
 
-LoolibAppearanceMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local AppearanceMixin = AppearanceModule.Mixin or CreateFromMixins(CallbackRegistryMixin)
 
 --- Initialize the appearance manager with saved data or defaults
 -- @param savedData table|nil - Previously saved data (from SavedVariables)
-function LoolibAppearanceMixin:Init(savedData)
-    LoolibCallbackRegistryMixin.OnLoad(self)
+function AppearanceMixin:Init(savedData)
+    CallbackRegistryMixin.OnLoad(self)
     self:GenerateCallbackEvents(APPEARANCE_EVENTS)
 
     savedData = savedData or {}
 
     -- Initialize skins collection
-    self.skins = savedData.skins or { Default = LoolibTableUtil.DeepCopy(DEFAULT_SKIN) }
+    self.skins = savedData.skins or { Default = TableUtil.DeepCopy(DEFAULT_SKIN) }
     self.currentSkinName = savedData.currentSkin or "Default"
 
     -- Ensure default skin always exists
     if not self.skins.Default then
-        self.skins.Default = LoolibTableUtil.DeepCopy(DEFAULT_SKIN)
+        self.skins.Default = TableUtil.DeepCopy(DEFAULT_SKIN)
     end
 
     -- Set current skin reference
@@ -94,20 +99,20 @@ end
 
 --- Get the current skin data
 -- @return table - The current skin table
-function LoolibAppearanceMixin:GetCurrentSkin()
+function AppearanceMixin:GetCurrentSkin()
     return self.currentSkin
 end
 
 --- Get the current skin name
 -- @return string - The name of the current skin
-function LoolibAppearanceMixin:GetCurrentSkinName()
+function AppearanceMixin:GetCurrentSkinName()
     return self.currentSkinName
 end
 
 --- Set the current skin by name
 -- @param skinName string - Name of the skin to activate
 -- @return boolean - True if skin was set successfully
-function LoolibAppearanceMixin:SetCurrentSkin(skinName)
+function AppearanceMixin:SetCurrentSkin(skinName)
     if not skinName or skinName == "" then
         Loolib:Error("Appearance:SetCurrentSkin - skin name is required")
         return false
@@ -134,7 +139,7 @@ end
 
 --- Get a list of all available skin names
 -- @return table - Array of skin names (sorted alphabetically)
-function LoolibAppearanceMixin:GetSkinList()
+function AppearanceMixin:GetSkinList()
     local names = {}
     for name in pairs(self.skins) do
         names[#names + 1] = name
@@ -146,7 +151,7 @@ end
 --- Get a specific skin by name
 -- @param skinName string - Name of the skin
 -- @return table|nil - The skin data or nil if not found
-function LoolibAppearanceMixin:GetSkin(skinName)
+function AppearanceMixin:GetSkin(skinName)
     return self.skins[skinName]
 end
 
@@ -157,14 +162,14 @@ end
 --- Save current settings as a new skin or overwrite an existing one
 -- @param name string - Name for the skin
 -- @return boolean - True if saved successfully
-function LoolibAppearanceMixin:SaveSkin(name)
+function AppearanceMixin:SaveSkin(name)
     if not name or name == "" then
         Loolib:Error("Appearance:SaveSkin - name is required")
         return false
     end
 
     -- Deep copy current skin settings
-    self.skins[name] = LoolibTableUtil.DeepCopy(self.currentSkin)
+    self.skins[name] = TableUtil.DeepCopy(self.currentSkin)
     self.skins[name].name = name
 
     self:TriggerEvent("OnSkinSaved", name)
@@ -174,14 +179,14 @@ end
 --- Load and apply a skin by name
 -- @param name string - Name of the skin to load
 -- @return boolean - True if loaded successfully
-function LoolibAppearanceMixin:LoadSkin(name)
+function AppearanceMixin:LoadSkin(name)
     return self:SetCurrentSkin(name)
 end
 
 --- Delete a skin by name
 -- @param name string - Name of the skin to delete
 -- @return boolean - True if deleted successfully
-function LoolibAppearanceMixin:DeleteSkin(name)
+function AppearanceMixin:DeleteSkin(name)
     if not name or name == "" then
         Loolib:Error("Appearance:DeleteSkin - name is required")
         return false
@@ -211,10 +216,10 @@ function LoolibAppearanceMixin:DeleteSkin(name)
 end
 
 --- Reset all skins to defaults
-function LoolibAppearanceMixin:ResetSkins()
+function AppearanceMixin:ResetSkins()
     local previousSkin = self.currentSkinName
     wipe(self.skins)
-    self.skins.Default = LoolibTableUtil.DeepCopy(DEFAULT_SKIN)
+    self.skins.Default = TableUtil.DeepCopy(DEFAULT_SKIN)
     self.currentSkinName = "Default"
     self.currentSkin = self.skins.Default
 
@@ -228,7 +233,7 @@ end
 
 --- Get the current background texture path
 -- @return string - Texture path
-function LoolibAppearanceMixin:GetBackgroundTexture()
+function AppearanceMixin:GetBackgroundTexture()
     if not self.currentSkin or not self.currentSkin.background then
         return "Interface\\DialogFrame\\UI-DialogBox-Background-Dark"
     end
@@ -237,7 +242,7 @@ end
 
 --- Set the background texture
 -- @param texture string - Texture path
-function LoolibAppearanceMixin:SetBackgroundTexture(texture)
+function AppearanceMixin:SetBackgroundTexture(texture)
     if not texture then return end
     if not self.currentSkin or not self.currentSkin.background then return end
     self.currentSkin.background.texture = texture
@@ -246,7 +251,7 @@ end
 
 --- Get the current background color
 -- @return number, number, number, number - r, g, b, a values
-function LoolibAppearanceMixin:GetBackgroundColor()
+function AppearanceMixin:GetBackgroundColor()
     if not self.currentSkin or not self.currentSkin.background or not self.currentSkin.background.color then
         return 0, 0, 0, 1  -- Return safe default
     end
@@ -259,7 +264,7 @@ end
 -- @param g number - Green component (0-1)
 -- @param b number - Blue component (0-1)
 -- @param a number - Alpha component (0-1, optional, defaults to existing)
-function LoolibAppearanceMixin:SetBackgroundColor(r, g, b, a)
+function AppearanceMixin:SetBackgroundColor(r, g, b, a)
     if not self.currentSkin or not self.currentSkin.background or not self.currentSkin.background.color then
         return
     end
@@ -277,7 +282,7 @@ end
 
 --- Get the current border texture path
 -- @return string - Texture path
-function LoolibAppearanceMixin:GetBorderTexture()
+function AppearanceMixin:GetBorderTexture()
     if not self.currentSkin or not self.currentSkin.border then
         return "Interface\\DialogFrame\\UI-DialogBox-Border"
     end
@@ -286,7 +291,7 @@ end
 
 --- Set the border texture
 -- @param texture string - Texture path
-function LoolibAppearanceMixin:SetBorderTexture(texture)
+function AppearanceMixin:SetBorderTexture(texture)
     if not texture then return end
     if not self.currentSkin or not self.currentSkin.border then return end
     self.currentSkin.border.texture = texture
@@ -295,7 +300,7 @@ end
 
 --- Get the current border color
 -- @return number, number, number, number - r, g, b, a values
-function LoolibAppearanceMixin:GetBorderColor()
+function AppearanceMixin:GetBorderColor()
     if not self.currentSkin or not self.currentSkin.border or not self.currentSkin.border.color then
         return 0.6, 0.6, 0.6, 1  -- Return safe default
     end
@@ -308,7 +313,7 @@ end
 -- @param g number - Green component (0-1)
 -- @param b number - Blue component (0-1)
 -- @param a number - Alpha component (0-1, optional, defaults to existing)
-function LoolibAppearanceMixin:SetBorderColor(r, g, b, a)
+function AppearanceMixin:SetBorderColor(r, g, b, a)
     if not self.currentSkin or not self.currentSkin.border or not self.currentSkin.border.color then
         return
     end
@@ -326,7 +331,7 @@ end
 
 --- Apply the current skin to a frame with BackdropTemplate
 -- @param frame Frame - The frame to apply skin to (must have BackdropTemplate)
-function LoolibAppearanceMixin:ApplyToFrame(frame)
+function AppearanceMixin:ApplyToFrame(frame)
     if not frame or not frame.SetBackdrop then
         return
     end
@@ -363,7 +368,7 @@ end
 
 --- Register a frame to automatically receive skin updates
 -- @param frame Frame - The frame to register
-function LoolibAppearanceMixin:RegisterFrame(frame)
+function AppearanceMixin:RegisterFrame(frame)
     if not frame then return end
     self.registeredFrames[frame] = true
     self:ApplyToFrame(frame)
@@ -371,13 +376,13 @@ end
 
 --- Unregister a frame from automatic skin updates
 -- @param frame Frame - The frame to unregister
-function LoolibAppearanceMixin:UnregisterFrame(frame)
+function AppearanceMixin:UnregisterFrame(frame)
     if not frame then return end
     self.registeredFrames[frame] = nil
 end
 
 --- Update all registered frames with current skin
-function LoolibAppearanceMixin:UpdateRegisteredFrames()
+function AppearanceMixin:UpdateRegisteredFrames()
     for frame in pairs(self.registeredFrames) do
         if frame and frame.SetBackdrop then
             self:ApplyToFrame(frame)
@@ -393,9 +398,9 @@ end
 
 --- Get save data for persistence
 -- @return table - Data suitable for SavedVariables
-function LoolibAppearanceMixin:GetSaveData()
+function AppearanceMixin:GetSaveData()
     return {
-        skins = LoolibTableUtil.DeepCopy(self.skins),
+        skins = TableUtil.DeepCopy(self.skins),
         currentSkin = self.currentSkinName,
     }
 end
@@ -406,7 +411,7 @@ end
 
 --- Generate an AceConfig-style options table for appearance settings
 -- @return table - Options table for use with GUI/config systems
-function LoolibAppearanceMixin:GenerateOptionsTable()
+function AppearanceMixin:GenerateOptionsTable()
     local self = self
 
     -- Build skin dropdown values
@@ -617,28 +622,28 @@ end
 
 --- Get list of available background textures
 -- @return table - Array of texture paths
-function LoolibAppearanceMixin:GetAvailableBackgroundTextures()
-    return LoolibTableUtil.Copy(AVAILABLE_BACKGROUND_TEXTURES)
+function AppearanceMixin:GetAvailableBackgroundTextures()
+    return TableUtil.Copy(AVAILABLE_BACKGROUND_TEXTURES)
 end
 
 --- Get list of available border textures
 -- @return table - Array of texture paths
-function LoolibAppearanceMixin:GetAvailableBorderTextures()
-    return LoolibTableUtil.Copy(AVAILABLE_BORDER_TEXTURES)
+function AppearanceMixin:GetAvailableBorderTextures()
+    return TableUtil.Copy(AVAILABLE_BORDER_TEXTURES)
 end
 
 --- Add a custom background texture to the available list
 -- @param texture string - Texture path
-function LoolibAppearanceMixin:AddBackgroundTexture(texture)
-    if not LoolibTableUtil.Contains(AVAILABLE_BACKGROUND_TEXTURES, texture) then
+function AppearanceMixin:AddBackgroundTexture(texture)
+    if not TableUtil.Contains(AVAILABLE_BACKGROUND_TEXTURES, texture) then
         AVAILABLE_BACKGROUND_TEXTURES[#AVAILABLE_BACKGROUND_TEXTURES + 1] = texture
     end
 end
 
 --- Add a custom border texture to the available list
 -- @param texture string - Texture path
-function LoolibAppearanceMixin:AddBorderTexture(texture)
-    if not LoolibTableUtil.Contains(AVAILABLE_BORDER_TEXTURES, texture) then
+function AppearanceMixin:AddBorderTexture(texture)
+    if not TableUtil.Contains(AVAILABLE_BORDER_TEXTURES, texture) then
         AVAILABLE_BORDER_TEXTURES[#AVAILABLE_BORDER_TEXTURES + 1] = texture
     end
 end
@@ -650,8 +655,8 @@ end
 --- Create a new Appearance manager instance
 -- @param savedData table|nil - Previously saved data
 -- @return table - A new Appearance instance
-function CreateLoolibAppearance(savedData)
-    local appearance = LoolibCreateFromMixins(LoolibAppearanceMixin)
+local function CreateAppearance(savedData)
+    local appearance = CreateFromMixins(AppearanceMixin)
     appearance:Init(savedData)
     return appearance
 end
@@ -661,37 +666,36 @@ end
 ----------------------------------------------------------------------]]
 
 -- Create a default singleton instance
-LoolibAppearance = CreateLoolibAppearance()
+local appearanceManager = CreateAppearance()
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local AppearanceModule = {
-    Mixin = LoolibAppearanceMixin,
-    Create = CreateLoolibAppearance,
-    Instance = LoolibAppearance,
+AppearanceModule.Mixin = AppearanceMixin
+AppearanceModule.Create = CreateAppearance
+AppearanceModule.Instance = appearanceManager
 
     -- Default skin reference
-    DEFAULT_SKIN = DEFAULT_SKIN,
-    AVAILABLE_BACKGROUND_TEXTURES = AVAILABLE_BACKGROUND_TEXTURES,
-    AVAILABLE_BORDER_TEXTURES = AVAILABLE_BORDER_TEXTURES,
+AppearanceModule.DEFAULT_SKIN = DEFAULT_SKIN
+AppearanceModule.AVAILABLE_BACKGROUND_TEXTURES = AVAILABLE_BACKGROUND_TEXTURES
+AppearanceModule.AVAILABLE_BORDER_TEXTURES = AVAILABLE_BORDER_TEXTURES
 
     -- Convenience functions from singleton
-    GetCurrentSkin = function() return LoolibAppearance:GetCurrentSkin() end,
-    SetCurrentSkin = function(...) return LoolibAppearance:SetCurrentSkin(...) end,
-    GetSkinList = function() return LoolibAppearance:GetSkinList() end,
-    SaveSkin = function(...) return LoolibAppearance:SaveSkin(...) end,
-    LoadSkin = function(...) return LoolibAppearance:LoadSkin(...) end,
-    DeleteSkin = function(...) return LoolibAppearance:DeleteSkin(...) end,
-    ApplyToFrame = function(...) return LoolibAppearance:ApplyToFrame(...) end,
-    RegisterFrame = function(...) return LoolibAppearance:RegisterFrame(...) end,
-    GenerateOptionsTable = function() return LoolibAppearance:GenerateOptionsTable() end,
-}
+AppearanceModule.GetCurrentSkin = function() return appearanceManager:GetCurrentSkin() end
+AppearanceModule.SetCurrentSkin = function(...) return appearanceManager:SetCurrentSkin(...) end
+AppearanceModule.GetSkinList = function() return appearanceManager:GetSkinList() end
+AppearanceModule.SaveSkin = function(...) return appearanceManager:SaveSkin(...) end
+AppearanceModule.LoadSkin = function(...) return appearanceManager:LoadSkin(...) end
+AppearanceModule.DeleteSkin = function(...) return appearanceManager:DeleteSkin(...) end
+AppearanceModule.ApplyToFrame = function(...) return appearanceManager:ApplyToFrame(...) end
+AppearanceModule.RegisterFrame = function(...) return appearanceManager:RegisterFrame(...) end
+AppearanceModule.GenerateOptionsTable = function() return appearanceManager:GenerateOptionsTable() end
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
 UI.Appearance = AppearanceModule
-UI.AppearanceManager = LoolibAppearance
+UI.AppearanceManager = appearanceManager
+Loolib.AppearanceMixin = AppearanceMixin
+Loolib.CreateAppearance = CreateAppearance
+Loolib.AppearanceManager = appearanceManager
 
-Loolib:RegisterModule("Appearance", AppearanceModule)
+Loolib:RegisterModule("UI.Appearance", AppearanceModule)

@@ -9,7 +9,23 @@
     Implementation is original, designed for Lua 5.1 with bit library.
 ----------------------------------------------------------------------]]
 
+local LibStub = LibStub
+local assert = assert
+local error = error
+local math = math
+local string = string
+local table = table
+local type = type
+
 local Loolib = LibStub("Loolib")
+-- FIX(critical-01): Use Loolib.Mixin/CreateFromMixins directly instead of unstable module lookup
+local ApplyMixins = assert(Loolib.Mixin,
+    "Loolib.Mixin must be loaded before Comm/Compressor.lua")
+local CreateFromMixins = assert(Loolib.CreateFromMixins,
+    "Loolib.CreateFromMixins must be loaded before Comm/Compressor.lua")
+local Comm = Loolib.Comm or Loolib:GetOrCreateModule("Comm")
+
+Loolib.Comm = Comm
 
 --[[--------------------------------------------------------------------
     Bit Operations
@@ -26,7 +42,7 @@ local rshift = bit.rshift
     Constants
 ----------------------------------------------------------------------]]
 
-LoolibCompressorMixin = {}
+local CompressorMixin = {}
 
 -- DEFLATE constants
 local MAX_WINDOW_SIZE = 32768  -- 32KB sliding window
@@ -895,7 +911,7 @@ end
 -- @param str string - Data to compress
 -- @param level number - Compression level (0-9, default 6)
 -- @return string - Compressed data
-function LoolibCompressorMixin:Compress(str, level)
+function CompressorMixin:Compress(str, level)
     if type(str) ~= "string" then
         error("Compress requires string input", 2)
     end
@@ -909,7 +925,7 @@ end
 --- Decompress DEFLATE-compressed data
 -- @param str string - Compressed data
 -- @return string|nil, boolean - Decompressed data and success flag
-function LoolibCompressorMixin:Decompress(str)
+function CompressorMixin:Decompress(str)
     if type(str) ~= "string" then
         return nil, false
     end
@@ -921,7 +937,7 @@ end
 -- @param str string - Data to compress
 -- @param level number - Compression level (0-9, default 6)
 -- @return string - Compressed data with zlib header/trailer
-function LoolibCompressorMixin:CompressZlib(str, level)
+function CompressorMixin:CompressZlib(str, level)
     if type(str) ~= "string" then
         error("CompressZlib requires string input", 2)
     end
@@ -935,7 +951,7 @@ end
 --- Decompress zlib-format data
 -- @param str string - Zlib-compressed data
 -- @return string|nil, boolean - Decompressed data and success flag
-function LoolibCompressorMixin:DecompressZlib(str)
+function CompressorMixin:DecompressZlib(str)
     if type(str) ~= "string" then
         return nil, false
     end
@@ -946,7 +962,7 @@ end
 --- Encode data for safe transmission over WoW addon channels
 -- @param str string - Data to encode
 -- @return string - Encoded data safe for addon messages
-function LoolibCompressorMixin:EncodeForAddonChannel(str)
+function CompressorMixin:EncodeForAddonChannel(str)
     if type(str) ~= "string" then
         error("EncodeForAddonChannel requires string input", 2)
     end
@@ -957,7 +973,7 @@ end
 --- Decode addon channel encoded data
 -- @param str string - Encoded data
 -- @return string - Original data
-function LoolibCompressorMixin:DecodeForAddonChannel(str)
+function CompressorMixin:DecodeForAddonChannel(str)
     if type(str) ~= "string" then
         error("DecodeForAddonChannel requires string input", 2)
     end
@@ -968,7 +984,7 @@ end
 --- Encode data for printable export strings (Base64)
 -- @param str string - Data to encode
 -- @return string - Base64-encoded string
-function LoolibCompressorMixin:EncodeForPrint(str)
+function CompressorMixin:EncodeForPrint(str)
     if type(str) ~= "string" then
         error("EncodeForPrint requires string input", 2)
     end
@@ -979,7 +995,7 @@ end
 --- Decode printable export string
 -- @param str string - Base64-encoded string
 -- @return string - Original data
-function LoolibCompressorMixin:DecodeForPrint(str)
+function CompressorMixin:DecodeForPrint(str)
     if type(str) ~= "string" then
         error("DecodeForPrint requires string input", 2)
     end
@@ -990,7 +1006,7 @@ end
 --- Calculate Adler-32 checksum
 -- @param str string - Data to checksum
 -- @return number - Adler-32 checksum
-function LoolibCompressorMixin:Adler32(str)
+function CompressorMixin:Adler32(str)
     if type(str) ~= "string" then
         error("Adler32 requires string input", 2)
     end
@@ -1004,28 +1020,42 @@ end
 
 --- Create a new Compressor instance
 -- @return table - A new Compressor object
-function CreateLoolibCompressor()
-    return LoolibCreateFromMixins(LoolibCompressorMixin)
+local function CreateCompressor()
+    return CreateFromMixins(CompressorMixin)
 end
 
 --[[--------------------------------------------------------------------
     Singleton Instance
 ----------------------------------------------------------------------]]
 
-LoolibCompressor = LoolibCreateFromMixins(LoolibCompressorMixin)
+local CompressorModule = Comm.Compressor
+local CompressorInstance
+
+if type(CompressorModule) == "table" and CompressorModule.Instance then
+    CompressorInstance = CompressorModule.Instance
+elseif type(CompressorModule) == "table"
+    and CompressorModule.Compress
+    and CompressorModule.Decompress then
+    CompressorInstance = CompressorModule
+    CompressorModule = {}
+else
+    CompressorModule = type(CompressorModule) == "table" and CompressorModule or {}
+    CompressorInstance = CompressorModule.Instance or Loolib.Compressor or {}
+end
+
+ApplyMixins(CompressorInstance, CompressorMixin)
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local CompressorModule = {
-    Mixin = LoolibCompressorMixin,
-    Create = CreateLoolibCompressor,
-    Compressor = LoolibCompressor,
-}
+Loolib.Comm.Compressor = CompressorModule
+Loolib.Comm.Compressor.Mixin = CompressorMixin
+Loolib.Comm.Compressor.Create = CreateCompressor
+Loolib.Comm.Compressor.Instance = CompressorInstance
+Loolib.Comm.Compressor.Compressor = CompressorInstance
 
+Loolib.Compressor = CompressorInstance
+
+Loolib:RegisterModule("Comm.Compressor", CompressorModule)
 Loolib:RegisterModule("Compressor", CompressorModule)
-
--- Also register in Comm module namespace
-local Comm = Loolib:GetOrCreateModule("Comm")
-Comm.Compressor = LoolibCompressor

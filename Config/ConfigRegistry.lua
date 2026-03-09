@@ -11,11 +11,26 @@
     - Config/ConfigTypes.lua (LoolibConfigTypes)
 ----------------------------------------------------------------------]]
 
-local Loolib = LibStub("Loolib")
+local GetTime = GetTime
+local ipairs = ipairs
+local pairs = pairs
+local select = select
+local table_concat = table.concat
+local table_sort = table.sort
+local tostring = tostring
+local type = type
+local wipe = wipe
 
--- Verify dependencies are loaded
-assert(LoolibCreateFromMixins, "Loolib/Core/Mixin.lua must be loaded before ConfigRegistry")
-assert(LoolibCallbackRegistryMixin, "Loolib/Events/CallbackRegistry.lua must be loaded before ConfigRegistry")
+local Loolib = LibStub("Loolib")
+local Config = Loolib:GetOrCreateModule("Config")
+local CreateFromMixins = Loolib.CreateFromMixins
+local CallbackRegistryModule = Loolib:GetModule("CallbackRegistry")
+local CallbackRegistryMixin = CallbackRegistryModule and CallbackRegistryModule.Mixin
+local ConfigTypes = Config.Types
+
+assert(CreateFromMixins, "Loolib.Core.Mixin must be loaded before ConfigRegistry")
+assert(CallbackRegistryMixin, "Loolib.CallbackRegistry must be loaded before ConfigRegistry")
+assert(ConfigTypes, "Loolib.Config.Types must be loaded before ConfigRegistry")
 
 --[[--------------------------------------------------------------------
     LoolibConfigRegistryMixin
@@ -23,7 +38,7 @@ assert(LoolibCallbackRegistryMixin, "Loolib/Events/CallbackRegistry.lua must be 
     Manages registration, retrieval, and validation of options tables.
 ----------------------------------------------------------------------]]
 
-LoolibConfigRegistryMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local ConfigRegistryMixin = CreateFromMixins(CallbackRegistryMixin)
 
 local REGISTRY_EVENTS = {
     "OnConfigTableChange",
@@ -36,8 +51,8 @@ local REGISTRY_EVENTS = {
 ----------------------------------------------------------------------]]
 
 --- Initialize the config registry
-function LoolibConfigRegistryMixin:Init()
-    LoolibCallbackRegistryMixin.OnLoad(self)
+function ConfigRegistryMixin:Init()
+    CallbackRegistryMixin.OnLoad(self)
     self:GenerateCallbackEvents(REGISTRY_EVENTS)
 
     self.tables = {}           -- appName -> options table or function
@@ -55,7 +70,7 @@ end
 -- @param options table|function - Options table OR function returning options table
 -- @param skipValidation boolean - Skip validation for performance (default false)
 -- @return boolean - Success
-function LoolibConfigRegistryMixin:RegisterOptionsTable(appName, options, skipValidation)
+function ConfigRegistryMixin:RegisterOptionsTable(appName, options, skipValidation)
     if type(appName) ~= "string" or appName == "" then
         error("LoolibConfigRegistry:RegisterOptionsTable: appName must be a non-empty string", 2)
     end
@@ -68,7 +83,7 @@ function LoolibConfigRegistryMixin:RegisterOptionsTable(appName, options, skipVa
     if not skipValidation and type(options) == "table" then
         local isValid, errors = self:ValidateOptionsTable(options, appName)
         if not isValid then
-            local errorMsg = table.concat(errors, "\n  ")
+            local errorMsg = table_concat(errors, "\n  ")
             Loolib:Error("Config validation failed for '" .. appName .. "':\n  " .. errorMsg)
             -- Continue anyway but log the warning
         end
@@ -86,7 +101,7 @@ end
 --- Unregister an options table
 -- @param appName string - The addon name
 -- @return boolean - Success
-function LoolibConfigRegistryMixin:UnregisterOptionsTable(appName)
+function ConfigRegistryMixin:UnregisterOptionsTable(appName)
     if not self.tables[appName] then
         return false
     end
@@ -110,7 +125,7 @@ end
 -- @param uiType string - "cmd", "dialog", "bliz" (optional, for *Hidden filtering)
 -- @param uiName string - Specific UI instance (optional)
 -- @return table|nil - Options table (evaluated if function)
-function LoolibConfigRegistryMixin:GetOptionsTable(appName, uiType, uiName)
+function ConfigRegistryMixin:GetOptionsTable(appName, uiType, uiName)
     local registered = self.tables[appName]
     if not registered then
         return nil
@@ -164,18 +179,18 @@ end
 --- Check if an options table is registered
 -- @param appName string - Addon name
 -- @return boolean
-function LoolibConfigRegistryMixin:IsRegistered(appName)
+function ConfigRegistryMixin:IsRegistered(appName)
     return self.tables[appName] ~= nil
 end
 
 --- Iterate over all registered options tables
 -- @return iterator - for name, options in Registry:IterateOptionsTables()
-function LoolibConfigRegistryMixin:IterateOptionsTables()
+function ConfigRegistryMixin:IterateOptionsTables()
     local appNames = {}
     for appName in pairs(self.tables) do
         appNames[#appNames + 1] = appName
     end
-    table.sort(appNames)
+    table_sort(appNames)
 
     local i = 0
     return function()
@@ -189,12 +204,12 @@ end
 
 --- Get list of all registered app names
 -- @return table - Array of app names
-function LoolibConfigRegistryMixin:GetRegisteredAppNames()
+function ConfigRegistryMixin:GetRegisteredAppNames()
     local names = {}
     for appName in pairs(self.tables) do
         names[#names + 1] = appName
     end
-    table.sort(names)
+    table_sort(names)
     return names
 end
 
@@ -204,7 +219,7 @@ end
 
 --- Notify that an options table has changed
 -- @param appName string - The addon name
-function LoolibConfigRegistryMixin:NotifyChange(appName)
+function ConfigRegistryMixin:NotifyChange(appName)
     if appName then
         self.cacheInvalid[appName] = true
         -- We clear the cache table so next GetOptionsTable rebuilds it
@@ -226,7 +241,7 @@ end
 
 --- Clear the cache for an app
 -- @param appName string - The addon name (or nil for all)
-function LoolibConfigRegistryMixin:ClearCache(appName)
+function ConfigRegistryMixin:ClearCache(appName)
     if appName then
         self.cachedTables[appName] = {}
         self.cacheTime[appName] = nil
@@ -250,7 +265,7 @@ end
 -- @param name string - Name for error messages
 -- @param path string - Current path (for recursion)
 -- @return boolean, table - isValid, array of error strings
-function LoolibConfigRegistryMixin:ValidateOptionsTable(options, name, path, visited)
+function ConfigRegistryMixin:ValidateOptionsTable(options, name, path, visited)
     local errors = {}
     path = path or ""
     local fullPath = path == "" and name or (name .. "." .. path)
@@ -283,11 +298,11 @@ function LoolibConfigRegistryMixin:ValidateOptionsTable(options, name, path, vis
     local optType = options.type
     if optType then
         -- Check type is valid
-        if not LoolibConfigTypes.types[optType] then
+        if not ConfigTypes.types[optType] then
             errors[#errors + 1] = string.format("Unknown option type '%s' at '%s'", optType, fullPath)
         else
             -- Validate type-specific properties
-            local typeValid, typeError = LoolibConfigTypes:ValidateOption(optType, options)
+            local typeValid, typeError = ConfigTypes:ValidateOption(optType, options)
             if not typeValid then
                 errors[#errors + 1] = string.format("At '%s': %s", fullPath, typeError)
             end
@@ -315,7 +330,7 @@ function LoolibConfigRegistryMixin:ValidateOptionsTable(options, name, path, vis
     end
 
     -- Check for get/set on types that need them
-    if optType and LoolibConfigTypes:SupportsGetSet(optType) then
+    if optType and ConfigTypes:SupportsGetSet(optType) then
         -- Warning only - get/set are often inherited from handler
         -- This is not an error but could be validated more strictly
     end
@@ -331,7 +346,7 @@ end
 -- @param options table - Root options table
 -- @param ... - Path components
 -- @return table|nil - The option at the path
-function LoolibConfigRegistryMixin:GetOptionByPath(options, ...)
+function ConfigRegistryMixin:GetOptionByPath(options, ...)
     local current = options
     local pathCount = select("#", ...)
 
@@ -358,7 +373,7 @@ end
 --- Get all options sorted by order
 -- @param group table - Group option with args
 -- @return table - Array of {key, option} sorted by order
-function LoolibConfigRegistryMixin:GetSortedOptions(group)
+function ConfigRegistryMixin:GetSortedOptions(group)
     if not group or not group.args then
         return {}
     end
@@ -371,7 +386,7 @@ function LoolibConfigRegistryMixin:GetSortedOptions(group)
     end
 
     -- Sort by order property
-    table.sort(sorted, function(a, b)
+    table_sort(sorted, function(a, b)
         local orderA = self:ResolveValue(a.option.order, nil) or 100
         local orderB = self:ResolveValue(b.option.order, nil) or 100
         if orderA == orderB then
@@ -391,7 +406,7 @@ end
 -- @param valueOrFunc any - Static value or function returning value
 -- @param info table - Info table to pass to function
 -- @return any - Resolved value
-function LoolibConfigRegistryMixin:ResolveValue(valueOrFunc, info)
+function ConfigRegistryMixin:ResolveValue(valueOrFunc, info)
     if type(valueOrFunc) == "function" then
         local success, result = pcall(valueOrFunc, info)
         if success then
@@ -410,7 +425,7 @@ end
 -- @param appName string - App name
 -- @param ... - Path to option
 -- @return table - Info table
-function LoolibConfigRegistryMixin:BuildInfoTable(options, option, appName, ...)
+function ConfigRegistryMixin:BuildInfoTable(options, option, appName, ...)
     local info = {
         options = options,
         option = option,
@@ -440,7 +455,7 @@ end
 -- @param methodOrFunc function|string - Method name or function
 -- @param ... - Additional arguments
 -- @return any - Result
-function LoolibConfigRegistryMixin:CallMethod(option, info, methodOrFunc, ...)
+function ConfigRegistryMixin:CallMethod(option, info, methodOrFunc, ...)
     local handler = info.handler or option.handler
 
     if type(methodOrFunc) == "string" then
@@ -472,7 +487,7 @@ end
 -- @param option table - The option
 -- @param info table - Info table
 -- @return any - The value
-function LoolibConfigRegistryMixin:GetValue(option, info)
+function ConfigRegistryMixin:GetValue(option, info)
     if not option.get then
         return nil
     end
@@ -483,7 +498,7 @@ end
 -- @param option table - The option
 -- @param info table - Info table
 -- @param ... - Values to set
-function LoolibConfigRegistryMixin:SetValue(option, info, ...)
+function ConfigRegistryMixin:SetValue(option, info, ...)
     if not option.set then
         return
     end
@@ -519,7 +534,7 @@ end
 -- @param info table - Info table
 -- @param uiType string - UI type for specific hidden check
 -- @return boolean
-function LoolibConfigRegistryMixin:IsHidden(option, info, uiType)
+function ConfigRegistryMixin:IsHidden(option, info, uiType)
     -- Check type-specific hidden
     local typeHiddenKey = uiType and (uiType .. "Hidden")
     if typeHiddenKey and option[typeHiddenKey] then
@@ -538,7 +553,7 @@ end
 -- @param option table - The option
 -- @param info table - Info table
 -- @return boolean
-function LoolibConfigRegistryMixin:IsDisabled(option, info)
+function ConfigRegistryMixin:IsDisabled(option, info)
     local disabled = self:ResolveValue(option.disabled, info)
     return disabled == true
 end
@@ -549,23 +564,27 @@ end
 
 --- Create a new config registry instance
 -- @return table - New registry instance
-function CreateLoolibConfigRegistry()
-    local registry = LoolibCreateFromMixins(LoolibConfigRegistryMixin)
+local function CreateConfigRegistry()
+    local registry = CreateFromMixins(ConfigRegistryMixin)
     registry:Init()
     return registry
 end
 
 -- Create the singleton instance
-local ConfigRegistry = CreateLoolibConfigRegistry()
+local ConfigRegistry = CreateConfigRegistry()
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
 local ConfigRegistryModule = {
-    Mixin = LoolibConfigRegistryMixin,
-    Create = CreateLoolibConfigRegistry,
-    Registry = ConfigRegistry,  -- Singleton instance
+    Mixin = ConfigRegistryMixin,
+    Create = CreateConfigRegistry,
+    Registry = ConfigRegistry,
 }
+
+Loolib.Config.RegistryMixin = ConfigRegistryMixin
+Loolib.Config.CreateRegistry = CreateConfigRegistry
+Loolib.Config.Registry = ConfigRegistry
 
 Loolib:RegisterModule("ConfigRegistry", ConfigRegistryModule)

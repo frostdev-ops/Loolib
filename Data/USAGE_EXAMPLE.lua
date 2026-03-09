@@ -129,7 +129,7 @@ local itemsDB2 = db:GetNamespace("Items")
 
 -- Namespaces are isolated from main db
 db.profile.someSetting = "value"  -- Only in main db
-itemsDB.profile.someSetting  -- nil (not in namespace)
+-- itemsDB.profile.someSetting is nil (not in namespace)
 
 -- ==================================================================
 -- CALLBACKS - Listen for database events
@@ -272,7 +272,7 @@ local db = Data.CreateSavedVariables("MyAddon_DB", {
 -- ==================================================================
 
 --[[
-MyAddon_DB = {
+example MyAddon_DB structure = {
     -- Profile system
     profiles = {
         ["Default"] = { ... },

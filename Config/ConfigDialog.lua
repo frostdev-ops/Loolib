@@ -12,11 +12,30 @@
     - Config/ConfigTypes.lua (LoolibConfigTypes for type info)
 ----------------------------------------------------------------------]]
 
-local Loolib = LibStub("Loolib")
+local CreateFrame = CreateFrame
+local InterfaceOptions_AddCategory = InterfaceOptions_AddCategory
+local Settings = Settings
+local UIParent = UIParent
+local ipairs = ipairs
+local next = next
+local pairs = pairs
+local table_insert = table.insert
+local table_remove = table.remove
+local tostring = tostring
+local type = type
+local unpack = unpack
+local wipe = wipe
 
--- Verify dependencies are loaded
-assert(LoolibCreateFromMixins, "Loolib/Core/Mixin.lua must be loaded before ConfigDialog")
-assert(LoolibCallbackRegistryMixin, "Loolib/Events/CallbackRegistry.lua must be loaded before ConfigDialog")
+local Loolib = LibStub("Loolib")
+local Config = Loolib:GetOrCreateModule("Config")
+local CreateFromMixins = Loolib.CreateFromMixins
+local CallbackRegistryModule = Loolib:GetModule("CallbackRegistry")
+local CallbackRegistryMixin = CallbackRegistryModule and CallbackRegistryModule.Mixin
+local ConfigTypes = Config.Types
+
+assert(CreateFromMixins, "Loolib.Core.Mixin must be loaded before ConfigDialog")
+assert(CallbackRegistryMixin, "Loolib.CallbackRegistry must be loaded before ConfigDialog")
+assert(ConfigTypes, "Loolib.Config.Types must be loaded before ConfigDialog")
 
 --[[--------------------------------------------------------------------
     Constants
@@ -50,7 +69,9 @@ local WIDTH_MULTIPLIERS = {
     Main dialog system that renders options tables as interactive UI.
 ----------------------------------------------------------------------]]
 
-LoolibConfigDialogMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local ConfigDialogMixin = CreateFromMixins(CallbackRegistryMixin)
+local LoolibConfigDialogMixin = ConfigDialogMixin
+local LoolibConfigTypes = ConfigTypes
 
 local DIALOG_EVENTS = {
     "OnDialogOpened",
@@ -64,8 +85,8 @@ local DIALOG_EVENTS = {
 ----------------------------------------------------------------------]]
 
 --- Initialize the dialog system
-function LoolibConfigDialogMixin:Init()
-    LoolibCallbackRegistryMixin.OnLoad(self)
+function ConfigDialogMixin:Init()
+    CallbackRegistryMixin.OnLoad(self)
     self:GenerateCallbackEvents(DIALOG_EVENTS)
 
     self.dialogs = {}          -- appName -> dialog frame
@@ -344,8 +365,7 @@ end
 -- @param ... - Optional path to open specific group
 -- @return Frame - Dialog frame
 function LoolibConfigDialogMixin:Open(appName, container, ...)
-    local ConfigRegistry = Loolib:GetModule("ConfigRegistry")
-    local registry = ConfigRegistry and ConfigRegistry.Registry
+    local registry = Config.Registry
 
     if not registry then
         Loolib:Error("ConfigRegistry not available")
@@ -445,8 +465,7 @@ function LoolibConfigDialogMixin:SelectFirstGroup(appName, options)
         return
     end
 
-    local ConfigRegistry = Loolib:GetModule("ConfigRegistry")
-    local registry = ConfigRegistry and ConfigRegistry.Registry
+    local registry = Config.Registry
     if not registry then return end
 
     local sorted = registry:GetSortedOptions(options)
@@ -473,14 +492,11 @@ end
 -- @param container Frame - Parent frame (or nil)
 -- @return Frame - Dialog frame
 function LoolibConfigDialogMixin:CreateDialog(appName, options, container)
-    local ConfigRegistry = Loolib:GetModule("ConfigRegistry")
-    local registry = ConfigRegistry and ConfigRegistry.Registry
-
     -- Get size (supports configurable dimensions)
     local width, height = GetDialogDimensions(appName, self.defaultSizes)
 
     -- Create main frame
-    local dialog = CreateFrame("Frame", "LoolibConfigDialog_" .. appName, container or UIParent, "BackdropTemplate")
+    local dialog = CreateFrame("Frame", nil, container or UIParent, "BackdropTemplate")
     dialog:SetSize(width, height)
     dialog:SetPoint("CENTER")
     dialog:SetFrameStrata("DIALOG")
@@ -2619,8 +2635,7 @@ end
 -- @param ... - Path to group (optional)
 -- @return Frame - Settings frame
 function LoolibConfigDialogMixin:AddToBlizOptions(appName, name, parent, ...)
-    local ConfigRegistry = Loolib:GetModule("ConfigRegistry")
-    local registry = ConfigRegistry and ConfigRegistry.Registry
+    local registry = Config.Registry
 
     if not registry then
         Loolib:Error("ConfigRegistry not available")
@@ -2634,7 +2649,7 @@ function LoolibConfigDialogMixin:AddToBlizOptions(appName, name, parent, ...)
     end
 
     -- Create the settings panel frame
-    local panel = CreateFrame("Frame", "LoolibBlizPanel_" .. appName, UIParent)
+    local panel = CreateFrame("Frame", nil, UIParent)
     panel.name = name or appName
     
     -- Store reference to dialog mixin for use in callbacks
@@ -2707,23 +2722,29 @@ end
 
 --- Create a new config dialog instance
 -- @return table - New instance
-function CreateLoolibConfigDialog()
-    local dialog = LoolibCreateFromMixins(LoolibConfigDialogMixin)
+local function CreateConfigDialog()
+    local dialog = CreateFromMixins(ConfigDialogMixin)
     dialog:Init()
     return dialog
 end
 
 -- Create the singleton instance
-local ConfigDialog = CreateLoolibConfigDialog()
+local ConfigDialog = CreateConfigDialog()
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
 local ConfigDialogModule = {
-    Mixin = LoolibConfigDialogMixin,
-    Create = CreateLoolibConfigDialog,
-    Dialog = ConfigDialog,  -- Singleton instance
+    Mixin = ConfigDialogMixin,
+    Create = CreateConfigDialog,
+    Dialog = ConfigDialog,
 }
 
+Loolib.Config.DialogMixin = ConfigDialogMixin
+Loolib.Config.CreateDialog = CreateConfigDialog
+Loolib.Config.Dialog = ConfigDialog
+
 Loolib:RegisterModule("ConfigDialog", ConfigDialogModule)
+-- FIX(Area3-1): Also register under dotted path so Loolib:GetModule("Config.Dialog") works
+Loolib:RegisterModule("Config.Dialog", ConfigDialogModule)

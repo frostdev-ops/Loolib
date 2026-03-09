@@ -15,6 +15,15 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for WidgetBuilder")
+local FrameFactory = assert(Loolib.FrameFactory, "Loolib.FrameFactory is required for WidgetBuilder")
+local Mixin = assert(Loolib.Mixin, "Loolib.Mixin is required for WidgetBuilder")
+local ReflectScriptHandlers = assert(Loolib.ReflectScriptHandlers, "Loolib.ReflectScriptHandlers is required for WidgetBuilder")
+local AnchorUtil = assert(Loolib.AnchorUtil, "Loolib.AnchorUtil is required for WidgetBuilder")
+local FrameUtil = assert(Loolib.FrameUtil, "Loolib.FrameUtil is required for WidgetBuilder")
+local ThemeManager = assert(Loolib.ThemeManager, "Loolib.ThemeManager is required for WidgetBuilder")
+local Factory = Loolib.Factory or Loolib:GetOrCreateModule("Factory")
+local WidgetBuilderModule = Factory.WidgetBuilder or Loolib:GetModule("Factory.WidgetBuilder") or {}
 
 --[[--------------------------------------------------------------------
     LoolibWidgetBuilderMixin
@@ -22,11 +31,11 @@ local Loolib = LibStub("Loolib")
     The core builder mixin that provides the fluent API.
 ----------------------------------------------------------------------]]
 
-LoolibWidgetBuilderMixin = {}
+local WidgetBuilderMixin = WidgetBuilderModule.Mixin or {}
 
 --- Initialize the widget builder
 -- @param parent Frame - Parent frame for the widget
-function LoolibWidgetBuilderMixin:Init(parent)
+function WidgetBuilderMixin:Init(parent)
     self.parent = parent
     self.frameType = "Frame"
     self.template = nil
@@ -52,14 +61,14 @@ end
 
 --- Create a basic Frame
 -- @return self - For chaining
-function LoolibWidgetBuilderMixin:Frame()
+function WidgetBuilderMixin:Frame()
     self.frameType = "Frame"
     return self
 end
 
 --- Create a Button
 -- @return self
-function LoolibWidgetBuilderMixin:Button()
+function WidgetBuilderMixin:Button()
     self.frameType = "Button"
     self.properties.normalTexture = "Interface\\Buttons\\UI-Panel-Button-Up"
     self.properties.pushedTexture = "Interface\\Buttons\\UI-Panel-Button-Down"
@@ -69,7 +78,7 @@ end
 
 --- Create a CheckButton
 -- @return self
-function LoolibWidgetBuilderMixin:CheckButton()
+function WidgetBuilderMixin:CheckButton()
     self.frameType = "CheckButton"
     return self
 end
@@ -77,7 +86,7 @@ end
 --- Create an EditBox
 -- @param multiLine boolean - True for multi-line edit box
 -- @return self
-function LoolibWidgetBuilderMixin:EditBox(multiLine)
+function WidgetBuilderMixin:EditBox(multiLine)
     self.frameType = "EditBox"
     self.properties.multiLine = multiLine or false
     self.properties.autoFocus = false
@@ -86,7 +95,7 @@ end
 
 --- Create a Slider
 -- @return self
-function LoolibWidgetBuilderMixin:Slider()
+function WidgetBuilderMixin:Slider()
     self.frameType = "Slider"
     self.properties.orientation = "HORIZONTAL"
     self.properties.minValue = 0
@@ -97,7 +106,7 @@ end
 
 --- Create a StatusBar
 -- @return self
-function LoolibWidgetBuilderMixin:StatusBar()
+function WidgetBuilderMixin:StatusBar()
     self.frameType = "StatusBar"
     self.properties.minValue = 0
     self.properties.maxValue = 100
@@ -106,14 +115,14 @@ end
 
 --- Create a ScrollFrame
 -- @return self
-function LoolibWidgetBuilderMixin:ScrollFrame()
+function WidgetBuilderMixin:ScrollFrame()
     self.frameType = "ScrollFrame"
     return self
 end
 
 --- Create a simple Texture holder frame
 -- @return self
-function LoolibWidgetBuilderMixin:TextureFrame()
+function WidgetBuilderMixin:TextureFrame()
     self.frameType = "Frame"
     self.properties.isTextureHolder = true
     return self
@@ -127,7 +136,7 @@ end
 -- @param width number - Width in pixels
 -- @param height number - Height in pixels (defaults to width if not specified)
 -- @return self
-function LoolibWidgetBuilderMixin:Size(width, height)
+function WidgetBuilderMixin:Size(width, height)
     self.width = width
     self.height = height or width
     return self
@@ -136,7 +145,7 @@ end
 --- Set only the width
 -- @param width number - Width in pixels
 -- @return self
-function LoolibWidgetBuilderMixin:Width(width)
+function WidgetBuilderMixin:Width(width)
     self.width = width
     return self
 end
@@ -144,7 +153,7 @@ end
 --- Set only the height
 -- @param height number - Height in pixels
 -- @return self
-function LoolibWidgetBuilderMixin:Height(height)
+function WidgetBuilderMixin:Height(height)
     self.height = height
     return self
 end
@@ -156,7 +165,7 @@ end
 -- @param offsetX number - X offset
 -- @param offsetY number - Y offset
 -- @return self
-function LoolibWidgetBuilderMixin:Point(point, relativeTo, relativePoint, offsetX, offsetY)
+function WidgetBuilderMixin:Point(point, relativeTo, relativePoint, offsetX, offsetY)
     -- Handle simplified syntax: Point("CENTER") or Point("TOPLEFT", 10, -10)
     if type(relativeTo) == "number" then
         offsetY = relativePoint
@@ -178,7 +187,7 @@ end
 --- Fill the parent (SetAllPoints)
 -- @param inset number - Optional inset from edges
 -- @return self
-function LoolibWidgetBuilderMixin:AllPoints(inset)
+function WidgetBuilderMixin:AllPoints(inset)
     self.properties.fillParent = true
     self.properties.fillInset = inset
     return self
@@ -188,7 +197,7 @@ end
 -- @param offsetX number - X offset from center
 -- @param offsetY number - Y offset from center
 -- @return self
-function LoolibWidgetBuilderMixin:Center(offsetX, offsetY)
+function WidgetBuilderMixin:Center(offsetX, offsetY)
     return self:Point("CENTER", nil, "CENTER", offsetX or 0, offsetY or 0)
 end
 
@@ -199,7 +208,7 @@ end
 --- Set the backdrop
 -- @param backdrop table|string - Backdrop table or theme backdrop name
 -- @return self
-function LoolibWidgetBuilderMixin:Backdrop(backdrop)
+function WidgetBuilderMixin:Backdrop(backdrop)
     if type(backdrop) == "string" then
         -- It's a theme backdrop name
         self.properties.themeBackdrop = backdrop
@@ -216,7 +225,7 @@ end
 -- @param b number - Blue (0-1)
 -- @param a number - Alpha (0-1, default 1)
 -- @return self
-function LoolibWidgetBuilderMixin:BackdropColor(r, g, b, a)
+function WidgetBuilderMixin:BackdropColor(r, g, b, a)
     self.backdropColor = {r, g, b, a or 1}
     return self
 end
@@ -227,7 +236,7 @@ end
 -- @param b number - Blue
 -- @param a number - Alpha
 -- @return self
-function LoolibWidgetBuilderMixin:BackdropBorderColor(r, g, b, a)
+function WidgetBuilderMixin:BackdropBorderColor(r, g, b, a)
     self.backdropBorderColor = {r, g, b, a or 1}
     return self
 end
@@ -235,7 +244,7 @@ end
 --- Set the alpha
 -- @param alpha number - Alpha value (0-1)
 -- @return self
-function LoolibWidgetBuilderMixin:Alpha(alpha)
+function WidgetBuilderMixin:Alpha(alpha)
     self.properties.alpha = alpha
     return self
 end
@@ -243,7 +252,7 @@ end
 --- Set the frame level
 -- @param level number - Frame level
 -- @return self
-function LoolibWidgetBuilderMixin:FrameLevel(level)
+function WidgetBuilderMixin:FrameLevel(level)
     self.properties.frameLevel = level
     return self
 end
@@ -251,7 +260,7 @@ end
 --- Set the frame strata
 -- @param strata string - Frame strata (e.g., "HIGH", "DIALOG")
 -- @return self
-function LoolibWidgetBuilderMixin:FrameStrata(strata)
+function WidgetBuilderMixin:FrameStrata(strata)
     self.properties.frameStrata = strata
     return self
 end
@@ -259,14 +268,14 @@ end
 --- Set visibility
 -- @param shown boolean - Whether to show the frame
 -- @return self
-function LoolibWidgetBuilderMixin:Shown(shown)
+function WidgetBuilderMixin:Shown(shown)
     self.properties.shown = shown
     return self
 end
 
 --- Hide the frame initially
 -- @return self
-function LoolibWidgetBuilderMixin:Hidden()
+function WidgetBuilderMixin:Hidden()
     self.properties.shown = false
     return self
 end
@@ -278,7 +287,7 @@ end
 --- Make the frame movable
 -- @param clampToScreen boolean - Whether to clamp to screen (default true)
 -- @return self
-function LoolibWidgetBuilderMixin:Movable(clampToScreen)
+function WidgetBuilderMixin:Movable(clampToScreen)
     self.properties.movable = true
     self.properties.clampToScreen = clampToScreen ~= false
     return self
@@ -290,7 +299,7 @@ end
 -- @param maxWidth number - Maximum width (optional)
 -- @param maxHeight number - Maximum height (optional)
 -- @return self
-function LoolibWidgetBuilderMixin:Resizable(minWidth, minHeight, maxWidth, maxHeight)
+function WidgetBuilderMixin:Resizable(minWidth, minHeight, maxWidth, maxHeight)
     self.properties.resizable = true
     self.properties.minWidth = minWidth
     self.properties.minHeight = minHeight
@@ -302,7 +311,7 @@ end
 --- Add a close button
 -- @param onClose function - Optional callback when closed
 -- @return self
-function LoolibWidgetBuilderMixin:CloseButton(onClose)
+function WidgetBuilderMixin:CloseButton(onClose)
     self.properties.closeButton = true
     self.properties.onCloseCallback = onClose
     return self
@@ -312,7 +321,7 @@ end
 -- @param title string - Title text
 -- @param fontObject string - Font object name (optional)
 -- @return self
-function LoolibWidgetBuilderMixin:Title(title, fontObject)
+function WidgetBuilderMixin:Title(title, fontObject)
     self.properties.title = title
     self.properties.titleFont = fontObject
     return self
@@ -321,7 +330,7 @@ end
 --- Enable mouse
 -- @param enabled boolean - Enable mouse (default true)
 -- @return self
-function LoolibWidgetBuilderMixin:EnableMouse(enabled)
+function WidgetBuilderMixin:EnableMouse(enabled)
     self.properties.enableMouse = enabled ~= false
     return self
 end
@@ -329,7 +338,7 @@ end
 --- Enable keyboard
 -- @param enabled boolean - Enable keyboard (default true)
 -- @return self
-function LoolibWidgetBuilderMixin:EnableKeyboard(enabled)
+function WidgetBuilderMixin:EnableKeyboard(enabled)
     self.properties.enableKeyboard = enabled ~= false
     return self
 end
@@ -342,7 +351,7 @@ end
 -- @param text string - The text to display
 -- @param fontObject string - Font object name (optional)
 -- @return self
-function LoolibWidgetBuilderMixin:Text(text, fontObject)
+function WidgetBuilderMixin:Text(text, fontObject)
     self.properties.text = text
     self.properties.fontObject = fontObject
     return self
@@ -354,7 +363,7 @@ end
 -- @param highlight string - Highlight texture path
 -- @param disabled string - Disabled texture path
 -- @return self
-function LoolibWidgetBuilderMixin:Textures(normal, pushed, highlight, disabled)
+function WidgetBuilderMixin:Textures(normal, pushed, highlight, disabled)
     self.properties.normalTexture = normal
     self.properties.pushedTexture = pushed
     self.properties.highlightTexture = highlight
@@ -366,7 +375,7 @@ end
 -- @param minValue number - Minimum value
 -- @param maxValue number - Maximum value
 -- @return self
-function LoolibWidgetBuilderMixin:Range(minValue, maxValue)
+function WidgetBuilderMixin:Range(minValue, maxValue)
     self.properties.minValue = minValue
     self.properties.maxValue = maxValue
     return self
@@ -375,7 +384,7 @@ end
 --- Set slider step size
 -- @param step number - Step size
 -- @return self
-function LoolibWidgetBuilderMixin:Step(step)
+function WidgetBuilderMixin:Step(step)
     self.properties.valueStep = step
     return self
 end
@@ -383,7 +392,7 @@ end
 --- Set slider orientation
 -- @param orientation string - "HORIZONTAL" or "VERTICAL"
 -- @return self
-function LoolibWidgetBuilderMixin:Orientation(orientation)
+function WidgetBuilderMixin:Orientation(orientation)
     self.properties.orientation = orientation
     return self
 end
@@ -391,7 +400,7 @@ end
 --- Set initial value (slider/statusbar)
 -- @param value number - Initial value
 -- @return self
-function LoolibWidgetBuilderMixin:Value(value)
+function WidgetBuilderMixin:Value(value)
     self.properties.value = value
     return self
 end
@@ -399,7 +408,7 @@ end
 --- Set editbox max letters
 -- @param maxLetters number - Maximum characters
 -- @return self
-function LoolibWidgetBuilderMixin:MaxLetters(maxLetters)
+function WidgetBuilderMixin:MaxLetters(maxLetters)
     self.properties.maxLetters = maxLetters
     return self
 end
@@ -407,7 +416,7 @@ end
 --- Set editbox numeric only
 -- @param numeric boolean - Only allow numbers
 -- @return self
-function LoolibWidgetBuilderMixin:Numeric(numeric)
+function WidgetBuilderMixin:Numeric(numeric)
     self.properties.numeric = numeric ~= false
     return self
 end
@@ -415,7 +424,7 @@ end
 --- Set editbox password mode
 -- @param password boolean - Hide characters
 -- @return self
-function LoolibWidgetBuilderMixin:Password(password)
+function WidgetBuilderMixin:Password(password)
     self.properties.password = password ~= false
     return self
 end
@@ -423,7 +432,7 @@ end
 --- Set editbox placeholder text
 -- @param placeholder string - Placeholder text
 -- @return self
-function LoolibWidgetBuilderMixin:Placeholder(placeholder)
+function WidgetBuilderMixin:Placeholder(placeholder)
     self.properties.placeholder = placeholder
     return self
 end
@@ -431,7 +440,7 @@ end
 --- Set checkbox label
 -- @param label string - Label text
 -- @return self
-function LoolibWidgetBuilderMixin:Label(label)
+function WidgetBuilderMixin:Label(label)
     self.properties.label = label
     return self
 end
@@ -439,7 +448,7 @@ end
 --- Set checkbox checked state
 -- @param checked boolean - Whether checked
 -- @return self
-function LoolibWidgetBuilderMixin:Checked(checked)
+function WidgetBuilderMixin:Checked(checked)
     self.properties.checked = checked
     return self
 end
@@ -451,7 +460,7 @@ end
 --- Set OnClick handler
 -- @param handler function - Click handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnClick(handler)
+function WidgetBuilderMixin:OnClick(handler)
     self.scripts.OnClick = handler
     return self
 end
@@ -459,7 +468,7 @@ end
 --- Set OnEnter handler
 -- @param handler function - Enter handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnEnter(handler)
+function WidgetBuilderMixin:OnEnter(handler)
     self.scripts.OnEnter = handler
     return self
 end
@@ -467,7 +476,7 @@ end
 --- Set OnLeave handler
 -- @param handler function - Leave handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnLeave(handler)
+function WidgetBuilderMixin:OnLeave(handler)
     self.scripts.OnLeave = handler
     return self
 end
@@ -475,7 +484,7 @@ end
 --- Set OnShow handler
 -- @param handler function - Show handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnShow(handler)
+function WidgetBuilderMixin:OnShow(handler)
     self.scripts.OnShow = handler
     return self
 end
@@ -483,7 +492,7 @@ end
 --- Set OnHide handler
 -- @param handler function - Hide handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnHide(handler)
+function WidgetBuilderMixin:OnHide(handler)
     self.scripts.OnHide = handler
     return self
 end
@@ -491,7 +500,7 @@ end
 --- Set OnUpdate handler
 -- @param handler function - Update handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnUpdate(handler)
+function WidgetBuilderMixin:OnUpdate(handler)
     self.scripts.OnUpdate = handler
     return self
 end
@@ -499,7 +508,7 @@ end
 --- Set OnValueChanged handler (sliders)
 -- @param handler function - Value changed handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnValueChanged(handler)
+function WidgetBuilderMixin:OnValueChanged(handler)
     self.scripts.OnValueChanged = handler
     return self
 end
@@ -507,7 +516,7 @@ end
 --- Set OnTextChanged handler (editbox)
 -- @param handler function - Text changed handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnTextChanged(handler)
+function WidgetBuilderMixin:OnTextChanged(handler)
     self.scripts.OnTextChanged = handler
     return self
 end
@@ -515,7 +524,7 @@ end
 --- Set OnEnterPressed handler (editbox)
 -- @param handler function - Enter pressed handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnEnterPressed(handler)
+function WidgetBuilderMixin:OnEnterPressed(handler)
     self.scripts.OnEnterPressed = handler
     return self
 end
@@ -523,7 +532,7 @@ end
 --- Set OnEscapePressed handler (editbox)
 -- @param handler function - Escape pressed handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnEscapePressed(handler)
+function WidgetBuilderMixin:OnEscapePressed(handler)
     self.scripts.OnEscapePressed = handler
     return self
 end
@@ -531,7 +540,7 @@ end
 --- Set OnMouseDown handler
 -- @param handler function - Mouse down handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnMouseDown(handler)
+function WidgetBuilderMixin:OnMouseDown(handler)
     self.scripts.OnMouseDown = handler
     return self
 end
@@ -539,7 +548,7 @@ end
 --- Set OnMouseUp handler
 -- @param handler function - Mouse up handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnMouseUp(handler)
+function WidgetBuilderMixin:OnMouseUp(handler)
     self.scripts.OnMouseUp = handler
     return self
 end
@@ -547,7 +556,7 @@ end
 --- Set OnMouseWheel handler
 -- @param handler function - Mouse wheel handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnMouseWheel(handler)
+function WidgetBuilderMixin:OnMouseWheel(handler)
     self.scripts.OnMouseWheel = handler
     self.properties.enableMouseWheel = true
     return self
@@ -556,7 +565,7 @@ end
 --- Set OnDragStart handler
 -- @param handler function - Drag start handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnDragStart(handler)
+function WidgetBuilderMixin:OnDragStart(handler)
     self.scripts.OnDragStart = handler
     return self
 end
@@ -564,7 +573,7 @@ end
 --- Set OnDragStop handler
 -- @param handler function - Drag stop handler
 -- @return self
-function LoolibWidgetBuilderMixin:OnDragStop(handler)
+function WidgetBuilderMixin:OnDragStop(handler)
     self.scripts.OnDragStop = handler
     return self
 end
@@ -576,7 +585,7 @@ end
 --- Apply mixins to the frame
 -- @param ... - Mixins to apply
 -- @return self
-function LoolibWidgetBuilderMixin:Mixin(...)
+function WidgetBuilderMixin:Mixin(...)
     for i = 1, select("#", ...) do
         self.mixins[#self.mixins + 1] = select(i, ...)
     end
@@ -586,7 +595,7 @@ end
 --- Use a specific XML template
 -- @param template string - Template name
 -- @return self
-function LoolibWidgetBuilderMixin:Template(template)
+function WidgetBuilderMixin:Template(template)
     self.template = template
     return self
 end
@@ -594,7 +603,7 @@ end
 --- Set the global name
 -- @param name string - Global frame name
 -- @return self
-function LoolibWidgetBuilderMixin:Name(name)
+function WidgetBuilderMixin:Name(name)
     self.name = name
     return self
 end
@@ -602,7 +611,7 @@ end
 --- Use object pooling
 -- @param resetFunc function - Reset function for pool
 -- @return self
-function LoolibWidgetBuilderMixin:Pooled(resetFunc)
+function WidgetBuilderMixin:Pooled(resetFunc)
     self.pooled = true
     self.resetFunc = resetFunc
     return self
@@ -611,7 +620,7 @@ end
 --- Use a specific theme
 -- @param themeName string - Theme name to use
 -- @return self
-function LoolibWidgetBuilderMixin:Theme(themeName)
+function WidgetBuilderMixin:Theme(themeName)
     self.themeName = themeName
     return self
 end
@@ -620,7 +629,7 @@ end
 -- @param key string - Property key
 -- @param value any - Property value
 -- @return self
-function LoolibWidgetBuilderMixin:Set(key, value)
+function WidgetBuilderMixin:Set(key, value)
     self.properties[key] = value
     return self
 end
@@ -631,20 +640,20 @@ end
 
 --- Build and return the frame
 -- @return Frame - The created frame
-function LoolibWidgetBuilderMixin:Build()
+function WidgetBuilderMixin:Build()
     local frame
 
     -- Create the frame
     if self.pooled then
-        frame = LoolibFrameFactory:Create(self.parent, self.template or self.frameType, self.resetFunc)
+        frame = FrameFactory:Create(self.parent, self.template or self.frameType, self.resetFunc)
     else
         frame = CreateFrame(self.frameType, self.name, self.parent, self.template)
     end
 
     -- Apply mixins
     if #self.mixins > 0 then
-        LoolibMixin(frame, unpack(self.mixins))
-        LoolibReflectScriptHandlers(frame)
+        Mixin(frame, unpack(self.mixins))
+        ReflectScriptHandlers(frame)
     end
 
     -- Set size
@@ -657,7 +666,7 @@ function LoolibWidgetBuilderMixin:Build()
 
     -- Set points
     if self.properties.fillParent then
-        LoolibAnchorUtil.SetAllPoints(frame, self.parent, self.properties.fillInset)
+        AnchorUtil.SetAllPoints(frame, self.parent, self.properties.fillInset)
     elseif #self.points > 0 then
         frame:ClearAllPoints()
         for _, pointData in ipairs(self.points) do
@@ -675,7 +684,7 @@ function LoolibWidgetBuilderMixin:Build()
     if self.backdrop and frame.SetBackdrop then
         frame:SetBackdrop(self.backdrop)
     elseif self.properties.themeBackdrop and frame.SetBackdrop then
-        local backdrop = LoolibThemeManager:GetBackdrop(self.properties.themeBackdrop)
+        local backdrop = ThemeManager:GetBackdrop(self.properties.themeBackdrop)
         if backdrop then
             frame:SetBackdrop(backdrop)
         end
@@ -716,7 +725,7 @@ end
 
 --- Build the frame and show it
 -- @return Frame - The created frame (shown)
-function LoolibWidgetBuilderMixin:BuildAndShow()
+function WidgetBuilderMixin:BuildAndShow()
     local frame = self:Build()
     frame:Show()
     return frame
@@ -726,7 +735,7 @@ end
     Internal: Apply Properties
 ----------------------------------------------------------------------]]
 
-function LoolibWidgetBuilderMixin:ApplyProperties(frame)
+function WidgetBuilderMixin:ApplyProperties(frame)
     local props = self.properties
 
     -- Frame properties
@@ -756,22 +765,22 @@ function LoolibWidgetBuilderMixin:ApplyProperties(frame)
 
     -- Movable
     if props.movable then
-        LoolibFrameUtil.MakeMovable(frame, props.clampToScreen)
+        FrameUtil.MakeMovable(frame, props.clampToScreen)
     end
 
     -- Resizable
     if props.resizable then
-        LoolibFrameUtil.MakeResizable(frame, props.minWidth, props.minHeight, props.maxWidth, props.maxHeight)
+        FrameUtil.MakeResizable(frame, props.minWidth, props.minHeight, props.maxWidth, props.maxHeight)
     end
 
     -- Close button
     if props.closeButton then
-        LoolibFrameUtil.AddCloseButton(frame, props.onCloseCallback)
+        FrameUtil.AddCloseButton(frame, props.onCloseCallback)
     end
 
     -- Title
     if props.title then
-        LoolibFrameUtil.AddTitle(frame, props.title, props.titleFont)
+        FrameUtil.AddTitle(frame, props.title, props.titleFont)
     end
 
     -- Button-specific
@@ -800,7 +809,7 @@ function LoolibWidgetBuilderMixin:ApplyProperties(frame)
     end
 end
 
-function LoolibWidgetBuilderMixin:ApplyButtonProperties(frame)
+function WidgetBuilderMixin:ApplyButtonProperties(frame)
     local props = self.properties
 
     if props.normalTexture then
@@ -826,7 +835,7 @@ function LoolibWidgetBuilderMixin:ApplyButtonProperties(frame)
     end
 end
 
-function LoolibWidgetBuilderMixin:ApplyEditBoxProperties(frame)
+function WidgetBuilderMixin:ApplyEditBoxProperties(frame)
     local props = self.properties
 
     frame:SetAutoFocus(props.autoFocus or false)
@@ -862,7 +871,7 @@ function LoolibWidgetBuilderMixin:ApplyEditBoxProperties(frame)
     end
 end
 
-function LoolibWidgetBuilderMixin:ApplySliderProperties(frame)
+function WidgetBuilderMixin:ApplySliderProperties(frame)
     local props = self.properties
 
     frame:SetOrientation(props.orientation or "HORIZONTAL")
@@ -875,7 +884,7 @@ function LoolibWidgetBuilderMixin:ApplySliderProperties(frame)
     end
 end
 
-function LoolibWidgetBuilderMixin:ApplyStatusBarProperties(frame)
+function WidgetBuilderMixin:ApplyStatusBarProperties(frame)
     local props = self.properties
 
     frame:SetMinMaxValues(props.minValue or 0, props.maxValue or 100)
@@ -889,7 +898,7 @@ function LoolibWidgetBuilderMixin:ApplyStatusBarProperties(frame)
     end
 end
 
-function LoolibWidgetBuilderMixin:ApplyCheckButtonProperties(frame)
+function WidgetBuilderMixin:ApplyCheckButtonProperties(frame)
     local props = self.properties
 
     if props.checked then
@@ -912,8 +921,8 @@ end
 --- Create a new widget builder
 -- @param parent Frame - Parent frame
 -- @return LoolibWidgetBuilderMixin - A new builder instance
-function CreateLoolibWidgetBuilder(parent)
-    local builder = LoolibCreateFromMixins(LoolibWidgetBuilderMixin)
+local function CreateWidgetBuilder(parent)
+    local builder = CreateFromMixins(WidgetBuilderMixin)
     builder:Init(parent)
     return builder
 end
@@ -925,23 +934,25 @@ end
 --- UI.Widget() - Entry point for fluent widget creation
 -- @param parent Frame - Parent frame
 -- @return LoolibWidgetBuilderMixin - A new builder instance
-function LoolibWidget(parent)
-    return CreateLoolibWidgetBuilder(parent)
+local function Widget(parent)
+    return CreateWidgetBuilder(parent)
 end
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local WidgetBuilderModule = {
-    Mixin = LoolibWidgetBuilderMixin,
-    Create = CreateLoolibWidgetBuilder,
-    Widget = LoolibWidget,
-}
+WidgetBuilderModule.Mixin = WidgetBuilderMixin
+WidgetBuilderModule.Create = CreateWidgetBuilder
+WidgetBuilderModule.Widget = Widget
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.WidgetBuilder = WidgetBuilderModule
-UI.Widget = LoolibWidget
+UI.Widget = Widget
 
-Loolib:RegisterModule("WidgetBuilder", WidgetBuilderModule)
+Factory.WidgetBuilder = WidgetBuilderModule
+Loolib.WidgetBuilderMixin = WidgetBuilderMixin
+Loolib.CreateWidgetBuilder = CreateWidgetBuilder
+Loolib.Widget = Widget
+
+Loolib:RegisterModule("Factory.WidgetBuilder", WidgetBuilderModule)

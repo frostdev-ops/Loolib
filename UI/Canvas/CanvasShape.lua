@@ -34,7 +34,7 @@ LOOLIB_SHAPE_TYPES = {
     plus rendering properties.
 ----------------------------------------------------------------------]]
 
-LoolibCanvasShapeMixin = {}
+local LoolibCanvasShapeMixin = {}
 
 --[[--------------------------------------------------------------------
     Initialization
@@ -643,7 +643,7 @@ end
 
 --- Create a new shape manager instance
 -- @return table - A new shape manager object
-function LoolibCreateCanvasShape()
+local function LoolibCreateCanvasShape()
     local shape = {}
     LoolibMixin(shape, LoolibCanvasShapeMixin)
     shape:OnLoad()

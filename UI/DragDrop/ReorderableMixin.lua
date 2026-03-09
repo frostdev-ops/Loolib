@@ -30,6 +30,8 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for ReorderableMixin")
+local LoolibScrollableListMixin = assert(Loolib.ScrollableListMixin, "Loolib.ScrollableListMixin is required for ReorderableMixin")
 
 --[[--------------------------------------------------------------------
     LoolibReorderableMixin
@@ -38,7 +40,7 @@ local Loolib = LibStub("Loolib")
     Apply this to your scrollable list frame.
 ----------------------------------------------------------------------]]
 
-LoolibReorderableMixin = {}
+local LoolibReorderableMixin = {}
 
 --[[--------------------------------------------------------------------
     Initialization
@@ -468,7 +470,7 @@ end
     Use this if your list items need additional reorder-related functionality.
 ----------------------------------------------------------------------]]
 
-LoolibReorderableItemMixin = {}
+local LoolibReorderableItemMixin = {}
 
 --- Initialize a reorderable item
 function LoolibReorderableItemMixin:InitReorderableItem()
@@ -504,8 +506,8 @@ local ReorderableModule = {
     ItemMixin = LoolibReorderableItemMixin,
 }
 
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.Reorderable = ReorderableModule
 
-Loolib:RegisterModule("ReorderableMixin", LoolibReorderableMixin)
-Loolib:RegisterModule("ReorderableItemMixin", LoolibReorderableItemMixin)
+Loolib:RegisterModule("DragDrop.ReorderableMixin", LoolibReorderableMixin)
+Loolib:RegisterModule("DragDrop.ReorderableItemMixin", LoolibReorderableItemMixin)

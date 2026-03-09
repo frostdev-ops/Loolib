@@ -10,18 +10,25 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for HorizontalLayout")
+local Layout = Loolib.Layout or Loolib:GetOrCreateModule("Layout")
+local LayoutBaseMixin = assert(
+    Loolib.LayoutBaseMixin or ((Layout.LayoutBase or Loolib:GetModule("Layout.LayoutBase")) and (Layout.LayoutBase or Loolib:GetModule("Layout.LayoutBase")).Mixin),
+    "Loolib.Layout.LayoutBase.Mixin is required for HorizontalLayout"
+)
+local HorizontalLayoutModule = Layout.HorizontalLayout or Loolib:GetModule("Layout.HorizontalLayout") or {}
 
 --[[--------------------------------------------------------------------
     LoolibHorizontalLayoutMixin
 ----------------------------------------------------------------------]]
 
-LoolibHorizontalLayoutMixin = LoolibCreateFromMixins(LoolibBaseLayoutMixin)
+local HorizontalLayoutMixin = HorizontalLayoutModule.Mixin or CreateFromMixins(LayoutBaseMixin)
 
 --- Initialize horizontal layout
 -- @param container Frame - The container frame
 -- @param config table - Configuration options
-function LoolibHorizontalLayoutMixin:Init(container, config)
-    LoolibBaseLayoutMixin.Init(self, container, config)
+function HorizontalLayoutMixin:Init(container, config)
+    LayoutBaseMixin.Init(self, container, config)
 
     -- Horizontal-specific config
     self.config.alignItems = self.config.alignItems or "TOP"  -- TOP, CENTER, BOTTOM, STRETCH
@@ -35,21 +42,21 @@ end
 
 --- Set vertical alignment of children
 -- @param align string - TOP, CENTER, BOTTOM, STRETCH
-function LoolibHorizontalLayoutMixin:SetAlignItems(align)
+function HorizontalLayoutMixin:SetAlignItems(align)
     self.config.alignItems = align
     self:MarkDirty()
 end
 
 --- Set horizontal content justification
 -- @param justify string - START, CENTER, END, SPACE_BETWEEN, SPACE_AROUND
-function LoolibHorizontalLayoutMixin:SetJustifyContent(justify)
+function HorizontalLayoutMixin:SetJustifyContent(justify)
     self.config.justifyContent = justify
     self:MarkDirty()
 end
 
 --- Set layout direction
 -- @param direction string - RIGHT, LEFT
-function LoolibHorizontalLayoutMixin:SetDirection(direction)
+function HorizontalLayoutMixin:SetDirection(direction)
     self.config.direction = direction
     self:MarkDirty()
 end
@@ -58,7 +65,7 @@ end
     Layout Calculation
 ----------------------------------------------------------------------]]
 
-function LoolibHorizontalLayoutMixin:Layout()
+function HorizontalLayoutMixin:Layout()
     if not self.dirty then
         return
     end
@@ -154,8 +161,8 @@ end
 -- @param container Frame - Container frame
 -- @param config table - Configuration
 -- @return table - Layout instance
-function CreateLoolibHorizontalLayout(container, config)
-    local layout = LoolibCreateFromMixins(LoolibHorizontalLayoutMixin)
+local function CreateHorizontalLayout(container, config)
+    local layout = CreateFromMixins(HorizontalLayoutMixin)
     layout:Init(container, config)
     return layout
 end
@@ -164,14 +171,15 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local HorizontalLayoutModule = {
-    Mixin = LoolibHorizontalLayoutMixin,
-    Create = CreateLoolibHorizontalLayout,
-}
+HorizontalLayoutModule.Mixin = HorizontalLayoutMixin
+HorizontalLayoutModule.Create = CreateHorizontalLayout
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.HorizontalLayout = HorizontalLayoutModule
-UI.CreateHorizontalLayout = CreateLoolibHorizontalLayout
+UI.CreateHorizontalLayout = CreateHorizontalLayout
 
-Loolib:RegisterModule("HorizontalLayout", HorizontalLayoutModule)
+Layout.HorizontalLayout = HorizontalLayoutModule
+Loolib.HorizontalLayoutMixin = HorizontalLayoutMixin
+Loolib.CreateHorizontalLayout = CreateHorizontalLayout
+
+Loolib:RegisterModule("Layout.HorizontalLayout", HorizontalLayoutModule)

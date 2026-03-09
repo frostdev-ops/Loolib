@@ -8,6 +8,10 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for PoolCollection")
+local CreateFramePool = assert(Loolib.CreateFramePool, "Loolib.CreateFramePool is required for PoolCollection")
+local Pool = Loolib.Pool or Loolib:GetOrCreateModule("Pool")
+local PoolCollectionModule = Pool.PoolCollection or Loolib:GetModule("Pool.PoolCollection") or {}
 
 --[[--------------------------------------------------------------------
     LoolibPoolCollectionMixin
@@ -15,10 +19,10 @@ local Loolib = LibStub("Loolib")
     Manages multiple pools indexed by template name.
 ----------------------------------------------------------------------]]
 
-LoolibPoolCollectionMixin = {}
+local PoolCollectionMixin = PoolCollectionModule.Mixin or {}
 
 --- Initialize the pool collection
-function LoolibPoolCollectionMixin:Init()
+function PoolCollectionMixin:Init()
     self.pools = {}
 end
 
@@ -32,7 +36,7 @@ end
 -- @param template string - The template name
 -- @param specialization any - Optional additional key component
 -- @return string - A unique pool key
-function LoolibPoolCollectionMixin:GeneratePoolKey(frameType, parent, template, specialization)
+function PoolCollectionMixin:GeneratePoolKey(frameType, parent, template, specialization)
     local parentKey = parent and tostring(parent) or "nil"
     local templateKey = template or ""
     local specKey = specialization and tostring(specialization) or ""
@@ -46,7 +50,7 @@ end
 -- @param template string - The template name
 -- @param specialization any - Optional additional key component
 -- @return table|nil - The pool or nil if not found
-function LoolibPoolCollectionMixin:GetPool(frameType, parent, template, specialization)
+function PoolCollectionMixin:GetPool(frameType, parent, template, specialization)
     local key = self:GeneratePoolKey(frameType, parent, template, specialization)
     return self.pools[key]
 end
@@ -59,14 +63,14 @@ end
 -- @param specialization any - Optional additional key component
 -- @param capacity number - Optional maximum capacity
 -- @return table - The new pool
-function LoolibPoolCollectionMixin:CreatePool(frameType, parent, template, resetFunc, specialization, capacity)
+function PoolCollectionMixin:CreatePool(frameType, parent, template, resetFunc, specialization, capacity)
     local key = self:GeneratePoolKey(frameType, parent, template, specialization)
 
     if self.pools[key] then
         error("LoolibPoolCollectionMixin:CreatePool - Pool already exists for key: " .. key)
     end
 
-    local pool = CreateLoolibFramePool(frameType, parent, template, resetFunc, capacity)
+    local pool = CreateFramePool(frameType, parent, template, resetFunc, capacity)
     pool.collectionKey = key
 
     self.pools[key] = pool
@@ -82,7 +86,7 @@ end
 -- @param specialization any - Optional additional key component
 -- @param capacity number - Optional maximum capacity
 -- @return table, boolean - The pool and whether it was newly created
-function LoolibPoolCollectionMixin:GetOrCreatePool(frameType, parent, template, resetFunc, specialization, capacity)
+function PoolCollectionMixin:GetOrCreatePool(frameType, parent, template, resetFunc, specialization, capacity)
     local pool = self:GetPool(frameType, parent, template, specialization)
 
     if pool then
@@ -103,7 +107,7 @@ end
 -- @param resetFunc function - Optional reset function
 -- @param specialization any - Optional additional key component
 -- @return Frame, boolean - The frame and whether it was newly created
-function LoolibPoolCollectionMixin:Acquire(frameType, parent, template, resetFunc, specialization)
+function PoolCollectionMixin:Acquire(frameType, parent, template, resetFunc, specialization)
     local pool = self:GetOrCreatePool(frameType, parent, template, resetFunc, specialization)
     return pool:Acquire()
 end
@@ -111,7 +115,7 @@ end
 --- Acquire a frame by template only (searches pools)
 -- @param template string - The template name to find
 -- @return Frame, boolean|nil - The frame and isNew, or nil if no matching pool
-function LoolibPoolCollectionMixin:AcquireByTemplate(template)
+function PoolCollectionMixin:AcquireByTemplate(template)
     for key, pool in pairs(self.pools) do
         if pool.template == template then
             return pool:Acquire()
@@ -123,7 +127,7 @@ end
 --- Release a frame back to its pool
 -- @param object Frame - The frame to release
 -- @return boolean - True if the frame was released
-function LoolibPoolCollectionMixin:Release(object)
+function PoolCollectionMixin:Release(object)
     -- Try each pool until we find the right one
     for key, pool in pairs(self.pools) do
         if pool:IsActive(object) then
@@ -137,7 +141,7 @@ function LoolibPoolCollectionMixin:Release(object)
 end
 
 --- Release all frames from all pools
-function LoolibPoolCollectionMixin:ReleaseAll()
+function PoolCollectionMixin:ReleaseAll()
     for key, pool in pairs(self.pools) do
         pool:ReleaseAll()
     end
@@ -148,7 +152,7 @@ end
 -- @param parent Frame - The parent frame
 -- @param template string - The template name
 -- @param specialization any - Optional additional key component
-function LoolibPoolCollectionMixin:ReleaseAllByPool(frameType, parent, template, specialization)
+function PoolCollectionMixin:ReleaseAllByPool(frameType, parent, template, specialization)
     local pool = self:GetPool(frameType, parent, template, specialization)
     if pool then
         pool:ReleaseAll()
@@ -161,7 +165,7 @@ end
 
 --- Iterate over all active objects in all pools
 -- @return iterator
-function LoolibPoolCollectionMixin:EnumerateActive()
+function PoolCollectionMixin:EnumerateActive()
     local pools = {}
     for _, pool in pairs(self.pools) do
         pools[#pools + 1] = pool
@@ -192,7 +196,7 @@ end
 -- @param template string - The template name
 -- @param specialization any - Optional additional key component
 -- @return iterator
-function LoolibPoolCollectionMixin:EnumerateActiveByPool(frameType, parent, template, specialization)
+function PoolCollectionMixin:EnumerateActiveByPool(frameType, parent, template, specialization)
     local pool = self:GetPool(frameType, parent, template, specialization)
     if pool then
         return pool:EnumerateActive()
@@ -202,7 +206,7 @@ end
 
 --- Iterate over all pools
 -- @return iterator
-function LoolibPoolCollectionMixin:EnumeratePools()
+function PoolCollectionMixin:EnumeratePools()
     return pairs(self.pools)
 end
 
@@ -212,7 +216,7 @@ end
 
 --- Get the total number of active objects across all pools
 -- @return number
-function LoolibPoolCollectionMixin:GetNumActive()
+function PoolCollectionMixin:GetNumActive()
     local count = 0
     for _, pool in pairs(self.pools) do
         count = count + pool:GetNumActive()
@@ -222,7 +226,7 @@ end
 
 --- Get the number of pools
 -- @return number
-function LoolibPoolCollectionMixin:GetNumPools()
+function PoolCollectionMixin:GetNumPools()
     local count = 0
     for _ in pairs(self.pools) do
         count = count + 1
@@ -233,7 +237,7 @@ end
 --- Check if an object is active in any pool
 -- @param object any - The object to check
 -- @return boolean
-function LoolibPoolCollectionMixin:IsActive(object)
+function PoolCollectionMixin:IsActive(object)
     for _, pool in pairs(self.pools) do
         if pool:IsActive(object) then
             return true
@@ -245,7 +249,7 @@ end
 --- Find which pool an object belongs to
 -- @param object any - The object to find
 -- @return table|nil - The pool, or nil if not found
-function LoolibPoolCollectionMixin:FindPoolForObject(object)
+function PoolCollectionMixin:FindPoolForObject(object)
     for _, pool in pairs(self.pools) do
         if pool:DoesObjectBelongToPool(object) then
             return pool
@@ -259,7 +263,7 @@ end
 ----------------------------------------------------------------------]]
 
 --- Clear all pools
-function LoolibPoolCollectionMixin:Clear()
+function PoolCollectionMixin:Clear()
     for _, pool in pairs(self.pools) do
         pool:Clear()
     end
@@ -267,7 +271,7 @@ function LoolibPoolCollectionMixin:Clear()
 end
 
 --- Debug: Print statistics for all pools
-function LoolibPoolCollectionMixin:Dump()
+function PoolCollectionMixin:Dump()
     print("Pool Collection Statistics:")
     print(string.format("  Total Pools: %d", self:GetNumPools()))
     print(string.format("  Total Active: %d", self:GetNumActive()))
@@ -289,32 +293,34 @@ end
 
 --- Create a new pool collection
 -- @return table - A new PoolCollection instance
-function CreateLoolibPoolCollection()
-    local collection = LoolibCreateFromMixins(LoolibPoolCollectionMixin)
+local function CreatePoolCollection()
+    local collection = CreateFromMixins(PoolCollectionMixin)
     collection:Init()
     return collection
 end
 
 --- Create a new pool collection pre-configured for frames
 -- @return table - A new PoolCollection instance
-function CreateLoolibFramePoolCollection()
-    return CreateLoolibPoolCollection()
+local function CreateFramePoolCollection()
+    return CreatePoolCollection()
 end
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local PoolCollectionModule = {
-    Mixin = LoolibPoolCollectionMixin,
-    Create = CreateLoolibPoolCollection,
-    CreateFramePoolCollection = CreateLoolibFramePoolCollection,
-}
+PoolCollectionModule.Mixin = PoolCollectionMixin
+PoolCollectionModule.Create = CreatePoolCollection
+PoolCollectionModule.CreateFramePoolCollection = CreateFramePoolCollection
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.PoolCollection = PoolCollectionModule
-UI.CreatePoolCollection = CreateLoolibPoolCollection
-UI.CreateFramePoolCollection = CreateLoolibFramePoolCollection
+UI.CreatePoolCollection = CreatePoolCollection
+UI.CreateFramePoolCollection = CreateFramePoolCollection
 
-Loolib:RegisterModule("PoolCollection", PoolCollectionModule)
+Pool.PoolCollection = PoolCollectionModule
+Loolib.PoolCollectionMixin = PoolCollectionMixin
+Loolib.CreatePoolCollection = CreatePoolCollection
+Loolib.CreateFramePoolCollection = CreateFramePoolCollection
+
+Loolib:RegisterModule("Pool.PoolCollection", PoolCollectionModule)

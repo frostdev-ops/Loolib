@@ -1,3 +1,6 @@
+local Loolib = LibStub("Loolib")
+local Debug = Loolib.Debug or Loolib:GetOrCreateModule("Debug")
+
 --[[--------------------------------------------------------------------
     Logger - Multi-level logging system for Loolib
 
@@ -5,7 +8,7 @@
     color-coded output to the default chat frame.
 ----------------------------------------------------------------------]]
 
-LoolibLoggerMixin = {}
+local LoggerMixin = Debug.Logger or Loolib:GetModule("Debug.Logger") or {}
 
 -- Log level constants
 local LOG_LEVELS = {
@@ -33,7 +36,7 @@ local COLORS = {
 local RESET = "|r"
 
 -- Default log level is INFO
-LoolibLoggerMixin.currentLevel = LOG_LEVELS.INFO
+LoggerMixin.currentLevel = LOG_LEVELS.INFO
 
 --[[--------------------------------------------------------------------
     Configuration
@@ -41,7 +44,7 @@ LoolibLoggerMixin.currentLevel = LOG_LEVELS.INFO
 
 --- Set the current log level
 -- @param level string|number - Level name ("DEBUG", "INFO", "WARN", "ERROR") or numeric (0-3)
-function LoolibLoggerMixin:SetLevel(level)
+function LoggerMixin:SetLevel(level)
     local numLevel
 
     if type(level) == "string" then
@@ -63,13 +66,13 @@ end
 
 --- Get the current log level
 -- @return number - The current log level (0-3)
-function LoolibLoggerMixin:GetLevel()
+function LoggerMixin:GetLevel()
     return self.currentLevel
 end
 
 --- Get the current log level name
 -- @return string - The current log level name
-function LoolibLoggerMixin:GetLevelName()
+function LoggerMixin:GetLevelName()
     return LEVEL_NAMES[self.currentLevel]
 end
 
@@ -120,7 +123,7 @@ end
 
 --- Log at DEBUG level (most verbose)
 -- @param ... - Values to log
-function LoolibLoggerMixin:Debug(...)
+function LoggerMixin:Debug(...)
     if ShouldLog(self.currentLevel, LOG_LEVELS.DEBUG) then
         local message = FormatMessage(...)
         OutputToChat("DEBUG", message)
@@ -129,7 +132,7 @@ end
 
 --- Log at INFO level
 -- @param ... - Values to log
-function LoolibLoggerMixin:Info(...)
+function LoggerMixin:Info(...)
     if ShouldLog(self.currentLevel, LOG_LEVELS.INFO) then
         local message = FormatMessage(...)
         OutputToChat("INFO", message)
@@ -138,7 +141,7 @@ end
 
 --- Log at WARN level
 -- @param ... - Values to log
-function LoolibLoggerMixin:Warn(...)
+function LoggerMixin:Warn(...)
     if ShouldLog(self.currentLevel, LOG_LEVELS.WARN) then
         local message = FormatMessage(...)
         OutputToChat("WARN", message)
@@ -147,7 +150,7 @@ end
 
 --- Log at ERROR level
 -- @param ... - Values to log
-function LoolibLoggerMixin:Error(...)
+function LoggerMixin:Error(...)
     if ShouldLog(self.currentLevel, LOG_LEVELS.ERROR) then
         local message = FormatMessage(...)
         OutputToChat("ERROR", message)
@@ -162,7 +165,7 @@ end
 -- @param condition boolean - The condition to check
 -- @param message string|nil - Optional message to display
 -- @return boolean - The condition value
-function LoolibLoggerMixin:Assert(condition, message)
+function LoggerMixin:Assert(condition, message)
     if not condition then
         local errorMsg = message or "Assertion failed"
         self:Error(errorMsg)
@@ -175,5 +178,6 @@ end
     Module Registration
 ----------------------------------------------------------------------]]
 
-local Loolib = LibStub("Loolib")
-Loolib:RegisterModule("Logger", LoolibLoggerMixin)
+Debug.Logger = LoggerMixin
+
+Loolib:RegisterModule("Debug.Logger", LoggerMixin)

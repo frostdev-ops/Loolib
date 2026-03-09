@@ -66,7 +66,7 @@ assert(LoolibMixin, "Loolib/Core/Mixin.lua must be loaded before CanvasFrame")
     Main canvas frame mixin that coordinates all canvas subsystems.
 ----------------------------------------------------------------------]]
 
-LoolibCanvasFrameMixin = {}
+local LoolibCanvasFrameMixin = {}
 
 --[[--------------------------------------------------------------------
     Initialization
@@ -1122,7 +1122,7 @@ end
 --- Create a new canvas frame instance
 -- @param parent Frame - Parent frame (defaults to UIParent)
 -- @return table - Initialized canvas frame
-function LoolibCreateCanvasFrame(parent)
+local function LoolibCreateCanvasFrame(parent)
     local canvas = {}
     LoolibMixin(canvas, LoolibCanvasFrameMixin)
     canvas:OnLoad()

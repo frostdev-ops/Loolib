@@ -41,7 +41,7 @@ end
     Basic Role Tag Tests
 ----------------------------------------------------------------------]]
 
-function LoolibTestNoteMarkup_RoleTags()
+local function LoolibTestNoteMarkup_RoleTags()
     PrintTestHeader("Role Tag Processing")
 
     local processor = NoteMarkup.Get()
@@ -78,7 +78,7 @@ end
     Player Name Tag Tests
 ----------------------------------------------------------------------]]
 
-function LoolibTestNoteMarkup_PlayerTags()
+local function LoolibTestNoteMarkup_PlayerTags()
     PrintTestHeader("Player Name Tag Processing")
 
     local processor = NoteMarkup.Get()
@@ -117,7 +117,7 @@ end
     Class Tag Tests
 ----------------------------------------------------------------------]]
 
-function LoolibTestNoteMarkup_ClassTags()
+local function LoolibTestNoteMarkup_ClassTags()
     PrintTestHeader("Class Tag Processing")
 
     local processor = NoteMarkup.Get()
@@ -154,7 +154,7 @@ end
     Group Tag Tests
 ----------------------------------------------------------------------]]
 
-function LoolibTestNoteMarkup_GroupTags()
+local function LoolibTestNoteMarkup_GroupTags()
     PrintTestHeader("Group Tag Processing")
 
     local processor = NoteMarkup.Get()
@@ -191,7 +191,7 @@ end
     Content Analysis Tests
 ----------------------------------------------------------------------]]
 
-function LoolibTestNoteMarkup_ContentAnalysis()
+local function LoolibTestNoteMarkup_ContentAnalysis()
     PrintTestHeader("Content Analysis")
 
     local processor = NoteMarkup.Get()
@@ -230,7 +230,7 @@ end
     Custom Context Tests
 ----------------------------------------------------------------------]]
 
-function LoolibTestNoteMarkup_CustomContext()
+local function LoolibTestNoteMarkup_CustomContext()
     PrintTestHeader("Custom Context")
 
     local processor = LoolibCreateNoteMarkup()
@@ -265,7 +265,7 @@ end
     Custom Handler Tests
 ----------------------------------------------------------------------]]
 
-function LoolibTestNoteMarkup_CustomHandlers()
+local function LoolibTestNoteMarkup_CustomHandlers()
     PrintTestHeader("Custom Handlers")
 
     local processor = LoolibCreateNoteMarkup()
@@ -298,7 +298,7 @@ end
     Complex Integration Test
 ----------------------------------------------------------------------]]
 
-function LoolibTestNoteMarkup_Integration()
+local function LoolibTestNoteMarkup_Integration()
     PrintTestHeader("Complex Integration Test")
 
     local processor = NoteMarkup.Get()
@@ -361,7 +361,7 @@ end
     Run All Tests
 ----------------------------------------------------------------------]]
 
-function LoolibTestNoteMarkup_All()
+local function LoolibTestNoteMarkup_All()
     LoolibTestNoteMarkup_RoleTags()
     print("")
     LoolibTestNoteMarkup_PlayerTags()

@@ -17,34 +17,139 @@
 
 local Loolib = LibStub("Loolib")
 
+local CreateFrame = CreateFrame
+local InCombatLockdown = InCombatLockdown
+local UIParent = UIParent
+local wipe = wipe
+local ipairs = ipairs
+local tinsert = table.insert
+local tremove = table.remove
+local mathMax = math.max
+local mathMin = math.min
+
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for Dialog")
+local Mixin = assert(Loolib.Mixin, "Loolib.Mixin is required for Dialog")
+local CallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib.CallbackRegistryMixin is required for Dialog")
+
+Loolib.UI = Loolib.UI or {}
+
+local function CreateButtonPool(parent)
+    local pool = {
+        parent = parent,
+        buttons = {},
+    }
+
+    function pool:Acquire()
+        for _, button in ipairs(self.buttons) do
+            if not button.__loolibActive then
+                button.__loolibActive = true
+                return button
+            end
+        end
+
+        local button = CreateFrame("Button", nil, self.parent, "UIPanelButtonTemplate")
+        button.__loolibActive = true
+        tinsert(self.buttons, button)
+        return button
+    end
+
+    function pool:ReleaseAll()
+        for _, button in ipairs(self.buttons) do
+            button.__loolibActive = nil
+            button:SetScript("OnClick", nil)
+            button:Hide()
+        end
+    end
+
+    return pool
+end
+
+--[[--------------------------------------------------------------------
+    Local Template Initializers
+
+    These mirror the dialog pieces from Templates.lua so this module
+    does not depend on the legacy template singleton.
+----------------------------------------------------------------------]]
+
+local function InitDialogFrame(frame)
+    frame:SetSize(320, 160)
+    frame:SetFrameStrata("DIALOG")
+    frame:EnableMouse(true)
+
+    frame.Title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    frame.Title:SetJustifyH("CENTER")
+    frame.Title:SetPoint("TOP", 0, -15)
+
+    frame.Message = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.Message:SetJustifyH("CENTER")
+    frame.Message:SetJustifyV("TOP")
+    frame.Message:SetSize(280, 0)
+    frame.Message:SetPoint("TOP", frame.Title, "BOTTOM", 0, -10)
+
+    frame.CloseButton = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    frame.CloseButton:SetPoint("TOPRIGHT", -3, -3)
+
+    frame.ButtonContainer = CreateFrame("Frame", nil, frame)
+    frame.ButtonContainer:SetSize(1, 30)
+    frame.ButtonContainer:SetPoint("BOTTOMLEFT", 20, 15)
+    frame.ButtonContainer:SetPoint("BOTTOMRIGHT", -20, 15)
+
+    frame:SetBackdrop(BACKDROP_DIALOG_32_32)
+    frame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+    frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+end
+
+local function InitInputDialogFrame(frame)
+    InitDialogFrame(frame)
+    frame:SetSize(320, 140)
+
+    local editBox = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
+    editBox:SetSize(260, 24)
+    editBox:SetAutoFocus(false)
+    editBox:SetPoint("TOP", frame.Message, "BOTTOM", 0, -10)
+    editBox:SetScript("OnEscapePressed", function(self)
+        self:ClearFocus()
+    end)
+
+    frame.EditBox = editBox
+end
+
+local function InitModalOverlay(frame)
+    frame:SetFrameStrata("DIALOG")
+    frame:EnableMouse(true)
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(true)
+    bg:SetColorTexture(0, 0, 0, 0.5)
+end
+
 --[[--------------------------------------------------------------------
     Dialog Stack
 ----------------------------------------------------------------------]]
 
 local dialogStack = {}
-local modalOverlay = nil
+local modalOverlay
 
 local function GetModalOverlay()
     if not modalOverlay then
         modalOverlay = CreateFrame("Frame", nil, UIParent)
-        LoolibTemplates.InitModalOverlay(modalOverlay)
+        InitModalOverlay(modalOverlay)
         modalOverlay:SetAllPoints(UIParent)
         modalOverlay:Hide()
     end
+
     return modalOverlay
 end
 
 local function UpdateModalOverlay()
     local overlay = GetModalOverlay()
-
-    -- Find highest modal dialog
     local highestLevel = 0
     local hasModal = false
 
     for _, dialog in ipairs(dialogStack) do
         if dialog.modal and dialog:IsShown() then
             hasModal = true
-            highestLevel = math.max(highestLevel, dialog:GetFrameLevel())
+            highestLevel = mathMax(highestLevel, dialog:GetFrameLevel())
         end
     end
 
@@ -59,10 +164,10 @@ local function UpdateModalOverlay()
 end
 
 --[[--------------------------------------------------------------------
-    LoolibDialogMixin
+    Dialog Mixin
 ----------------------------------------------------------------------]]
 
-LoolibDialogMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local DialogMixin = CreateFromMixins(CallbackRegistryMixin)
 
 local DIALOG_EVENTS = {
     "OnAccept",
@@ -71,9 +176,8 @@ local DIALOG_EVENTS = {
     "OnHide",
 }
 
---- Initialize the dialog
-function LoolibDialogMixin:OnLoad()
-    LoolibCallbackRegistryMixin.OnLoad(self)
+function DialogMixin:OnLoad()
+    CallbackRegistryMixin.OnLoad(self)
     self:GenerateCallbackEvents(DIALOG_EVENTS)
 
     self.modal = false
@@ -88,30 +192,19 @@ function LoolibDialogMixin:OnLoad()
     self.on_hide = nil
     self.on_update = nil
 
-    -- Get references
-    self.Title = self.Title or self:GetName() and _G[self:GetName() .. "Title"]
-    self.Message = self.Message or self:GetName() and _G[self:GetName() .. "Message"]
-    self.CloseButton = self.CloseButton or self:GetName() and _G[self:GetName() .. "CloseButton"]
-    self.ButtonContainer = self.ButtonContainer
-    self.Icon = self.Icon
-
-    -- Set up close button
     if self.CloseButton then
         self.CloseButton:SetScript("OnClick", function()
             self:Cancel()
         end)
     end
 
-    -- Register escape handler
     self:SetScript("OnKeyDown", function(_, key)
         if key == "ESCAPE" and self.escapeClose then
             self:Cancel()
         end
     end)
 
-    -- Set up OnUpdate for duration timer and callbacks
-    self:SetScript("OnUpdate", function(frame, elapsed)
-        -- Duration timer
+    self:SetScript("OnUpdate", function(_, elapsed)
         if self.duration then
             self.durationTimer = self.durationTimer + elapsed
             if self.durationTimer >= self.duration then
@@ -120,14 +213,12 @@ function LoolibDialogMixin:OnLoad()
             end
         end
 
-        -- Custom update callback
         if self.on_update then
             self.on_update(self, elapsed)
         end
     end)
 
-    -- Create button pool
-    self.buttonPool = CreateLoolibFramePool("Button", self.ButtonContainer or self, "UIPanelButtonTemplate")
+    self.buttonPool = CreateButtonPool(self.ButtonContainer or self)
 
     self:Hide()
 end
@@ -136,70 +227,51 @@ end
     Configuration
 ----------------------------------------------------------------------]]
 
---- Set the dialog title
--- @param title string
-function LoolibDialogMixin:SetTitle(title)
+function DialogMixin:SetTitle(title)
     if self.Title then
         self.Title:SetText(title)
     end
 end
 
---- Set the dialog message
--- @param message string
-function LoolibDialogMixin:SetMessage(message)
+function DialogMixin:SetMessage(message)
     if self.Message then
         self.Message:SetText(message)
     end
 end
 
---- Set whether the dialog is modal
--- @param modal boolean
-function LoolibDialogMixin:SetModal(modal)
+function DialogMixin:SetModal(modal)
     self.modal = modal
 end
 
---- Set whether escape closes the dialog
--- @param escapeClose boolean
-function LoolibDialogMixin:SetEscapeClose(escapeClose)
+function DialogMixin:SetEscapeClose(escapeClose)
     self.escapeClose = escapeClose
 end
 
---- Set the dialog buttons
--- @param buttons table - Array of { text, onClick, danger }
-function LoolibDialogMixin:SetButtons(buttons)
+function DialogMixin:SetButtons(buttons)
     self.buttons = buttons or {}
     self:LayoutButtons()
 end
 
---- Set the dialog icon
--- @param iconPath string - Texture path for icon
-function LoolibDialogMixin:SetIcon(iconPath)
+function DialogMixin:SetIcon(iconPath)
     if self.Icon then
         self.Icon:SetTexture(iconPath)
         self.Icon:Show()
     end
 end
 
---- Set auto-dismiss duration
--- @param duration number - Time in seconds before auto-close
-function LoolibDialogMixin:SetDuration(duration)
+function DialogMixin:SetDuration(duration)
     self.duration = duration
     self.durationTimer = 0
 end
 
---- Set lifecycle callbacks
--- @param callbacks table - { on_show, on_hide, on_update }
-function LoolibDialogMixin:SetCallbacks(callbacks)
+function DialogMixin:SetCallbacks(callbacks)
     callbacks = callbacks or {}
     self.on_show = callbacks.on_show
     self.on_hide = callbacks.on_hide
     self.on_update = callbacks.on_update
 end
 
---- Set multiple editboxes
--- @param editBoxes table - Array of { label, defaultValue, multiline }
-function LoolibDialogMixin:SetEditBoxes(editBoxes)
-    -- Clear existing editboxes
+function DialogMixin:SetEditBoxes(editBoxes)
     for _, editBox in ipairs(self.editBoxes) do
         if editBox.frame then
             editBox.frame:Hide()
@@ -208,19 +280,16 @@ function LoolibDialogMixin:SetEditBoxes(editBoxes)
     end
     wipe(self.editBoxes)
 
-    -- Create new editboxes
-    local yOffset = -60  -- Start below title/message
-    for i, editBoxInfo in ipairs(editBoxes or {}) do
+    local yOffset = -60
+    for index, editBoxInfo in ipairs(editBoxes or {}) do
         local container = CreateFrame("Frame", nil, self)
         container:SetSize(self:GetWidth() - 40, 40)
         container:SetPoint("TOP", self, "TOP", 0, yOffset)
 
-        -- Label
         local label = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
-        label:SetText(editBoxInfo.label or ("Input " .. i))
+        label:SetText(editBoxInfo.label or ("Input " .. index))
 
-        -- EditBox
         local editBox = CreateFrame("EditBox", nil, container, "InputBoxTemplate")
         editBox:SetSize(container:GetWidth(), 20)
         editBox:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
@@ -235,7 +304,7 @@ function LoolibDialogMixin:SetEditBoxes(editBoxes)
         container.editBox = editBox
         container.label = label
 
-        self.editBoxes[i] = {
+        self.editBoxes[index] = {
             frame = container,
             editBox = editBox,
             label = label,
@@ -245,20 +314,15 @@ function LoolibDialogMixin:SetEditBoxes(editBoxes)
     end
 end
 
---- Get editbox values
--- @return table - Array of editbox text values
-function LoolibDialogMixin:GetEditBoxValues()
+function DialogMixin:GetEditBoxValues()
     local values = {}
-    for i, editBoxInfo in ipairs(self.editBoxes) do
-        values[i] = editBoxInfo.editBox:GetText()
+    for index, editBoxInfo in ipairs(self.editBoxes) do
+        values[index] = editBoxInfo.editBox:GetText()
     end
     return values
 end
 
---- Set multiple checkboxes
--- @param checkBoxes table - Array of { label, checked, onClick }
-function LoolibDialogMixin:SetCheckBoxes(checkBoxes)
-    -- Clear existing checkboxes
+function DialogMixin:SetCheckBoxes(checkBoxes)
     for _, checkBox in ipairs(self.checkBoxes) do
         if checkBox.frame then
             checkBox.frame:Hide()
@@ -267,32 +331,28 @@ function LoolibDialogMixin:SetCheckBoxes(checkBoxes)
     end
     wipe(self.checkBoxes)
 
-    -- Create new checkboxes
-    local yOffset = -60  -- Start below title/message
-    -- Adjust if editboxes exist
+    local yOffset = -60
     if #self.editBoxes > 0 then
         yOffset = -60 - (#self.editBoxes * 50)
     end
 
-    for i, checkBoxInfo in ipairs(checkBoxes or {}) do
+    for index, checkBoxInfo in ipairs(checkBoxes or {}) do
         local checkButton = CreateFrame("CheckButton", nil, self, "UICheckButtonTemplate")
         checkButton:SetSize(24, 24)
         checkButton:SetPoint("TOPLEFT", self, "TOPLEFT", 20, yOffset)
         checkButton:SetChecked(checkBoxInfo.checked or false)
 
-        -- Label
         local label = checkButton:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetPoint("LEFT", checkButton, "RIGHT", 4, 0)
-        label:SetText(checkBoxInfo.label or ("Option " .. i))
+        label:SetText(checkBoxInfo.label or ("Option " .. index))
 
-        -- Click handler
         if checkBoxInfo.onClick then
             checkButton:SetScript("OnClick", function(cb)
                 checkBoxInfo.onClick(cb:GetChecked())
             end)
         end
 
-        self.checkBoxes[i] = {
+        self.checkBoxes[index] = {
             frame = checkButton,
             label = label,
         }
@@ -301,12 +361,10 @@ function LoolibDialogMixin:SetCheckBoxes(checkBoxes)
     end
 end
 
---- Get checkbox states
--- @return table - Array of boolean checkbox states
-function LoolibDialogMixin:GetCheckBoxStates()
+function DialogMixin:GetCheckBoxStates()
     local states = {}
-    for i, checkBoxInfo in ipairs(self.checkBoxes) do
-        states[i] = checkBoxInfo.frame:GetChecked()
+    for index, checkBoxInfo in ipairs(self.checkBoxes) do
+        states[index] = checkBoxInfo.frame:GetChecked()
     end
     return states
 end
@@ -315,7 +373,7 @@ end
     Button Layout
 ----------------------------------------------------------------------]]
 
-function LoolibDialogMixin:LayoutButtons()
+function DialogMixin:LayoutButtons()
     self.buttonPool:ReleaseAll()
 
     local numButtons = #self.buttons
@@ -325,27 +383,24 @@ function LoolibDialogMixin:LayoutButtons()
 
     local container = self.ButtonContainer or self
     local containerWidth = container:GetWidth()
-    local buttonWidth = math.min(100, (containerWidth - (numButtons - 1) * 8) / numButtons)
+    local buttonWidth = mathMin(100, (containerWidth - (numButtons - 1) * 8) / numButtons)
     local totalWidth = numButtons * buttonWidth + (numButtons - 1) * 8
     local startX = (containerWidth - totalWidth) / 2
 
-    for i, buttonInfo in ipairs(self.buttons) do
+    for index, buttonInfo in ipairs(self.buttons) do
         local button = self.buttonPool:Acquire()
         button:SetText(buttonInfo.text or "Button")
         button:SetSize(buttonWidth, 22)
 
-        -- Position
         button:ClearAllPoints()
-        button:SetPoint("LEFT", container, "LEFT", startX + (i - 1) * (buttonWidth + 8), 0)
+        button:SetPoint("LEFT", container, "LEFT", startX + (index - 1) * (buttonWidth + 8), 0)
 
-        -- Danger styling
         if buttonInfo.danger then
             button:GetFontString():SetTextColor(1, 0.3, 0.3)
         else
             button:GetFontString():SetTextColor(1, 0.82, 0)
         end
 
-        -- Click handler
         button:SetScript("OnClick", function()
             if buttonInfo.onClick then
                 buttonInfo.onClick(self)
@@ -363,12 +418,10 @@ end
     Show/Hide
 ----------------------------------------------------------------------]]
 
---- Show the dialog
-function LoolibDialogMixin:Show()
-    -- Add to stack
+function DialogMixin:Show()
     local found = false
-    for _, d in ipairs(dialogStack) do
-        if d == self then
+    for _, dialog in ipairs(dialogStack) do
+        if dialog == self then
             found = true
             break
         end
@@ -377,42 +430,30 @@ function LoolibDialogMixin:Show()
         dialogStack[#dialogStack + 1] = self
     end
 
-    -- Center on screen
     self:ClearAllPoints()
     self:SetPoint("CENTER", UIParent, "CENTER", 0, 50)
-
-    -- Reset duration timer
     self.durationTimer = 0
 
-    -- Show
     getmetatable(self).__index.Show(self)
     self:Raise()
 
-    -- Modal dialogs must appear above DIALOG-strata frames (e.g. ResultsPanel)
     if self.modal then
         self:SetFrameStrata("FULLSCREEN_DIALOG")
     end
 
-    -- Re-layout buttons now that the frame has valid dimensions.
-    -- ButtonContainer uses relative anchors (BOTTOMLEFT/BOTTOMRIGHT), so
-    -- GetWidth() returns the XML stub value of 1 before the frame is shown.
-    -- After Show() the anchor chain resolves and we get the real width.
     if #self.buttons > 0 then
         self:LayoutButtons()
     end
 
-    -- Update modal overlay
     if self.modal then
         UpdateModalOverlay()
     end
 
-    -- Focus
     self:EnableKeyboard(true)
     if not InCombatLockdown() then
         self:SetPropagateKeyboardInput(false)
     end
 
-    -- Call lifecycle callback
     if self.on_show then
         self.on_show(self)
     end
@@ -420,22 +461,17 @@ function LoolibDialogMixin:Show()
     self:TriggerEvent("OnShow")
 end
 
---- Hide the dialog
-function LoolibDialogMixin:Hide()
-    -- Remove from stack
-    for i, d in ipairs(dialogStack) do
-        if d == self then
-            table.remove(dialogStack, i)
+function DialogMixin:Hide()
+    for index, dialog in ipairs(dialogStack) do
+        if dialog == self then
+            tremove(dialogStack, index)
             break
         end
     end
 
     getmetatable(self).__index.Hide(self)
-
-    -- Update modal overlay
     UpdateModalOverlay()
 
-    -- Call lifecycle callback
     if self.on_hide then
         self.on_hide(self)
     end
@@ -443,29 +479,24 @@ function LoolibDialogMixin:Hide()
     self:TriggerEvent("OnHide")
 end
 
---- Close with accept action
-function LoolibDialogMixin:Accept()
+function DialogMixin:Accept()
     self:TriggerEvent("OnAccept")
     self:Hide()
 end
 
---- Close with cancel action
-function LoolibDialogMixin:Cancel()
+function DialogMixin:Cancel()
     self:TriggerEvent("OnCancel")
     self:Hide()
 end
 
 --[[--------------------------------------------------------------------
-    Factory Function
+    Factory Functions
 ----------------------------------------------------------------------]]
 
---- Create a dialog
--- @param parent Frame - Parent frame (optional, defaults to UIParent)
--- @return Frame - The dialog frame
-function CreateLoolibDialog(parent)
+local function CreateDialog(parent)
     local dialog = CreateFrame("Frame", nil, parent or UIParent, "BackdropTemplate")
-    LoolibTemplates.InitDialog(dialog)
-    LoolibMixin(dialog, LoolibDialogMixin)
+    InitDialogFrame(dialog)
+    Mixin(dialog, DialogMixin)
     dialog:OnLoad()
     return dialog
 end
@@ -474,20 +505,17 @@ end
     Input Dialog Mixin
 ----------------------------------------------------------------------]]
 
-LoolibInputDialogMixin = LoolibCreateFromMixins(LoolibDialogMixin)
+local InputDialogMixin = CreateFromMixins(DialogMixin)
 
-function LoolibInputDialogMixin:OnLoad()
-    LoolibDialogMixin.OnLoad(self)
-
+function InputDialogMixin:OnLoad()
+    DialogMixin.OnLoad(self)
     self.EditBox = self.EditBox
 
-    -- Add accept/cancel buttons by default
     self:SetButtons({
         { text = "Accept", onClick = function() self:Accept() end },
         { text = "Cancel", onClick = function() self:Cancel() end },
     })
 
-    -- Enter to accept
     if self.EditBox then
         self.EditBox:SetScript("OnEnterPressed", function()
             self:Accept()
@@ -495,40 +523,32 @@ function LoolibInputDialogMixin:OnLoad()
     end
 end
 
---- Get the input value
--- @return string
-function LoolibInputDialogMixin:GetInputValue()
+function InputDialogMixin:GetInputValue()
     return self.EditBox and self.EditBox:GetText() or ""
 end
 
---- Set the input value
--- @param value string
-function LoolibInputDialogMixin:SetInputValue(value)
+function InputDialogMixin:SetInputValue(value)
     if self.EditBox then
         self.EditBox:SetText(value or "")
     end
 end
 
---- Set the prompt text
--- @param prompt string
-function LoolibInputDialogMixin:SetPrompt(prompt)
+function InputDialogMixin:SetPrompt(prompt)
     self:SetMessage(prompt)
 end
 
---- Show and focus the edit box
-function LoolibInputDialogMixin:Show()
-    LoolibDialogMixin.Show(self)
+function InputDialogMixin:Show()
+    DialogMixin.Show(self)
     if self.EditBox then
         self.EditBox:SetFocus()
         self.EditBox:HighlightText()
     end
 end
 
---- Create an input dialog
-function CreateLoolibInputDialog(parent)
+local function CreateInputDialog(parent)
     local dialog = CreateFrame("Frame", nil, parent or UIParent, "BackdropTemplate")
-    LoolibTemplates.InitInputDialog(dialog)
-    LoolibMixin(dialog, LoolibInputDialogMixin)
+    InitInputDialogFrame(dialog)
+    Mixin(dialog, InputDialogMixin)
     dialog:OnLoad()
     return dialog
 end
@@ -537,9 +557,9 @@ end
     Builder Pattern
 ----------------------------------------------------------------------]]
 
-LoolibDialogBuilderMixin = {}
+local DialogBuilderMixin = {}
 
-function LoolibDialogBuilderMixin:Init()
+function DialogBuilderMixin:Init()
     self.config = {
         title = "",
         message = "",
@@ -551,43 +571,43 @@ function LoolibDialogBuilderMixin:Init()
     }
 end
 
-function LoolibDialogBuilderMixin:SetTitle(title)
+function DialogBuilderMixin:SetTitle(title)
     self.config.title = title
     return self
 end
 
-function LoolibDialogBuilderMixin:SetMessage(message)
+function DialogBuilderMixin:SetMessage(message)
     self.config.message = message
     return self
 end
 
-function LoolibDialogBuilderMixin:SetModal(modal)
+function DialogBuilderMixin:SetModal(modal)
     self.config.modal = modal
     return self
 end
 
-function LoolibDialogBuilderMixin:SetEscapeClose(escapeClose)
+function DialogBuilderMixin:SetEscapeClose(escapeClose)
     self.config.escapeClose = escapeClose
     return self
 end
 
-function LoolibDialogBuilderMixin:SetButtons(buttons)
+function DialogBuilderMixin:SetButtons(buttons)
     self.config.buttons = buttons
     return self
 end
 
-function LoolibDialogBuilderMixin:OnAccept(callback)
+function DialogBuilderMixin:OnAccept(callback)
     self.config.onAccept = callback
     return self
 end
 
-function LoolibDialogBuilderMixin:OnCancel(callback)
+function DialogBuilderMixin:OnCancel(callback)
     self.config.onCancel = callback
     return self
 end
 
-function LoolibDialogBuilderMixin:Show()
-    local dialog = CreateLoolibDialog()
+function DialogBuilderMixin:Show()
+    local dialog = CreateDialog()
 
     dialog:SetTitle(self.config.title)
     dialog:SetMessage(self.config.message)
@@ -606,8 +626,8 @@ function LoolibDialogBuilderMixin:Show()
     return dialog
 end
 
-function LoolibDialog()
-    local builder = LoolibCreateFromMixins(LoolibDialogBuilderMixin)
+local function CreateDialogBuilder()
+    local builder = CreateFromMixins(DialogBuilderMixin)
     builder:Init()
     return builder
 end
@@ -616,26 +636,26 @@ end
     Input Dialog Builder
 ----------------------------------------------------------------------]]
 
-LoolibInputDialogBuilderMixin = LoolibCreateFromMixins(LoolibDialogBuilderMixin)
+local InputDialogBuilderMixin = CreateFromMixins(DialogBuilderMixin)
 
-function LoolibInputDialogBuilderMixin:Init()
-    LoolibDialogBuilderMixin.Init(self)
+function InputDialogBuilderMixin:Init()
+    DialogBuilderMixin.Init(self)
     self.config.prompt = ""
     self.config.defaultValue = ""
 end
 
-function LoolibInputDialogBuilderMixin:SetPrompt(prompt)
+function InputDialogBuilderMixin:SetPrompt(prompt)
     self.config.prompt = prompt
     return self
 end
 
-function LoolibInputDialogBuilderMixin:SetDefaultValue(value)
+function InputDialogBuilderMixin:SetDefaultValue(value)
     self.config.defaultValue = value
     return self
 end
 
-function LoolibInputDialogBuilderMixin:Show()
-    local dialog = CreateLoolibInputDialog()
+function InputDialogBuilderMixin:Show()
+    local dialog = CreateInputDialog()
 
     dialog:SetTitle(self.config.title)
     dialog:SetPrompt(self.config.prompt)
@@ -656,8 +676,8 @@ function LoolibInputDialogBuilderMixin:Show()
     return dialog
 end
 
-function LoolibInputDialog()
-    local builder = LoolibCreateFromMixins(LoolibInputDialogBuilderMixin)
+local function CreateInputDialogBuilder()
+    local builder = CreateFromMixins(InputDialogBuilderMixin)
     builder:Init()
     return builder
 end
@@ -667,19 +687,16 @@ end
 ----------------------------------------------------------------------]]
 
 local DialogModule = {
-    Mixin = LoolibDialogMixin,
-    InputMixin = LoolibInputDialogMixin,
-    BuilderMixin = LoolibDialogBuilderMixin,
-    InputBuilderMixin = LoolibInputDialogBuilderMixin,
-    Create = CreateLoolibDialog,
-    CreateInput = CreateLoolibInputDialog,
-    Builder = LoolibDialog,
-    InputBuilder = LoolibInputDialog,
+    Mixin = DialogMixin,
+    InputMixin = InputDialogMixin,
+    BuilderMixin = DialogBuilderMixin,
+    InputBuilderMixin = InputDialogBuilderMixin,
+    Create = CreateDialog,
+    CreateInput = CreateInputDialog,
+    Builder = CreateDialogBuilder,
+    InputBuilder = CreateInputDialogBuilder,
 }
 
-local UI = Loolib:GetOrCreateModule("UI")
-UI.Dialog = DialogModule
-UI.CreateDialog = CreateLoolibDialog
-UI.CreateInputDialog = CreateLoolibInputDialog
+Loolib.UI.Dialog = DialogModule
 
-Loolib:RegisterModule("Dialog", DialogModule)
+Loolib:RegisterModule("UI.Dialog", DialogModule)

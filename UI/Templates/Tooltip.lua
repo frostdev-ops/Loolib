@@ -11,12 +11,15 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibCreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for Tooltip")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for Tooltip")
+local LoolibTemplates = assert(Loolib.Templates or (Loolib.UI and Loolib.UI.Templates), "Loolib.Templates is required for Tooltip")
 
 --[[--------------------------------------------------------------------
     LoolibTooltipMixin
 ----------------------------------------------------------------------]]
 
-LoolibTooltipMixin = {}
+local LoolibTooltipMixin = {}
 
 --- Initialize the tooltip
 function LoolibTooltipMixin:OnLoad()
@@ -291,7 +294,7 @@ end
 --- Create a tooltip
 -- @param parent Frame - Parent frame
 -- @return Frame - The tooltip frame
-function CreateLoolibTooltip(parent)
+local function CreateLoolibTooltip(parent)
     local tooltip = CreateFrame("Frame", nil, parent or UIParent, "BackdropTemplate")
     LoolibTemplates.InitTooltip(tooltip)
     LoolibMixin(tooltip, LoolibTooltipMixin)
@@ -303,7 +306,7 @@ end
     Builder Pattern
 ----------------------------------------------------------------------]]
 
-LoolibTooltipBuilderMixin = {}
+local LoolibTooltipBuilderMixin = {}
 
 function LoolibTooltipBuilderMixin:Init(frame)
     self.frame = frame
@@ -368,7 +371,7 @@ function LoolibTooltipBuilderMixin:Build()
     return tooltip
 end
 
-function LoolibTooltip(frame)
+local function LoolibTooltip(frame)
     local builder = LoolibCreateFromMixins(LoolibTooltipBuilderMixin)
     builder:Init(frame)
     return builder
@@ -385,8 +388,8 @@ local TooltipModule = {
     Builder = LoolibTooltip,
 }
 
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.Tooltip = TooltipModule
 UI.CreateTooltip = CreateLoolibTooltip
 
-Loolib:RegisterModule("Tooltip", TooltipModule)
+Loolib:RegisterModule("UI.Tooltip", TooltipModule)

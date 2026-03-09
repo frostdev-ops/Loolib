@@ -35,6 +35,33 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local error = error
+local ipairs = ipairs
+local pairs = pairs
+local pcall = pcall
+local time = time
+local tostring = tostring
+local type = type
+local sort = table.sort
+local match = string.match
+local wipe = wipe
+
+local function GetRequiredModule(name)
+    local module = Loolib:GetModule(name)
+    if not module then
+        error("Loolib module '" .. name .. "' is required", 2)
+    end
+    return module
+end
+
+local CallbackRegistryMixin = GetRequiredModule("CallbackRegistry").Mixin
+local CreateFromMixins = GetRequiredModule("Mixin").CreateFromMixins
+
+local Data = Loolib.Data or Loolib:GetOrCreateModule("Data")
+Loolib.Data = Data
+
+local MigrationModule = Data.Migration or Loolib:GetModule("Data.Migration") or {}
+Loolib.Data.Migration = MigrationModule
 
 --[[--------------------------------------------------------------------
     Semantic Version Comparison
@@ -48,7 +75,7 @@ local function ParseVersion(versionStr)
     end
 
     -- Handle non-standard formats (try to extract numbers)
-    local major, minor, patch, suffix = string.match(versionStr, "^(%d+)%.?(%d*)%.?(%d*)(.-)$")
+    local major, minor, patch, suffix = match(versionStr, "^(%d+)%.?(%d*)%.?(%d*)(.-)$")
 
     if not major then
         return nil
@@ -127,7 +154,8 @@ end
     Provides migration management for addon databases.
 ----------------------------------------------------------------------]]
 
-LoolibMigrationMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local MigrationMixin = MigrationModule.Mixin or CreateFromMixins(CallbackRegistryMixin)
+Loolib.Data.Migration.Mixin = MigrationMixin
 
 local MIGRATION_EVENTS = {
     "OnMigrationStart",      -- Fired when migration process starts
@@ -142,8 +170,8 @@ local MIGRATION_EVENTS = {
 --   - trackHistory: boolean - Track executed migrations (default: true)
 --   - logErrors: boolean - Log errors to chat (default: true)
 --   - historyKey: string - Key in db to store history (default: "_migrationHistory")
-function LoolibMigrationMixin:Init(options)
-    LoolibCallbackRegistryMixin.OnLoad(self)
+function MigrationMixin:Init(options)
+    CallbackRegistryMixin.OnLoad(self)
     self:GenerateCallbackEvents(MIGRATION_EVENTS)
 
     options = options or {}
@@ -169,7 +197,7 @@ end
 -- @param options table - Optional migration-specific options
 --   - name: string - Optional name for this migration (for logging)
 --   - scope: string - "global" or "profile" (default: both)
-function LoolibMigrationMixin:RegisterMigration(version, migrationFunc, options)
+function MigrationMixin:RegisterMigration(version, migrationFunc, options)
     if type(version) ~= "string" or version == "" then
         error("Migration version must be a non-empty string", 2)
     end
@@ -195,7 +223,7 @@ end
 --- Unregister a migration
 -- @param version string - The version to unregister
 -- @return boolean - True if migration was removed
-function LoolibMigrationMixin:UnregisterMigration(version)
+function MigrationMixin:UnregisterMigration(version)
     if self.migrations[version] then
         self.migrations[version] = nil
         return true
@@ -204,20 +232,20 @@ function LoolibMigrationMixin:UnregisterMigration(version)
 end
 
 --- Clear all registered migrations
-function LoolibMigrationMixin:ClearMigrations()
+function MigrationMixin:ClearMigrations()
     wipe(self.migrations)
 end
 
 --- Get all registered migration versions
 -- @return table - Array of version strings, sorted
-function LoolibMigrationMixin:GetMigrationVersions()
+function MigrationMixin:GetMigrationVersions()
     local versions = {}
     for version in pairs(self.migrations) do
         versions[#versions + 1] = version
     end
 
     -- Sort by semantic version
-    table.sort(versions, function(a, b)
+    sort(versions, function(a, b)
         return IsVersionLessThan(a, b)
     end)
 
@@ -231,7 +259,7 @@ end
 --- Get migration history from database
 -- @param db table - The database to check
 -- @return table - Migration history { version -> timestamp }
-function LoolibMigrationMixin:GetMigrationHistory(db)
+function MigrationMixin:GetMigrationHistory(db)
     if not db or not self.options.trackHistory then
         return {}
     end
@@ -247,7 +275,7 @@ end
 --- Record a migration in history
 -- @param db table - The database
 -- @param version string - The migration version
-function LoolibMigrationMixin:RecordMigration(db, version)
+function MigrationMixin:RecordMigration(db, version)
     if not db or not self.options.trackHistory then
         return
     end
@@ -263,7 +291,7 @@ end
 -- @param db table - The database to check
 -- @param version string - The migration version
 -- @return boolean - True if migration was already executed
-function LoolibMigrationMixin:IsMigrationExecuted(db, version)
+function MigrationMixin:IsMigrationExecuted(db, version)
     if not self.options.trackHistory then
         return false
     end
@@ -277,7 +305,7 @@ end
 -- @param currentVersion string - Current addon version
 -- @param fromVersion string - Optional previous version (from db)
 -- @return table - Array of migration entries to execute, in order
-function LoolibMigrationMixin:GetPendingMigrations(db, currentVersion, fromVersion)
+function MigrationMixin:GetPendingMigrations(db, currentVersion, fromVersion)
     local pending = {}
     local history = self:GetMigrationHistory(db)
 
@@ -308,7 +336,7 @@ function LoolibMigrationMixin:GetPendingMigrations(db, currentVersion, fromVersi
     end
 
     -- Sort by version
-    table.sort(pending, function(a, b)
+    sort(pending, function(a, b)
         return IsVersionLessThan(a.version, b.version)
     end)
 
@@ -321,7 +349,7 @@ end
 -- @param fromVersion string - Optional previous version
 -- @return boolean - True if all migrations succeeded
 -- @return table - Array of error messages (if any)
-function LoolibMigrationMixin:RunMigrations(db, currentVersion, fromVersion)
+function MigrationMixin:RunMigrations(db, currentVersion, fromVersion)
     if not db then
         error("Database cannot be nil", 2)
     end
@@ -395,7 +423,7 @@ end
 -- @param toVersion string - Target version
 -- @return boolean - Success
 -- @return string - Error message if failed
-function LoolibMigrationMixin:ExecuteMigration(migration, db, fromVersion, toVersion)
+function MigrationMixin:ExecuteMigration(migration, db, fromVersion, toVersion)
     local success, err = pcall(migration.func, db, fromVersion, toVersion)
 
     if not success then
@@ -411,7 +439,7 @@ end
 -- @param force boolean - Force execution even if already in history
 -- @return boolean - Success
 -- @return string - Error message if failed
-function LoolibMigrationMixin:RunMigration(db, version, force)
+function MigrationMixin:RunMigration(db, version, force)
     local migration = self.migrations[version]
 
     if not migration then
@@ -443,7 +471,7 @@ end
 --- Get the migration history for a database
 -- @param db table - The database
 -- @return table - Array of { version, timestamp, name } sorted by timestamp
-function LoolibMigrationMixin:GetHistory(db)
+function MigrationMixin:GetHistory(db)
     local history = self:GetMigrationHistory(db)
     local result = {}
 
@@ -457,7 +485,7 @@ function LoolibMigrationMixin:GetHistory(db)
     end
 
     -- Sort by timestamp
-    table.sort(result, function(a, b)
+    sort(result, function(a, b)
         return a.timestamp < b.timestamp
     end)
 
@@ -467,7 +495,7 @@ end
 --- Clear migration history
 -- @param db table - The database
 -- @param version string - Optional specific version to clear (clears all if nil)
-function LoolibMigrationMixin:ClearHistory(db, version)
+function MigrationMixin:ClearHistory(db, version)
     if not db or not self.options.trackHistory then
         return
     end
@@ -486,7 +514,7 @@ end
 --- Reset migration history to allow re-running migrations
 -- WARNING: This will cause all migrations to re-run on next RunMigrations call
 -- @param db table - The database
-function LoolibMigrationMixin:ResetHistory(db)
+function MigrationMixin:ResetHistory(db)
     self:ClearHistory(db)
     wipe(self.executedMigrations)
 end
@@ -498,7 +526,7 @@ end
 --- Get information about a specific migration
 -- @param version string - The migration version
 -- @return table - Migration info { version, name, scope, registered }
-function LoolibMigrationMixin:GetMigrationInfo(version)
+function MigrationMixin:GetMigrationInfo(version)
     local migration = self.migrations[version]
 
     if not migration then
@@ -515,7 +543,7 @@ end
 
 --- Get count of registered migrations
 -- @return number
-function LoolibMigrationMixin:GetMigrationCount()
+function MigrationMixin:GetMigrationCount()
     local count = 0
     for _ in pairs(self.migrations) do
         count = count + 1
@@ -525,7 +553,7 @@ end
 
 --- Get the latest migration version
 -- @return string - Latest version, or nil if no migrations
-function LoolibMigrationMixin:GetLatestVersion()
+function MigrationMixin:GetLatestVersion()
     local versions = self:GetMigrationVersions()
     return versions[#versions]
 end
@@ -535,7 +563,7 @@ end
 -- @param currentVersion string - Current version
 -- @param fromVersion string - Optional previous version
 -- @return boolean - True if migrations are pending
-function LoolibMigrationMixin:HasPendingMigrations(db, currentVersion, fromVersion)
+function MigrationMixin:HasPendingMigrations(db, currentVersion, fromVersion)
     local pending = self:GetPendingMigrations(db, currentVersion, fromVersion)
     return #pending > 0
 end
@@ -547,8 +575,8 @@ end
 --- Create a new migration manager
 -- @param options table - Configuration options
 -- @return table - Migration manager instance
-function CreateLoolibMigration(options)
-    local migration = LoolibCreateFromMixins(LoolibMigrationMixin)
+local function CreateMigration(options)
+    local migration = CreateFromMixins(MigrationMixin)
     migration:Init(options)
     return migration
 end
@@ -577,15 +605,10 @@ local VersionUtil = {
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local MigrationModule = {
-    Mixin = LoolibMigrationMixin,
-    Create = CreateLoolibMigration,
-    Version = VersionUtil,
-}
+Loolib.Data.Migration.Mixin = MigrationMixin
+Loolib.Data.Migration.Create = CreateMigration
+Loolib.Data.Migration.Version = VersionUtil
+Loolib.Data.Migration = MigrationModule
+Loolib.Data.CreateMigration = CreateMigration
 
--- Register in Data module
-local Data = Loolib:GetOrCreateModule("Data")
-Data.Migration = MigrationModule
-Data.CreateMigration = CreateLoolibMigration
-
-Loolib:RegisterModule("Migration", MigrationModule)
+Loolib:RegisterModule("Data.Migration", MigrationModule)

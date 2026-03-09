@@ -4,8 +4,8 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
-
-LoolibRegionUtil = {}
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
+local RegionUtil = UI.RegionUtil or Loolib:GetModule("UI.RegionUtil") or {}
 
 --[[--------------------------------------------------------------------
     Texture Utilities
@@ -19,7 +19,7 @@ LoolibRegionUtil = {}
 -- @param a number - Alpha (0-1, default 1)
 -- @param layer string - Draw layer (default "BACKGROUND")
 -- @return Texture
-function LoolibRegionUtil.CreateColorTexture(parent, r, g, b, a, layer)
+function RegionUtil.CreateColorTexture(parent, r, g, b, a, layer)
     local texture = parent:CreateTexture(nil, layer or "BACKGROUND")
     texture:SetColorTexture(r, g, b, a or 1)
     return texture
@@ -30,7 +30,7 @@ end
 -- @param texturePath string - Path to texture file
 -- @param layer string - Draw layer (default "ARTWORK")
 -- @return Texture
-function LoolibRegionUtil.CreateTexture(parent, texturePath, layer)
+function RegionUtil.CreateTexture(parent, texturePath, layer)
     local texture = parent:CreateTexture(nil, layer or "ARTWORK")
     texture:SetTexture(texturePath)
     return texture
@@ -41,7 +41,7 @@ end
 -- @param atlasName string - Atlas name
 -- @param layer string - Draw layer (default "ARTWORK")
 -- @return Texture
-function LoolibRegionUtil.CreateAtlasTexture(parent, atlasName, layer)
+function RegionUtil.CreateAtlasTexture(parent, atlasName, layer)
     local texture = parent:CreateTexture(nil, layer or "ARTWORK")
     texture:SetAtlas(atlasName)
     return texture
@@ -53,7 +53,7 @@ end
 -- @param right number - Right coord (0-1)
 -- @param top number - Top coord (0-1)
 -- @param bottom number - Bottom coord (0-1)
-function LoolibRegionUtil.SetTexCoord(texture, left, right, top, bottom)
+function RegionUtil.SetTexCoord(texture, left, right, top, bottom)
     texture:SetTexCoord(left, right, top, bottom)
 end
 
@@ -63,7 +63,7 @@ end
 -- @param cols number - Total columns
 -- @param rows number - Total rows
 -- @return number, number, number, number - left, right, top, bottom
-function LoolibRegionUtil.CalculateSpriteTexCoords(col, row, cols, rows)
+function RegionUtil.CalculateSpriteTexCoords(col, row, cols, rows)
     local width = 1 / cols
     local height = 1 / rows
 
@@ -84,7 +84,7 @@ end
 -- @param fontObject string - Font object name (default "GameFontNormal")
 -- @param layer string - Draw layer (default "OVERLAY")
 -- @return FontString
-function LoolibRegionUtil.CreateFontString(parent, fontObject, layer)
+function RegionUtil.CreateFontString(parent, fontObject, layer)
     return parent:CreateFontString(nil, layer or "OVERLAY", fontObject or "GameFontNormal")
 end
 
@@ -94,8 +94,8 @@ end
 -- @param fontObject string - Font object name
 -- @param layer string - Draw layer
 -- @return FontString
-function LoolibRegionUtil.CreateText(parent, text, fontObject, layer)
-    local fontString = LoolibRegionUtil.CreateFontString(parent, fontObject, layer)
+function RegionUtil.CreateText(parent, text, fontObject, layer)
+    local fontString = RegionUtil.CreateFontString(parent, fontObject, layer)
     fontString:SetText(text)
     return fontString
 end
@@ -103,7 +103,7 @@ end
 --- Set font string properties in one call
 -- @param fontString FontString - The font string
 -- @param options table - Options: text, font, size, outline, color, shadow
-function LoolibRegionUtil.ConfigureFontString(fontString, options)
+function RegionUtil.ConfigureFontString(fontString, options)
     if options.text then
         fontString:SetText(options.text)
     end
@@ -161,7 +161,7 @@ end
 -- @param fontString FontString - The font string
 -- @param maxWidth number - Maximum width in pixels
 -- @param suffix string - Suffix to add when truncated (default "...")
-function LoolibRegionUtil.TruncateText(fontString, maxWidth, suffix)
+function RegionUtil.TruncateText(fontString, maxWidth, suffix)
     suffix = suffix or "..."
     local text = fontString:GetText()
 
@@ -195,7 +195,7 @@ end
 -- @param color table - Color table {r, g, b, a}
 -- @param layer string - Draw layer
 -- @return Texture
-function LoolibRegionUtil.CreateHorizontalLine(parent, thickness, color, layer)
+function RegionUtil.CreateHorizontalLine(parent, thickness, color, layer)
     local line = parent:CreateTexture(nil, layer or "ARTWORK")
     line:SetHeight(thickness or 1)
 
@@ -214,7 +214,7 @@ end
 -- @param color table - Color table {r, g, b, a}
 -- @param layer string - Draw layer
 -- @return Texture
-function LoolibRegionUtil.CreateVerticalLine(parent, thickness, color, layer)
+function RegionUtil.CreateVerticalLine(parent, thickness, color, layer)
     local line = parent:CreateTexture(nil, layer or "ARTWORK")
     line:SetWidth(thickness or 1)
 
@@ -234,7 +234,7 @@ end
 --- Get the bounding box of multiple regions
 -- @param regions table - Array of regions
 -- @return number, number, number, number - left, right, top, bottom
-function LoolibRegionUtil.GetBoundingBox(regions)
+function RegionUtil.GetBoundingBox(regions)
     local minLeft, maxRight, maxTop, minBottom
 
     for _, region in ipairs(regions) do
@@ -260,7 +260,7 @@ end
 -- @param region1 Region - First region
 -- @param region2 Region - Second region
 -- @return boolean
-function LoolibRegionUtil.DoRegionsOverlap(region1, region2)
+function RegionUtil.DoRegionsOverlap(region1, region2)
     local left1, right1 = region1:GetLeft(), region1:GetRight()
     local top1, bottom1 = region1:GetTop(), region1:GetBottom()
     local left2, right2 = region2:GetLeft(), region2:GetRight()
@@ -278,7 +278,7 @@ end
 -- @param x number - X coordinate
 -- @param y number - Y coordinate
 -- @return boolean
-function LoolibRegionUtil.IsPointInRegion(region, x, y)
+function RegionUtil.IsPointInRegion(region, x, y)
     local left = region:GetLeft()
     local right = region:GetRight()
     local top = region:GetTop()
@@ -301,7 +301,7 @@ end
 -- @param g number - Green
 -- @param b number - Blue
 -- @param a number - Alpha
-function LoolibRegionUtil.SetColor(region, r, g, b, a)
+function RegionUtil.SetColor(region, r, g, b, a)
     a = a or 1
 
     if region:IsObjectType("Texture") then
@@ -316,7 +316,7 @@ end
 --- Get the color from a region
 -- @param region Region - The region
 -- @return number, number, number, number - r, g, b, a
-function LoolibRegionUtil.GetColor(region)
+function RegionUtil.GetColor(region)
     if region:IsObjectType("Texture") then
         return region:GetVertexColor()
     elseif region:IsObjectType("FontString") then
@@ -332,7 +332,7 @@ end
 --- Set the shown state of multiple regions
 -- @param regions table - Array of regions
 -- @param shown boolean - Whether to show or hide
-function LoolibRegionUtil.SetShown(regions, shown)
+function RegionUtil.SetShown(regions, shown)
     for _, region in ipairs(regions) do
         region:SetShown(shown)
     end
@@ -340,7 +340,7 @@ end
 
 --- Hide multiple regions
 -- @param ... Region - Regions to hide
-function LoolibRegionUtil.HideAll(...)
+function RegionUtil.HideAll(...)
     for i = 1, select("#", ...) do
         local region = select(i, ...)
         if region then
@@ -351,7 +351,7 @@ end
 
 --- Show multiple regions
 -- @param ... Region - Regions to show
-function LoolibRegionUtil.ShowAll(...)
+function RegionUtil.ShowAll(...)
     for i = 1, select("#", ...) do
         local region = select(i, ...)
         if region then
@@ -364,8 +364,7 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
-UI.RegionUtil = LoolibRegionUtil
+UI.RegionUtil = RegionUtil
+Loolib.RegionUtil = RegionUtil
 
-Loolib:RegisterModule("RegionUtil", LoolibRegionUtil)
+Loolib:RegisterModule("UI.RegionUtil", RegionUtil)

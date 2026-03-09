@@ -10,6 +10,42 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local _G = _G
+local CreateFrame = CreateFrame
+local GetRealmName = GetRealmName
+local UnitClass = UnitClass
+local UnitFactionGroup = UnitFactionGroup
+local UnitName = UnitName
+local UnitRace = UnitRace
+local error = error
+local ipairs = ipairs
+local next = next
+local pairs = pairs
+local select = select
+local setmetatable = setmetatable
+local type = type
+local sort = table.sort
+local wipe = wipe
+local gmatch = string.gmatch
+
+local function GetRequiredModule(name)
+    local module = Loolib:GetModule(name)
+    if not module then
+        error("Loolib module '" .. name .. "' is required", 2)
+    end
+    return module
+end
+
+local CallbackRegistryMixin = GetRequiredModule("CallbackRegistry").Mixin
+-- FIX(critical-01): Use Loolib.CreateFromMixins directly instead of unstable "Mixin" module lookup
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required")
+local DeepCopy = (Loolib.TableUtil or GetRequiredModule("TableUtil")).DeepCopy
+
+local Data = Loolib.Data or Loolib:GetOrCreateModule("Data")
+Loolib.Data = Data
+
+local SavedVariablesModule = Data.SavedVariables or Loolib:GetModule("Data.SavedVariables") or {}
+Loolib.Data.SavedVariables = SavedVariablesModule
 
 --[[--------------------------------------------------------------------
     LoolibSavedVariablesMixin
@@ -17,7 +53,8 @@ local Loolib = LibStub("Loolib")
     Manages a single saved variable table with defaults and profiles.
 ----------------------------------------------------------------------]]
 
-LoolibSavedVariablesMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local SavedVariablesMixin = SavedVariablesModule.Mixin or CreateFromMixins(CallbackRegistryMixin)
+Loolib.Data.SavedVariables.Mixin = SavedVariablesMixin
 
 local SAVED_VARS_EVENTS = {
     "OnValueChanged",
@@ -36,8 +73,8 @@ local SAVED_VARS_EVENTS = {
 -- @param globalName string - The global variable name (must match TOC)
 -- @param defaults table - Default values with scope keys
 -- @param defaultProfile string - Default profile name (default: "Default")
-function LoolibSavedVariablesMixin:Init(globalName, defaults, defaultProfile)
-    LoolibCallbackRegistryMixin.OnLoad(self)
+function SavedVariablesMixin:Init(globalName, defaults, defaultProfile)
+    CallbackRegistryMixin.OnLoad(self)
     self:GenerateCallbackEvents(SAVED_VARS_EVENTS)
 
     self.globalName = globalName
@@ -75,7 +112,7 @@ end
 ----------------------------------------------------------------------]]
 
 --- Generate scope keys (called once, cached)
-function LoolibSavedVariablesMixin:GenerateScopeKeys()
+function SavedVariablesMixin:GenerateScopeKeys()
     if self.scopeKeys.char then
         return  -- Already generated
     end
@@ -97,13 +134,13 @@ end
 --- Get scope key for a specific scope
 -- @param scope string - The scope name (char, realm, class, race, faction, factionrealm)
 -- @return string - The scope key
-function LoolibSavedVariablesMixin:GetScopeKey(scope)
+function SavedVariablesMixin:GetScopeKey(scope)
     self:GenerateScopeKeys()
     return self.scopeKeys[scope]
 end
 
 --- Called when the addon loads
-function LoolibSavedVariablesMixin:OnAddonLoaded()
+function SavedVariablesMixin:OnAddonLoaded()
     if self.initialized then
         return
     end
@@ -127,7 +164,7 @@ function LoolibSavedVariablesMixin:OnAddonLoaded()
 end
 
 --- Called on player logout (strip defaults to save space)
-function LoolibSavedVariablesMixin:OnPlayerLogout()
+function SavedVariablesMixin:OnPlayerLogout()
     if self.initialized then
         self:RemoveDefaults()
         self:TriggerEvent("OnDatabaseShutdown")
@@ -135,7 +172,7 @@ function LoolibSavedVariablesMixin:OnPlayerLogout()
 end
 
 --- Initialize the profile system
-function LoolibSavedVariablesMixin:InitProfiles()
+function SavedVariablesMixin:InitProfiles()
     -- Ensure profiles table exists
     self.data.profiles = self.data.profiles or {}
     self.data.profileKeys = self.data.profileKeys or {}
@@ -157,7 +194,7 @@ function LoolibSavedVariablesMixin:InitProfiles()
 end
 
 --- Initialize scope tables with defaults
-function LoolibSavedVariablesMixin:InitScopes()
+function SavedVariablesMixin:InitScopes()
     local scopes = {"char", "realm", "class", "race", "faction", "factionrealm", "global"}
 
     for _, scope in ipairs(scopes) do
@@ -184,7 +221,7 @@ end
 --- Apply defaults using metatable for automatic fallback
 -- @param target table - Target table
 -- @param defaults table - Default values
-function LoolibSavedVariablesMixin:SetDefaults(target, defaults)
+function SavedVariablesMixin:SetDefaults(target, defaults)
     if not defaults then return end
 
     -- Use metatable for automatic fallback to defaults
@@ -206,11 +243,11 @@ end
 --- Merge defaults into a table (non-destructive)
 -- @param target table - Target table
 -- @param defaults table - Default values
-function LoolibSavedVariablesMixin:MergeDefaults(target, defaults)
+function SavedVariablesMixin:MergeDefaults(target, defaults)
     for key, defaultValue in pairs(defaults) do
         if target[key] == nil then
             if type(defaultValue) == "table" then
-                target[key] = LoolibTableUtil.DeepCopy(defaultValue)
+                target[key] = DeepCopy(defaultValue)
             else
                 target[key] = defaultValue
             end
@@ -227,7 +264,7 @@ end
 --- Get a scope table (char, realm, class, race, faction, factionrealm, global, profile)
 -- @param scope string - The scope name
 -- @return table - The scope table
-function LoolibSavedVariablesMixin:GetScope(scope)
+function SavedVariablesMixin:GetScope(scope)
     if not self.initialized then
         return self.defaults[scope] or {}
     end
@@ -265,7 +302,7 @@ end
 -- @param name string - Namespace name
 -- @param defaults table - Default values for this namespace
 -- @return table - Namespace object (same API as main db)
-function LoolibSavedVariablesMixin:RegisterNamespace(name, defaults)
+function SavedVariablesMixin:RegisterNamespace(name, defaults)
     if self.namespaces[name] then
         return self.namespaces[name]
     end
@@ -275,7 +312,7 @@ function LoolibSavedVariablesMixin:RegisterNamespace(name, defaults)
     self.data.namespaces[name] = self.data.namespaces[name] or {}
 
     -- Create namespace object
-    local namespace = LoolibCreateFromMixins(LoolibSavedVariablesMixin)
+    local namespace = CreateFromMixins(SavedVariablesMixin)
     namespace.globalName = self.globalName .. "_NS_" .. name
     namespace.defaults = defaults or {}
     namespace.defaultProfile = self.defaultProfile
@@ -286,7 +323,7 @@ function LoolibSavedVariablesMixin:RegisterNamespace(name, defaults)
     namespace.parentDB = self
 
     -- Initialize callback registry
-    LoolibCallbackRegistryMixin.OnLoad(namespace)
+    CallbackRegistryMixin.OnLoad(namespace)
     namespace:GenerateCallbackEvents(SAVED_VARS_EVENTS)
 
     -- Initialize profiles and scopes for namespace
@@ -301,7 +338,7 @@ end
 -- @param name string - Namespace name
 -- @param silent boolean - Don't error if not found
 -- @return table - Namespace or nil
-function LoolibSavedVariablesMixin:GetNamespace(name, silent)
+function SavedVariablesMixin:GetNamespace(name, silent)
     local namespace = self.namespaces[name]
     if not namespace and not silent then
         error("Namespace '" .. name .. "' not found. Use RegisterNamespace first.", 2)
@@ -315,7 +352,7 @@ end
 
 --- Get the current data table
 -- @return table
-function LoolibSavedVariablesMixin:GetData()
+function SavedVariablesMixin:GetData()
     if not self.initialized then
         return self.defaults
     end
@@ -331,7 +368,7 @@ end
 -- @param key string - The key (supports dot notation for nested values)
 -- @param default any - Default value if not found
 -- @return any
-function LoolibSavedVariablesMixin:Get(key, default)
+function SavedVariablesMixin:Get(key, default)
     local data = self:GetData()
     return self:GetNestedValue(data, key, default)
 end
@@ -339,7 +376,7 @@ end
 --- Set a value
 -- @param key string - The key (supports dot notation)
 -- @param value any - The value to set
-function LoolibSavedVariablesMixin:Set(key, value)
+function SavedVariablesMixin:Set(key, value)
     local data = self:GetData()
     local oldValue = self:GetNestedValue(data, key)
 
@@ -355,13 +392,13 @@ end
 -- @param path string - Dot-separated path
 -- @param default any - Default if not found
 -- @return any
-function LoolibSavedVariablesMixin:GetNestedValue(tbl, path, default)
+function SavedVariablesMixin:GetNestedValue(tbl, path, default)
     if not path or path == "" then
         return tbl
     end
 
     local current = tbl
-    for part in string.gmatch(path, "[^.]+") do
+    for part in gmatch(path, "[^.]+") do
         if type(current) ~= "table" then
             return default
         end
@@ -378,9 +415,9 @@ end
 -- @param tbl table - The table
 -- @param path string - Dot-separated path
 -- @param value any - The value to set
-function LoolibSavedVariablesMixin:SetNestedValue(tbl, path, value)
+function SavedVariablesMixin:SetNestedValue(tbl, path, value)
     local parts = {}
-    for part in string.gmatch(path, "[^.]+") do
+    for part in gmatch(path, "[^.]+") do
         parts[#parts + 1] = part
     end
 
@@ -399,14 +436,14 @@ end
 --- Check if a key exists
 -- @param key string - The key
 -- @return boolean
-function LoolibSavedVariablesMixin:Has(key)
+function SavedVariablesMixin:Has(key)
     local value = self:Get(key)
     return value ~= nil
 end
 
 --- Delete a key
 -- @param key string - The key to delete
-function LoolibSavedVariablesMixin:Delete(key)
+function SavedVariablesMixin:Delete(key)
     self:Set(key, nil)
 end
 
@@ -416,26 +453,26 @@ end
 
 --- Get the current profile name
 -- @return string
-function LoolibSavedVariablesMixin:GetCurrentProfile()
+function SavedVariablesMixin:GetCurrentProfile()
     return self.currentProfile
 end
 
 --- Get all profile names
 -- @param tbl table - Optional table to fill (if nil, creates new table)
 -- @return table - Array of profile names
-function LoolibSavedVariablesMixin:GetProfiles(tbl)
+function SavedVariablesMixin:GetProfiles(tbl)
     tbl = tbl or {}
 
     for name in pairs(self.data.profiles) do
         tbl[#tbl + 1] = name
     end
-    table.sort(tbl)
+    sort(tbl)
     return tbl
 end
 
 --- Switch to a different profile
 -- @param name string - The profile to switch to (creates if doesn't exist)
-function LoolibSavedVariablesMixin:SetProfile(name)
+function SavedVariablesMixin:SetProfile(name)
     if not name or name == "" then
         error("Profile name cannot be empty", 2)
     end
@@ -469,7 +506,7 @@ end
 --- Copy data from another profile to current profile
 -- @param sourceName string - Name of profile to copy from
 -- @param silent boolean - Suppress errors if source doesn't exist
-function LoolibSavedVariablesMixin:CopyProfile(sourceName, silent)
+function SavedVariablesMixin:CopyProfile(sourceName, silent)
     local source = self.data.profiles[sourceName]
 
     if not source then
@@ -485,7 +522,7 @@ function LoolibSavedVariablesMixin:CopyProfile(sourceName, silent)
 
     for key, value in pairs(source) do
         if type(value) == "table" then
-            currentProfileData[key] = LoolibTableUtil.DeepCopy(value)
+            currentProfileData[key] = DeepCopy(value)
         else
             currentProfileData[key] = value
         end
@@ -503,7 +540,7 @@ end
 -- @param name string - The profile to delete
 -- @param silent boolean - Suppress errors
 -- @return boolean - Success
-function LoolibSavedVariablesMixin:DeleteProfile(name, silent)
+function SavedVariablesMixin:DeleteProfile(name, silent)
     -- Don't delete default profile
     if name == self.defaultProfile then
         if not silent then
@@ -547,7 +584,7 @@ function LoolibSavedVariablesMixin:DeleteProfile(name, silent)
 end
 
 --- Reset current profile to defaults
-function LoolibSavedVariablesMixin:ResetProfile()
+function SavedVariablesMixin:ResetProfile()
     local currentProfileData = self.data.profiles[self.currentProfile]
     wipe(currentProfileData)
 
@@ -563,7 +600,7 @@ end
 ----------------------------------------------------------------------]]
 
 --- Reset entire database (all profiles and scopes) to defaults
-function LoolibSavedVariablesMixin:ResetDB()
+function SavedVariablesMixin:ResetDB()
     -- Wipe all data
     for key in pairs(self.data) do
         self.data[key] = nil
@@ -577,18 +614,18 @@ function LoolibSavedVariablesMixin:ResetDB()
 end
 
 --- Reset current profile/data to defaults (legacy compatibility)
-function LoolibSavedVariablesMixin:Reset()
+function SavedVariablesMixin:Reset()
     self:ResetProfile()
     self:TriggerEvent("OnReset")
 end
 
 --- Reset a specific key to its default
 -- @param key string - The key to reset
-function LoolibSavedVariablesMixin:ResetKey(key)
+function SavedVariablesMixin:ResetKey(key)
     local defaultValue = self:GetNestedValue(self.defaults.profile or self.defaults, key)
     if defaultValue ~= nil then
         if type(defaultValue) == "table" then
-            self:Set(key, LoolibTableUtil.DeepCopy(defaultValue))
+            self:Set(key, DeepCopy(defaultValue))
         else
             self:Set(key, defaultValue)
         end
@@ -663,7 +700,7 @@ local function RemoveDefaultsRecursive(saved, defaults)
 end
 
 --- Remove all default values from saved data to reduce file size
-function LoolibSavedVariablesMixin:RemoveDefaults()
+function SavedVariablesMixin:RemoveDefaults()
     if not self.initialized then
         return
     end
@@ -701,14 +738,14 @@ end
 
 --- Check if initialized
 -- @return boolean
-function LoolibSavedVariablesMixin:IsInitialized()
+function SavedVariablesMixin:IsInitialized()
     return self.initialized
 end
 
 --- Register a callback for when initialized
 -- @param callback function - Callback function
 -- @param owner any - Owner for the callback
-function LoolibSavedVariablesMixin:OnReady(callback, owner)
+function SavedVariablesMixin:OnReady(callback, owner)
     if self.initialized then
         callback()
     else
@@ -718,11 +755,12 @@ end
 
 --- Export current data as a string (for sharing)
 -- @return string
-function LoolibSavedVariablesMixin:Export()
+function SavedVariablesMixin:Export()
     local data = self:GetData()
-    local Comm = Loolib:GetModule("Comm")
-    if Comm and Comm.Serializer then
-        return Comm.Serializer:Serialize(data)
+    local serializerModule = Loolib:GetModule("Serializer")
+    local serializer = serializerModule and serializerModule.Serializer
+    if serializer then
+        return serializer:Serialize(data)
     end
     return ""
 end
@@ -730,13 +768,14 @@ end
 --- Import data from a string
 -- @param str string - Serialized data
 -- @return boolean - Success
-function LoolibSavedVariablesMixin:Import(str)
-    local Comm = Loolib:GetModule("Comm")
-    if not Comm or not Comm.Serializer then
+function SavedVariablesMixin:Import(str)
+    local serializerModule = Loolib:GetModule("Serializer")
+    local serializer = serializerModule and serializerModule.Serializer
+    if not serializer then
         return false
     end
 
-    local success, imported = Comm.Serializer:Deserialize(str)
+    local success, imported = serializer:Deserialize(str)
     if success and type(imported) == "table" then
         local data = self:GetData()
         wipe(data)
@@ -758,8 +797,8 @@ end
 -- @param defaults table - Default values (with scope keys: profile, global, char, etc.)
 -- @param defaultProfile string - Default profile name (default: "Default")
 -- @return table - SavedVariables instance with scope accessors
-function CreateLoolibSavedVariables(globalName, defaults, defaultProfile)
-    local sv = LoolibCreateFromMixins(LoolibSavedVariablesMixin)
+local function CreateSavedVariables(globalName, defaults, defaultProfile)
+    local sv = CreateFromMixins(SavedVariablesMixin)
     sv:Init(globalName, defaults, defaultProfile)
 
     -- Create scope accessor metatable
@@ -787,14 +826,9 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local SavedVariablesModule = {
-    Mixin = LoolibSavedVariablesMixin,
-    Create = CreateLoolibSavedVariables,
-}
+Loolib.Data.SavedVariables.Mixin = SavedVariablesMixin
+Loolib.Data.SavedVariables.Create = CreateSavedVariables
+Loolib.Data.SavedVariables = SavedVariablesModule
+Loolib.Data.CreateSavedVariables = CreateSavedVariables
 
--- Register in Data module
-local Data = Loolib:GetOrCreateModule("Data")
-Data.SavedVariables = SavedVariablesModule
-Data.CreateSavedVariables = CreateLoolibSavedVariables
-
-Loolib:RegisterModule("SavedVariables", SavedVariablesModule)
+Loolib:RegisterModule("Data.SavedVariables", SavedVariablesModule)

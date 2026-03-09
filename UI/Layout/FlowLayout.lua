@@ -10,18 +10,25 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for FlowLayout")
+local Layout = Loolib.Layout or Loolib:GetOrCreateModule("Layout")
+local LayoutBaseMixin = assert(
+    Loolib.LayoutBaseMixin or ((Layout.LayoutBase or Loolib:GetModule("Layout.LayoutBase")) and (Layout.LayoutBase or Loolib:GetModule("Layout.LayoutBase")).Mixin),
+    "Loolib.Layout.LayoutBase.Mixin is required for FlowLayout"
+)
+local FlowLayoutModule = Layout.FlowLayout or Loolib:GetModule("Layout.FlowLayout") or {}
 
 --[[--------------------------------------------------------------------
     LoolibFlowLayoutMixin
 ----------------------------------------------------------------------]]
 
-LoolibFlowLayoutMixin = LoolibCreateFromMixins(LoolibBaseLayoutMixin)
+local FlowLayoutMixin = FlowLayoutModule.Mixin or CreateFromMixins(LayoutBaseMixin)
 
 --- Initialize flow layout
 -- @param container Frame - The container frame
 -- @param config table - Configuration options
-function LoolibFlowLayoutMixin:Init(container, config)
-    LoolibBaseLayoutMixin.Init(self, container, config)
+function FlowLayoutMixin:Init(container, config)
+    LayoutBaseMixin.Init(self, container, config)
 
     -- Flow-specific config
     self.config.direction = self.config.direction or "HORIZONTAL"  -- HORIZONTAL, VERTICAL
@@ -36,28 +43,28 @@ end
 
 --- Set flow direction
 -- @param direction string - HORIZONTAL or VERTICAL
-function LoolibFlowLayoutMixin:SetDirection(direction)
+function FlowLayoutMixin:SetDirection(direction)
     self.config.direction = direction
     self:MarkDirty()
 end
 
 --- Set spacing between wrapped rows/columns
 -- @param spacing number
-function LoolibFlowLayoutMixin:SetWrapSpacing(spacing)
+function FlowLayoutMixin:SetWrapSpacing(spacing)
     self.config.wrapSpacing = spacing
     self:MarkDirty()
 end
 
 --- Set content alignment (rows/columns)
 -- @param align string - START, CENTER, END
-function LoolibFlowLayoutMixin:SetAlignContent(align)
+function FlowLayoutMixin:SetAlignContent(align)
     self.config.alignContent = align
     self:MarkDirty()
 end
 
 --- Set item alignment within row/column
 -- @param align string - START, CENTER, END
-function LoolibFlowLayoutMixin:SetAlignItems(align)
+function FlowLayoutMixin:SetAlignItems(align)
     self.config.alignItems = align
     self:MarkDirty()
 end
@@ -66,7 +73,7 @@ end
     Layout Calculation - Horizontal Flow
 ----------------------------------------------------------------------]]
 
-function LoolibFlowLayoutMixin:LayoutHorizontal()
+function FlowLayoutMixin:LayoutHorizontal()
     local children = self:GetVisibleChildren()
     local numChildren = #children
 
@@ -155,7 +162,7 @@ end
     Layout Calculation - Vertical Flow
 ----------------------------------------------------------------------]]
 
-function LoolibFlowLayoutMixin:LayoutVertical()
+function FlowLayoutMixin:LayoutVertical()
     local children = self:GetVisibleChildren()
     local numChildren = #children
 
@@ -244,7 +251,7 @@ end
     Layout Entry Point
 ----------------------------------------------------------------------]]
 
-function LoolibFlowLayoutMixin:Layout()
+function FlowLayoutMixin:Layout()
     if not self.dirty then
         return
     end
@@ -266,8 +273,8 @@ end
 -- @param container Frame - Container frame
 -- @param config table - Configuration
 -- @return table - Layout instance
-function CreateLoolibFlowLayout(container, config)
-    local layout = LoolibCreateFromMixins(LoolibFlowLayoutMixin)
+local function CreateFlowLayout(container, config)
+    local layout = CreateFromMixins(FlowLayoutMixin)
     layout:Init(container, config)
     return layout
 end
@@ -276,14 +283,15 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local FlowLayoutModule = {
-    Mixin = LoolibFlowLayoutMixin,
-    Create = CreateLoolibFlowLayout,
-}
+FlowLayoutModule.Mixin = FlowLayoutMixin
+FlowLayoutModule.Create = CreateFlowLayout
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.FlowLayout = FlowLayoutModule
-UI.CreateFlowLayout = CreateLoolibFlowLayout
+UI.CreateFlowLayout = CreateFlowLayout
 
-Loolib:RegisterModule("FlowLayout", FlowLayoutModule)
+Layout.FlowLayout = FlowLayoutModule
+Loolib.FlowLayoutMixin = FlowLayoutMixin
+Loolib.CreateFlowLayout = CreateFlowLayout
+
+Loolib:RegisterModule("Layout.FlowLayout", FlowLayoutModule)

@@ -34,7 +34,7 @@ local Loolib = LibStub("Loolib")
 ---@field savePosition boolean
 ---@field positionKey string?
 ---@field savedVarsTable table?
-LoolibDraggableMixin = {}
+local LoolibDraggableMixin = {}
 
 -- ============================================================
 -- INITIALIZATION
@@ -385,7 +385,7 @@ end
 -- REGISTER WITH LOOLIB
 -- ============================================================
 
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.DraggableMixin = LoolibDraggableMixin
 
-Loolib:RegisterModule("DraggableMixin", LoolibDraggableMixin)
+Loolib:RegisterModule("DragDrop.DraggableMixin", LoolibDraggableMixin)

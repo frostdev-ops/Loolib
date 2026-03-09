@@ -4,15 +4,64 @@
 ----------------------------------------------------------------------]]
 
 local LOOLIB_MAJOR = "Loolib"
-local LOOLIB_MINOR = 2
+local LOOLIB_MINOR = 3
 
 local Loolib, oldVersion = LibStub:NewLibrary(LOOLIB_MAJOR, LOOLIB_MINOR)
 if not Loolib then return end
 
 -- Preserve existing data on upgrade
 Loolib.modules = Loolib.modules or {}
+Loolib.moduleAliases = Loolib.moduleAliases or {}
 Loolib.addons = Loolib.addons or {}  -- Addon registry (populated by Core/Addon.lua)
 Loolib.version = LOOLIB_MINOR
+
+local function SplitModulePath(name)
+    return { strsplit(".", name) }
+end
+
+local function SetModuleAlias(self, name)
+    local parts = SplitModulePath(name)
+    local leafName = parts[#parts]
+    local existing = self.moduleAliases[leafName]
+
+    if existing == nil or existing == name then
+        self.moduleAliases[leafName] = name
+    elseif existing ~= false then
+        self.moduleAliases[leafName] = false
+    end
+end
+
+local function SeedModuleAliases(self)
+    for name in pairs(self.modules) do
+        SetModuleAlias(self, name)
+    end
+end
+
+local function ResolveModulePath(self, name, create)
+    local parts = SplitModulePath(name)
+    local current = self
+
+    for i = 1, #parts - 1 do
+        local part = parts[i]
+        local nextValue = current[part]
+
+        if nextValue == nil then
+            if not create then
+                return nil, nil
+            end
+            nextValue = {}
+            current[part] = nextValue
+        elseif type(nextValue) ~= "table" then
+            error(string.format("Cannot nest module '%s' under non-table field '%s'", name, part), 2)
+        end
+
+        current = nextValue
+    end
+
+    return current, parts[#parts]
+end
+
+SeedModuleAliases(Loolib)
 
 --[[--------------------------------------------------------------------
     Module Registration
@@ -26,7 +75,20 @@ function Loolib:RegisterModule(name, tbl)
     assert(type(name) == "string", "Module name must be a string")
     assert(type(tbl) == "table", "Module must be a table")
 
+    local existing = self.modules[name]
+    if existing and existing ~= tbl then
+        error(string.format("Module '%s' is already registered", name), 2)
+    end
+
+    local parent, key = ResolveModulePath(self, name, true)
+    local nested = parent[key]
+    if nested and nested ~= tbl then
+        error(string.format("Namespace path '%s' is already occupied", name), 2)
+    end
+
+    parent[key] = tbl
     self.modules[name] = tbl
+    SetModuleAlias(self, name)
     return tbl
 end
 
@@ -34,24 +96,43 @@ end
 -- @param name string - The module name
 -- @return table|nil - The module table, or nil if not found
 function Loolib:GetModule(name)
-    return self.modules[name]
+    local module = self.modules[name]
+    if module then
+        return module
+    end
+
+    local alias = self.moduleAliases[name]
+    if alias and alias ~= false then
+        return self.modules[alias]
+    end
+
+    local parent, key = ResolveModulePath(self, name, false)
+    if parent then
+        return parent[key]
+    end
 end
 
 --- Get or create a module
 -- @param name string - The module name
 -- @return table - The existing or new module table
 function Loolib:GetOrCreateModule(name)
-    if not self.modules[name] then
-        self.modules[name] = {}
+    local module = self:GetModule(name)
+    if module then
+        return module
     end
-    return self.modules[name]
+
+    local parent, key = ResolveModulePath(self, name, true)
+    parent[key] = parent[key] or {}
+    self.modules[name] = parent[key]
+    SetModuleAlias(self, name)
+    return parent[key]
 end
 
 --- Check if a module exists
 -- @param name string - The module name
 -- @return boolean
 function Loolib:HasModule(name)
-    return self.modules[name] ~= nil
+    return self:GetModule(name) ~= nil
 end
 
 --- Iterate over all registered modules

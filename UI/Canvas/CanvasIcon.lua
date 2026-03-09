@@ -194,7 +194,7 @@ LOOLIB_ICON_TEXTURES = {
     - OnIconsCleared() - Fired when all icons are cleared
 ----------------------------------------------------------------------]]
 
-LoolibCanvasIconMixin = {}
+local LoolibCanvasIconMixin = {}
 
 --[[--------------------------------------------------------------------
     Initialization
@@ -627,7 +627,7 @@ end
 
 --- Create a new icon manager instance
 -- @return table - New icon manager with LoolibCanvasIconMixin applied
-function LoolibCreateCanvasIcon()
+local function LoolibCreateCanvasIcon()
     local iconManager = {}
     LoolibMixin(iconManager, LoolibCanvasIconMixin)
     iconManager:OnLoad()

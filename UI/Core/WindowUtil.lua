@@ -14,8 +14,8 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
-
-LoolibWindowUtil = {}
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
+local WindowUtil = UI.WindowUtil or Loolib:GetModule("UI.WindowUtil") or {}
 
 -- Default configuration names
 local DEFAULT_KEYS = {
@@ -46,7 +46,7 @@ local registeredFrames = {}
 -- - xOffset: Horizontal offset in pixels
 -- - yOffset: Vertical offset in pixels
 -- - scale: Frame scale (1.0 = 100%)
-function LoolibWindowUtil.RegisterConfig(frame, storage, names)
+function WindowUtil.RegisterConfig(frame, storage, names)
     if not frame or type(frame) ~= "table" or not frame.GetObjectType then
         error("LoolibWindowUtil.RegisterConfig: frame must be a valid frame", 2)
     end
@@ -64,13 +64,13 @@ function LoolibWindowUtil.RegisterConfig(frame, storage, names)
 
     -- Restore position if saved
     if storage[frame.windowKeys.point] then
-        LoolibWindowUtil.RestorePosition(frame)
+        WindowUtil.RestorePosition(frame)
     end
 end
 
 --- Save current frame position/scale to storage
 -- @param frame Frame - The frame to save
-function LoolibWindowUtil.SavePosition(frame)
+function WindowUtil.SavePosition(frame)
     if not frame or not frame.windowStorage then
         return
     end
@@ -126,7 +126,7 @@ end
 
 --- Restore frame position/scale from storage
 -- @param frame Frame - The frame to restore
-function LoolibWindowUtil.RestorePosition(frame)
+function WindowUtil.RestorePosition(frame)
     if not frame or not frame.windowStorage then
         return
     end
@@ -154,12 +154,12 @@ function LoolibWindowUtil.RestorePosition(frame)
     frame:SetPoint(point, UIParent, relativePoint, xOffset, yOffset)
 
     -- Clamp to screen
-    LoolibWindowUtil.ClampToScreen(frame)
+    WindowUtil.ClampToScreen(frame)
 end
 
 --- Clamp frame to screen bounds (prevent off-screen positioning)
 -- @param frame Frame - The frame to clamp
-function LoolibWindowUtil.ClampToScreen(frame)
+function WindowUtil.ClampToScreen(frame)
     if not frame then
         return
     end
@@ -175,7 +175,7 @@ function LoolibWindowUtil.ClampToScreen(frame)
         frame:ClearAllPoints()
         frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
         if frame.windowStorage then
-            LoolibWindowUtil.SavePosition(frame)
+            WindowUtil.SavePosition(frame)
         end
         return
     end
@@ -201,7 +201,7 @@ function LoolibWindowUtil.ClampToScreen(frame)
         frame:ClearAllPoints()
         frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
         if frame.windowStorage then
-            LoolibWindowUtil.SavePosition(frame)
+            WindowUtil.SavePosition(frame)
         end
     end
 end
@@ -213,7 +213,7 @@ end
 --- Set frame scale and save to storage
 -- @param frame Frame - The frame to scale
 -- @param scale number - Scale value (0.5 - 2.0 typical range)
-function LoolibWindowUtil.SetScale(frame, scale)
+function WindowUtil.SetScale(frame, scale)
     if not frame then
         return
     end
@@ -239,11 +239,11 @@ function LoolibWindowUtil.SetScale(frame, scale)
 
     -- Save new position and scale
     if frame.windowStorage then
-        LoolibWindowUtil.SavePosition(frame)
+        WindowUtil.SavePosition(frame)
     end
 
     -- Clamp to screen after scaling
-    LoolibWindowUtil.ClampToScreen(frame)
+    WindowUtil.ClampToScreen(frame)
 end
 
 --[[--------------------------------------------------------------------
@@ -253,7 +253,7 @@ end
 --- Make frame draggable with auto-save
 -- @param frame Frame - The frame to make draggable
 -- @param dragHandle Frame|nil - Optional drag handle (defaults to frame itself)
-function LoolibWindowUtil.MakeDraggable(frame, dragHandle)
+function WindowUtil.MakeDraggable(frame, dragHandle)
     if not frame then
         return
     end
@@ -279,7 +279,7 @@ function LoolibWindowUtil.MakeDraggable(frame, dragHandle)
 
     dragHandle:SetScript("OnDragStop", function(self)
         frame:StopMovingOrSizing()
-        LoolibWindowUtil.SavePosition(frame)
+        WindowUtil.SavePosition(frame)
         if originalDragStop then
             originalDragStop(self)
         end
@@ -292,7 +292,7 @@ end
 
 --- Enable Ctrl+MouseWheel scaling with auto-save
 -- @param frame Frame - The frame to enable scaling on
-function LoolibWindowUtil.EnableMouseWheelScaling(frame)
+function WindowUtil.EnableMouseWheelScaling(frame)
     if not frame then
         return
     end
@@ -306,7 +306,7 @@ function LoolibWindowUtil.EnableMouseWheelScaling(frame)
         if IsControlKeyDown() then
             local currentScale = self:GetScale()
             local newScale = currentScale + (delta * 0.05)
-            LoolibWindowUtil.SetScale(self, newScale)
+            WindowUtil.SetScale(self, newScale)
         elseif originalMouseWheel then
             originalMouseWheel(self, delta)
         end
@@ -320,7 +320,7 @@ end
 --- Make frame only respond to mouse when Alt key is held
 -- Useful for click-through overlay frames
 -- @param frame Frame - The frame to modify
-function LoolibWindowUtil.EnableMouseOnAlt(frame)
+function WindowUtil.EnableMouseOnAlt(frame)
     if not frame then
         return
     end
@@ -351,7 +351,7 @@ end
 
 --- Disable Alt-to-interact mode
 -- @param frame Frame - The frame to restore
-function LoolibWindowUtil.DisableMouseOnAlt(frame)
+function WindowUtil.DisableMouseOnAlt(frame)
     if not frame or not frame.windowAltMode then
         return
     end
@@ -370,13 +370,13 @@ end
 --- Check if a frame is registered
 -- @param frame Frame - The frame to check
 -- @return boolean
-function LoolibWindowUtil.IsRegistered(frame)
+function WindowUtil.IsRegistered(frame)
     return registeredFrames[frame] ~= nil
 end
 
 --- Unregister a frame (stop managing its position)
 -- @param frame Frame - The frame to unregister
-function LoolibWindowUtil.Unregister(frame)
+function WindowUtil.Unregister(frame)
     if not frame then
         return
     end
@@ -388,7 +388,7 @@ end
 
 --- Reset frame to default position
 -- @param frame Frame - The frame to reset
-function LoolibWindowUtil.ResetPosition(frame)
+function WindowUtil.ResetPosition(frame)
     if not frame or not frame.windowStorage then
         return
     end
@@ -410,24 +410,24 @@ function LoolibWindowUtil.ResetPosition(frame)
     frame:SetScale(1.0)
 
     -- Save default position
-    LoolibWindowUtil.SavePosition(frame)
+    WindowUtil.SavePosition(frame)
 end
 
 --- Save all registered frame positions
 -- Useful for addon shutdown or profile switching
-function LoolibWindowUtil.SaveAllPositions()
+function WindowUtil.SaveAllPositions()
     for frame in pairs(registeredFrames) do
         if frame:IsShown() then
-            LoolibWindowUtil.SavePosition(frame)
+            WindowUtil.SavePosition(frame)
         end
     end
 end
 
 --- Restore all registered frame positions
 -- Useful after resolution change
-function LoolibWindowUtil.RestoreAllPositions()
+function WindowUtil.RestoreAllPositions()
     for frame in pairs(registeredFrames) do
-        LoolibWindowUtil.RestorePosition(frame)
+        WindowUtil.RestorePosition(frame)
     end
 end
 
@@ -435,24 +435,24 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local WindowUtilModule = {
-    RegisterConfig = LoolibWindowUtil.RegisterConfig,
-    SavePosition = LoolibWindowUtil.SavePosition,
-    RestorePosition = LoolibWindowUtil.RestorePosition,
-    ClampToScreen = LoolibWindowUtil.ClampToScreen,
-    SetScale = LoolibWindowUtil.SetScale,
-    MakeDraggable = LoolibWindowUtil.MakeDraggable,
-    EnableMouseWheelScaling = LoolibWindowUtil.EnableMouseWheelScaling,
-    EnableMouseOnAlt = LoolibWindowUtil.EnableMouseOnAlt,
-    DisableMouseOnAlt = LoolibWindowUtil.DisableMouseOnAlt,
-    IsRegistered = LoolibWindowUtil.IsRegistered,
-    Unregister = LoolibWindowUtil.Unregister,
-    ResetPosition = LoolibWindowUtil.ResetPosition,
-    SaveAllPositions = LoolibWindowUtil.SaveAllPositions,
-    RestoreAllPositions = LoolibWindowUtil.RestoreAllPositions,
+local windowUtilModule = {
+    RegisterConfig = WindowUtil.RegisterConfig,
+    SavePosition = WindowUtil.SavePosition,
+    RestorePosition = WindowUtil.RestorePosition,
+    ClampToScreen = WindowUtil.ClampToScreen,
+    SetScale = WindowUtil.SetScale,
+    MakeDraggable = WindowUtil.MakeDraggable,
+    EnableMouseWheelScaling = WindowUtil.EnableMouseWheelScaling,
+    EnableMouseOnAlt = WindowUtil.EnableMouseOnAlt,
+    DisableMouseOnAlt = WindowUtil.DisableMouseOnAlt,
+    IsRegistered = WindowUtil.IsRegistered,
+    Unregister = WindowUtil.Unregister,
+    ResetPosition = WindowUtil.ResetPosition,
+    SaveAllPositions = WindowUtil.SaveAllPositions,
+    RestoreAllPositions = WindowUtil.RestoreAllPositions,
 }
 
-local UI = Loolib:GetOrCreateModule("UI")
-UI.WindowUtil = WindowUtilModule
+UI.WindowUtil = windowUtilModule
+Loolib.WindowUtil = windowUtilModule
 
-Loolib:RegisterModule("WindowUtil", WindowUtilModule)
+Loolib:RegisterModule("UI.WindowUtil", windowUtilModule)

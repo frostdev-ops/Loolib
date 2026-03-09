@@ -7,6 +7,7 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for NoteRenderer")
 
 --[[--------------------------------------------------------------------
     ICON TEXTURES
@@ -67,7 +68,7 @@ local NodeTypes = {
     LoolibNoteRendererMixin
 ----------------------------------------------------------------------]]
 
-LoolibNoteRendererMixin = {}
+local LoolibNoteRendererMixin = {}
 
 function LoolibNoteRendererMixin:OnLoad()
     self._selfText = ""
@@ -490,7 +491,7 @@ end
 
 --- Create a new renderer instance
 -- @return table - Renderer instance
-function LoolibCreateNoteRenderer()
+local function LoolibCreateNoteRenderer()
     local renderer = {}
     LoolibMixin(renderer, LoolibNoteRendererMixin)
     renderer:OnLoad()
@@ -502,7 +503,7 @@ local defaultRenderer = nil
 
 --- Get default renderer instance
 -- @return table - Default renderer singleton
-function LoolibGetNoteRenderer()
+local function LoolibGetNoteRenderer()
     if not defaultRenderer then
         defaultRenderer = LoolibCreateNoteRenderer()
     end
@@ -513,16 +514,16 @@ end
     Export Constants
 ----------------------------------------------------------------------]]
 
-LoolibNoteRaidTargetIcons = RAID_TARGET_ICONS
-LoolibNoteRoleIcons = ROLE_ICONS
-LoolibNoteClassColors = CLASS_COLORS
-LoolibNoteNodeTypes = NodeTypes
+local LoolibNoteRaidTargetIcons = RAID_TARGET_ICONS
+local LoolibNoteRoleIcons = ROLE_ICONS
+local LoolibNoteClassColors = CLASS_COLORS
+local LoolibNoteNodeTypes = NodeTypes
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-Loolib:RegisterModule("NoteRenderer", {
+Loolib:RegisterModule("Note.NoteRenderer", {
     Mixin = LoolibNoteRendererMixin,
     Create = LoolibCreateNoteRenderer,
     Get = LoolibGetNoteRenderer,

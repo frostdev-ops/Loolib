@@ -15,13 +15,14 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for WidgetMod")
 
 --[[--------------------------------------------------------------------
     LoolibWidgetModMixin - Fluent API for Widgets
 ----------------------------------------------------------------------]]
 
 ---@class LoolibWidgetModMixin
-LoolibWidgetModMixin = {}
+local LoolibWidgetModMixin = {}
 
 -- ============================================================
 -- SIZING & POSITIONING (all return self)
@@ -567,7 +568,7 @@ end
 --- Apply WidgetMod mixin to any frame
 -- @param frame Frame - The frame to enhance
 -- @return Frame - The same frame with WidgetMod methods
-function LoolibApplyWidgetMod(frame)
+local function LoolibApplyWidgetMod(frame)
     LoolibMixin(frame, LoolibWidgetModMixin)
     return frame
 end
@@ -578,7 +579,7 @@ end
 -- @param template string|nil - XML template name
 -- @return Frame - New frame with WidgetMod methods
 -- Usage: local f = LoolibCreateModFrame("Frame", UIParent):Size(100, 100):Point("CENTER")
-function LoolibCreateModFrame(frameType, parent, template)
+local function LoolibCreateModFrame(frameType, parent, template)
     local frame = CreateFrame(frameType, nil, parent, template)
     return LoolibApplyWidgetMod(frame)
 end
@@ -587,7 +588,7 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-Loolib:RegisterModule("WidgetMod", {
+Loolib:RegisterModule("Widgets.WidgetMod", {
     Mixin = LoolibWidgetModMixin,
     Apply = LoolibApplyWidgetMod,
     Create = LoolibCreateModFrame,

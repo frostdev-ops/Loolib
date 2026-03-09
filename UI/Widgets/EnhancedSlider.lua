@@ -22,13 +22,14 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for EnhancedSlider")
 
 --[[--------------------------------------------------------------------
     LoolibEnhancedSliderMixin
 ----------------------------------------------------------------------]]
 
 ---@class LoolibEnhancedSliderMixin
-LoolibEnhancedSliderMixin = {}
+local LoolibEnhancedSliderMixin = {}
 
 -- ============================================================
 -- INITIALIZATION
@@ -484,7 +485,7 @@ end
 -- @param name string|nil - Optional global name
 -- @param template string|nil - Optional template (defaults to modern slider)
 -- @return Slider
-function LoolibCreateEnhancedSlider(parent, name, template)
+local function LoolibCreateEnhancedSlider(parent, name, template)
     local slider = CreateFrame("Slider", name, parent, template or "MinimalSliderTemplate")
 
     -- Apply mixins
@@ -509,7 +510,7 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-Loolib:RegisterModule("EnhancedSlider", {
+Loolib:RegisterModule("Widgets.EnhancedSlider", {
     Mixin = LoolibEnhancedSliderMixin,
     Create = LoolibCreateEnhancedSlider,
 })

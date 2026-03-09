@@ -7,6 +7,7 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local Pool = Loolib.Pool or Loolib:GetOrCreateModule("Pool")
 
 --[[--------------------------------------------------------------------
     Standard Reset Functions
@@ -20,7 +21,7 @@ local Loolib = LibStub("Loolib")
 --- Hide and clear anchors - most common reset pattern
 -- @param pool table - The pool
 -- @param region Region - The region to reset
-function LoolibPoolReset_HideAndClearAnchors(pool, region)
+local function ResetHideAndClearAnchors(pool, region)
     region:Hide()
     region:ClearAllPoints()
 end
@@ -29,7 +30,7 @@ end
 -- @param pool table - The pool
 -- @param frame Frame - The frame to reset
 -- @param isNew boolean - True if first creation
-function LoolibPoolReset_Frame(pool, frame, isNew)
+local function ResetFrame(pool, frame, isNew)
     frame:Hide()
     frame:ClearAllPoints()
     frame:SetAlpha(1)
@@ -52,7 +53,7 @@ end
 -- @param pool table - The pool
 -- @param button Button - The button to reset
 -- @param isNew boolean - True if first creation
-function LoolibPoolReset_Button(pool, button, isNew)
+local function ResetButton(pool, button, isNew)
     button:Hide()
     button:ClearAllPoints()
     button:SetAlpha(1)
@@ -81,7 +82,7 @@ end
 --- Texture reset
 -- @param pool table - The pool
 -- @param texture Texture - The texture to reset
-function LoolibPoolReset_Texture(pool, texture)
+local function ResetTexture(pool, texture)
     texture:Hide()
     texture:ClearAllPoints()
     texture:SetAlpha(1)
@@ -95,7 +96,7 @@ end
 --- FontString reset
 -- @param pool table - The pool
 -- @param fontString FontString - The font string to reset
-function LoolibPoolReset_FontString(pool, fontString)
+local function ResetFontString(pool, fontString)
     fontString:Hide()
     fontString:ClearAllPoints()
     fontString:SetAlpha(1)
@@ -110,7 +111,7 @@ end
 --- EditBox reset
 -- @param pool table - The pool
 -- @param editBox EditBox - The edit box to reset
-function LoolibPoolReset_EditBox(pool, editBox)
+local function ResetEditBox(pool, editBox)
     editBox:Hide()
     editBox:ClearAllPoints()
     editBox:SetAlpha(1)
@@ -123,7 +124,7 @@ end
 --- Slider reset
 -- @param pool table - The pool
 -- @param slider Slider - The slider to reset
-function LoolibPoolReset_Slider(pool, slider)
+local function ResetSlider(pool, slider)
     slider:Hide()
     slider:ClearAllPoints()
     slider:SetAlpha(1)
@@ -134,7 +135,7 @@ end
 --- StatusBar reset
 -- @param pool table - The pool
 -- @param statusBar StatusBar - The status bar to reset
-function LoolibPoolReset_StatusBar(pool, statusBar)
+local function ResetStatusBar(pool, statusBar)
     statusBar:Hide()
     statusBar:ClearAllPoints()
     statusBar:SetAlpha(1)
@@ -145,7 +146,7 @@ end
 --- CheckButton reset
 -- @param pool table - The pool
 -- @param checkButton CheckButton - The check button to reset
-function LoolibPoolReset_CheckButton(pool, checkButton)
+local function ResetCheckButton(pool, checkButton)
     checkButton:Hide()
     checkButton:ClearAllPoints()
     checkButton:SetAlpha(1)
@@ -160,7 +161,7 @@ end
 --- ScrollFrame reset
 -- @param pool table - The pool
 -- @param scrollFrame ScrollFrame - The scroll frame to reset
-function LoolibPoolReset_ScrollFrame(pool, scrollFrame)
+local function ResetScrollFrame(pool, scrollFrame)
     scrollFrame:Hide()
     scrollFrame:ClearAllPoints()
     scrollFrame:SetAlpha(1)
@@ -176,7 +177,7 @@ end
 -- @param baseReset function - The base reset function to call first
 -- @param customReset function - Additional reset logic
 -- @return function - Combined reset function
-function LoolibCreateChainedReset(baseReset, customReset)
+local function CreateChainedReset(baseReset, customReset)
     return function(pool, object, isNew)
         baseReset(pool, object, isNew)
         customReset(pool, object, isNew)
@@ -187,27 +188,27 @@ end
 -- @param frameType string - The frame type (e.g., "Button", "Frame")
 -- @param additionalReset function - Optional additional reset logic
 -- @return function - Reset function for the frame type
-function LoolibGetResetterForFrameType(frameType, additionalReset)
+local function GetResetterForFrameType(frameType, additionalReset)
     local baseReset
 
     if frameType == "Button" then
-        baseReset = LoolibPoolReset_Button
+        baseReset = ResetButton
     elseif frameType == "CheckButton" then
-        baseReset = LoolibPoolReset_CheckButton
+        baseReset = ResetCheckButton
     elseif frameType == "EditBox" then
-        baseReset = LoolibPoolReset_EditBox
+        baseReset = ResetEditBox
     elseif frameType == "Slider" then
-        baseReset = LoolibPoolReset_Slider
+        baseReset = ResetSlider
     elseif frameType == "StatusBar" then
-        baseReset = LoolibPoolReset_StatusBar
+        baseReset = ResetStatusBar
     elseif frameType == "ScrollFrame" then
-        baseReset = LoolibPoolReset_ScrollFrame
+        baseReset = ResetScrollFrame
     else
-        baseReset = LoolibPoolReset_Frame
+        baseReset = ResetFrame
     end
 
     if additionalReset then
-        return LoolibCreateChainedReset(baseReset, additionalReset)
+        return CreateChainedReset(baseReset, additionalReset)
     end
 
     return baseReset
@@ -221,19 +222,19 @@ end
 -- @param regionType string - "Texture" or "FontString"
 -- @param additionalReset function - Optional additional reset logic
 -- @return function - Reset function for the region type
-function LoolibGetResetterForRegionType(regionType, additionalReset)
+local function GetResetterForRegionType(regionType, additionalReset)
     local baseReset
 
     if regionType == "Texture" then
-        baseReset = LoolibPoolReset_Texture
+        baseReset = ResetTexture
     elseif regionType == "FontString" then
-        baseReset = LoolibPoolReset_FontString
+        baseReset = ResetFontString
     else
-        baseReset = LoolibPoolReset_HideAndClearAnchors
+        baseReset = ResetHideAndClearAnchors
     end
 
     if additionalReset then
-        return LoolibCreateChainedReset(baseReset, additionalReset)
+        return CreateChainedReset(baseReset, additionalReset)
     end
 
     return baseReset
@@ -245,25 +246,40 @@ end
 
 local PoolResetters = {
     -- Standard resetters
-    HideAndClearAnchors = LoolibPoolReset_HideAndClearAnchors,
-    Frame = LoolibPoolReset_Frame,
-    Button = LoolibPoolReset_Button,
-    Texture = LoolibPoolReset_Texture,
-    FontString = LoolibPoolReset_FontString,
-    EditBox = LoolibPoolReset_EditBox,
-    Slider = LoolibPoolReset_Slider,
-    StatusBar = LoolibPoolReset_StatusBar,
-    CheckButton = LoolibPoolReset_CheckButton,
-    ScrollFrame = LoolibPoolReset_ScrollFrame,
+    HideAndClearAnchors = ResetHideAndClearAnchors,
+    Frame = ResetFrame,
+    Button = ResetButton,
+    Texture = ResetTexture,
+    FontString = ResetFontString,
+    EditBox = ResetEditBox,
+    Slider = ResetSlider,
+    StatusBar = ResetStatusBar,
+    CheckButton = ResetCheckButton,
+    ScrollFrame = ResetScrollFrame,
 
     -- Factory functions
-    CreateChained = LoolibCreateChainedReset,
-    GetForFrameType = LoolibGetResetterForFrameType,
-    GetForRegionType = LoolibGetResetterForRegionType,
+    CreateChained = CreateChainedReset,
+    GetForFrameType = GetResetterForFrameType,
+    GetForRegionType = GetResetterForRegionType,
 }
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 UI.PoolResetters = PoolResetters
 
-Loolib:RegisterModule("PoolResetters", PoolResetters)
+Pool.PoolResetters = PoolResetters
+
+Loolib.PoolReset_HideAndClearAnchors = ResetHideAndClearAnchors
+Loolib.PoolReset_Frame = ResetFrame
+Loolib.PoolReset_Button = ResetButton
+Loolib.PoolReset_Texture = ResetTexture
+Loolib.PoolReset_FontString = ResetFontString
+Loolib.PoolReset_EditBox = ResetEditBox
+Loolib.PoolReset_Slider = ResetSlider
+Loolib.PoolReset_StatusBar = ResetStatusBar
+Loolib.PoolReset_CheckButton = ResetCheckButton
+Loolib.PoolReset_ScrollFrame = ResetScrollFrame
+Loolib.CreateChainedReset = CreateChainedReset
+Loolib.GetResetterForFrameType = GetResetterForFrameType
+Loolib.GetResetterForRegionType = GetResetterForRegionType
+
+Loolib:RegisterModule("Pool.PoolResetters", PoolResetters)

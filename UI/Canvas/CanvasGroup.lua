@@ -51,7 +51,7 @@ if not Loolib then return end
 --   groupManager:DeleteElementsByGroup(groupId)
 -- ============================================================================
 
-LoolibCanvasGroupMixin = {}
+local LoolibCanvasGroupMixin = {}
 
 -- ============================================================================
 -- Initialization
@@ -641,7 +641,7 @@ end
 
 --- Create a new canvas group manager
 -- @return table Canvas group manager with LoolibCanvasGroupMixin
-function LoolibCreateCanvasGroup()
+local function LoolibCreateCanvasGroup()
     local groupManager = {}
     LoolibMixin(groupManager, LoolibCanvasGroupMixin)
     groupManager:OnLoad()

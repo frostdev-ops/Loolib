@@ -6,7 +6,18 @@
     Parses input, navigates option trees, and displays/sets values.
 ----------------------------------------------------------------------]]
 
+local DEFAULT_CHAT_FRAME = DEFAULT_CHAT_FRAME
+local ipairs = ipairs
+local pairs = pairs
+local table_concat = table.concat
+local table_sort = table.sort
+local tonumber = tonumber
+local tostring = tostring
+local type = type
+
 local Loolib = LibStub("Loolib")
+local Config = Loolib:GetOrCreateModule("Config")
+local CreateFromMixins = Loolib.CreateFromMixins
 
 --[[--------------------------------------------------------------------
     LoolibConfigCmdMixin
@@ -14,14 +25,14 @@ local Loolib = LibStub("Loolib")
     Handles slash command registration and processing for config options.
 ----------------------------------------------------------------------]]
 
-LoolibConfigCmdMixin = {}
+local ConfigCmdMixin = {}
 
 --[[--------------------------------------------------------------------
     Initialization
 ----------------------------------------------------------------------]]
 
 --- Initialize the command handler
-function LoolibConfigCmdMixin:Init()
+function ConfigCmdMixin:Init()
     self.commands = {}         -- slashcmd -> appName
     self.appCommands = {}      -- appName -> {slashcmds}
     self.commandHandlers = {}  -- commandId -> handler function
@@ -36,7 +47,7 @@ end
 -- @param slashcmd string - The command name (without /)
 -- @param appName string - The registered app name
 -- @return boolean - Success
-function LoolibConfigCmdMixin:CreateChatCommand(slashcmd, appName)
+function ConfigCmdMixin:CreateChatCommand(slashcmd, appName)
     if type(slashcmd) ~= "string" or slashcmd == "" then
         error("LoolibConfigCmd:CreateChatCommand: slashcmd must be a non-empty string", 2)
     end
@@ -60,15 +71,14 @@ function LoolibConfigCmdMixin:CreateChatCommand(slashcmd, appName)
     local commandId = "LOOLIB_CFG_" .. self.nextCommandId
     self.nextCommandId = self.nextCommandId + 1
 
-    -- Register the slash command globally
-    _G["SLASH_" .. commandId .. "1"] = "/" .. slashcmd
-
     -- Create the handler
     local handler = function(input)
         self:HandleCommand(slashcmd, appName, input or "")
     end
 
-    SlashCmdList[commandId] = handler
+    if not Config.Compat:RegisterSlashCommand(commandId, slashcmd, handler) then
+        return false
+    end
     self.commandHandlers[commandId] = handler
 
     -- Track registrations
@@ -85,7 +95,7 @@ end
 --- Unregister a specific slash command
 -- @param slashcmd string - The command to unregister
 -- @return boolean - Success
-function LoolibConfigCmdMixin:UnregisterChatCommand(slashcmd)
+function ConfigCmdMixin:UnregisterChatCommand(slashcmd)
     slashcmd = slashcmd:lower():gsub("^/", "")
 
     local appName = self.commands[slashcmd]
@@ -96,9 +106,7 @@ function LoolibConfigCmdMixin:UnregisterChatCommand(slashcmd)
     -- Find the command ID
     local commandId = self.appCommands[appName] and self.appCommands[appName][slashcmd]
     if commandId then
-        -- Clear global registration
-        _G["SLASH_" .. commandId .. "1"] = nil
-        SlashCmdList[commandId] = nil
+        Config.Compat:UnregisterSlashCommand(commandId)
         self.commandHandlers[commandId] = nil
         self.appCommands[appName][slashcmd] = nil
     end
@@ -109,7 +117,7 @@ end
 
 --- Unregister all slash commands for an app
 -- @param appName string - The app name
-function LoolibConfigCmdMixin:UnregisterChatCommands(appName)
+function ConfigCmdMixin:UnregisterChatCommands(appName)
     local cmds = self.appCommands[appName]
     if cmds then
         for slashcmd in pairs(cmds) do
@@ -122,14 +130,14 @@ end
 --- Get registered slash commands for an app
 -- @param appName string - The app name
 -- @return table - Array of command strings
-function LoolibConfigCmdMixin:GetChatCommands(appName)
+function ConfigCmdMixin:GetChatCommands(appName)
     local result = {}
     local cmds = self.appCommands[appName]
     if cmds then
         for cmd in pairs(cmds) do
             result[#result + 1] = cmd
         end
-        table.sort(result)
+        table_sort(result)
     end
     return result
 end
@@ -142,9 +150,8 @@ end
 -- @param slashcmd string - The slash command used
 -- @param appName string - The registered app name
 -- @param input string - User input after the command
-function LoolibConfigCmdMixin:HandleCommand(slashcmd, appName, input)
-    local ConfigRegistry = Loolib:GetModule("ConfigRegistry")
-    local registry = ConfigRegistry and ConfigRegistry.Registry
+function ConfigCmdMixin:HandleCommand(slashcmd, appName, input)
+    local registry = Config.Registry
 
     if not registry then
         self:Print("Configuration system not available")
@@ -227,7 +234,7 @@ end
 -- @param info table - Info table
 -- @param path table - Path to option
 -- @param value string|nil - Value to set (nil = get)
-function LoolibConfigCmdMixin:HandleOption(appName, options, option, registry, info, path, value)
+function ConfigCmdMixin:HandleOption(appName, options, option, registry, info, path, value)
     local optType = option.type
 
     -- Check if disabled
@@ -273,7 +280,7 @@ end
 -- @param options table - Root options
 -- @param registry table - Registry instance
 -- @param path table - Current path
-function LoolibConfigCmdMixin:ShowGroup(appName, options, registry, path)
+function ConfigCmdMixin:ShowGroup(appName, options, registry, path)
     local group = options
     for _, key in ipairs(path) do
         group = group.args and group.args[key]
@@ -342,7 +349,7 @@ end
 -- @param option table - The option
 -- @param registry table - Registry instance
 -- @param info table - Info table
-function LoolibConfigCmdMixin:DisplayOptionValue(option, registry, info)
+function ConfigCmdMixin:DisplayOptionValue(option, registry, info)
     local name = registry:ResolveValue(option.name, info) or info[#info]
     local desc = registry:ResolveValue(option.desc, info)
     local optType = option.type
@@ -383,8 +390,8 @@ function LoolibConfigCmdMixin:DisplayOptionValue(option, registry, info)
             for k in pairs(values) do
                 validKeys[#validKeys + 1] = tostring(k)
             end
-            table.sort(validKeys)
-            self:Print("  Valid values: " .. table.concat(validKeys, ", "))
+            table_sort(validKeys)
+            self:Print("  Valid values: " .. table_concat(validKeys, ", "))
         end
     end
 
@@ -401,7 +408,7 @@ end
 -- @param optType string - Option type
 -- @param option table - The option
 -- @return string - Formatted value
-function LoolibConfigCmdMixin:FormatValue(value, optType, option)
+function ConfigCmdMixin:FormatValue(value, optType, option)
     if value == nil then
         return "|cff888888(not set)|r"
     end
@@ -450,7 +457,7 @@ end
 ----------------------------------------------------------------------]]
 
 --- Set a toggle value
-function LoolibConfigCmdMixin:SetToggle(option, registry, info, value)
+function ConfigCmdMixin:SetToggle(option, registry, info, value)
     local boolValue
     value = value:lower()
 
@@ -471,7 +478,7 @@ function LoolibConfigCmdMixin:SetToggle(option, registry, info, value)
 end
 
 --- Set an input value
-function LoolibConfigCmdMixin:SetInput(option, registry, info, value)
+function ConfigCmdMixin:SetInput(option, registry, info, value)
     -- Check pattern validation
     if option.pattern then
         if not value:match(option.pattern) then
@@ -487,7 +494,7 @@ function LoolibConfigCmdMixin:SetInput(option, registry, info, value)
 end
 
 --- Set a range value
-function LoolibConfigCmdMixin:SetRange(option, registry, info, value)
+function ConfigCmdMixin:SetRange(option, registry, info, value)
     local numValue = tonumber(value)
     if not numValue then
         -- Check for percentage
@@ -520,7 +527,7 @@ function LoolibConfigCmdMixin:SetRange(option, registry, info, value)
 end
 
 --- Set a select value
-function LoolibConfigCmdMixin:SetSelect(option, registry, info, value)
+function ConfigCmdMixin:SetSelect(option, registry, info, value)
     local values = registry:ResolveValue(option.values, info)
     if not values then
         self:Print("No values available for this option")
@@ -555,7 +562,7 @@ function LoolibConfigCmdMixin:SetSelect(option, registry, info, value)
 end
 
 --- Set a multiselect value
-function LoolibConfigCmdMixin:SetMultiSelect(option, registry, info, value)
+function ConfigCmdMixin:SetMultiSelect(option, registry, info, value)
     -- Parse key=true/false
     local key, state = value:match("^(%S+)%s*=%s*(%S+)$")
     if not key then
@@ -597,7 +604,7 @@ function LoolibConfigCmdMixin:SetMultiSelect(option, registry, info, value)
 end
 
 --- Set a color value
-function LoolibConfigCmdMixin:SetColor(option, registry, info, value)
+function ConfigCmdMixin:SetColor(option, registry, info, value)
     -- Parse color: "r g b" or "r g b a" or "#rrggbb" or "#rrggbbaa"
     local r, g, b, a
 
@@ -640,7 +647,7 @@ function LoolibConfigCmdMixin:SetColor(option, registry, info, value)
 end
 
 --- Set a keybinding value
-function LoolibConfigCmdMixin:SetKeybinding(option, registry, info, value)
+function ConfigCmdMixin:SetKeybinding(option, registry, info, value)
     -- Normalize keybinding string
     value = value:upper():gsub("%s", "-")
 
@@ -650,7 +657,7 @@ function LoolibConfigCmdMixin:SetKeybinding(option, registry, info, value)
 end
 
 --- Execute an action
-function LoolibConfigCmdMixin:Execute(option, registry, info)
+function ConfigCmdMixin:Execute(option, registry, info)
     if option.func then
         local success, err = pcall(registry.CallMethod, registry, option, info, option.func)
         if success then
@@ -671,7 +678,7 @@ end
 --- Parse input string into path components
 -- @param input string - Input string
 -- @return table - Array of components
-function LoolibConfigCmdMixin:ParseInput(input)
+function ConfigCmdMixin:ParseInput(input)
     local parts = {}
 
     -- Split by whitespace, respecting quotes
@@ -757,7 +764,7 @@ end
 
 --- Print a message to chat
 -- @param msg string - Message to print
-function LoolibConfigCmdMixin:Print(msg)
+function ConfigCmdMixin:Print(msg)
     if Loolib.Print then
         local ok = pcall(Loolib.Print, Loolib, msg)
         if ok then return end
@@ -771,23 +778,27 @@ end
 
 --- Create a new config command handler
 -- @return table - New handler instance
-function CreateLoolibConfigCmd()
-    local cmd = LoolibCreateFromMixins(LoolibConfigCmdMixin)
+local function CreateConfigCmd()
+    local cmd = CreateFromMixins(ConfigCmdMixin)
     cmd:Init()
     return cmd
 end
 
 -- Create the singleton instance
-local ConfigCmd = CreateLoolibConfigCmd()
+local ConfigCmd = CreateConfigCmd()
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
 local ConfigCmdModule = {
-    Mixin = LoolibConfigCmdMixin,
-    Create = CreateLoolibConfigCmd,
-    Cmd = ConfigCmd,  -- Singleton instance
+    Mixin = ConfigCmdMixin,
+    Create = CreateConfigCmd,
+    Cmd = ConfigCmd,
 }
+
+Loolib.Config.CmdMixin = ConfigCmdMixin
+Loolib.Config.CreateCmd = CreateConfigCmd
+Loolib.Config.Cmd = ConfigCmd
 
 Loolib:RegisterModule("ConfigCmd", ConfigCmdModule)

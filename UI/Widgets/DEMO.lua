@@ -236,8 +236,9 @@ print("  ✓ Movable frames")
 print("  ✓ Run() for inline configuration")
 print("  ✓ Live value updates with sliders")
 
--- Store references globally for easy access
-LOOLIB_DEMO_FRAMES = {
+-- Store references under the Loolib UI namespace for easy access
+local ui = Loolib:GetOrCreateModule("UI")
+ui.WidgetModDemoFrames = {
     demo1 = demo1,
     demo2 = demo2,
     demo3 = demo3,

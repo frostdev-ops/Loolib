@@ -7,6 +7,9 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for ThemeManager")
+local Theme = Loolib.Theme or Loolib:GetOrCreateModule("Theme")
+local ThemeManagerModule = Theme.Manager or Loolib:GetModule("Theme.Manager") or {}
 
 --[[--------------------------------------------------------------------
     LoolibThemeManagerMixin
@@ -14,10 +17,10 @@ local Loolib = LibStub("Loolib")
     Singleton mixin that manages theme registration and retrieval.
 ----------------------------------------------------------------------]]
 
-LoolibThemeManagerMixin = {}
+local ThemeManagerMixin = ThemeManagerModule.Mixin or {}
 
 --- Initialize the theme manager
-function LoolibThemeManagerMixin:Init()
+function ThemeManagerMixin:Init()
     self.themes = {}
     self.activeThemeName = nil
     self.activeTheme = nil
@@ -31,7 +34,7 @@ end
 --- Register a theme
 -- @param name string - Unique theme name
 -- @param theme table - Theme data table
-function LoolibThemeManagerMixin:RegisterTheme(name, theme)
+function ThemeManagerMixin:RegisterTheme(name, theme)
     if not name or not theme then
         Loolib:Error("ThemeManager:RegisterTheme - name and theme are required")
         return
@@ -47,7 +50,7 @@ end
 
 --- Unregister a theme
 -- @param name string - Theme name to unregister
-function LoolibThemeManagerMixin:UnregisterTheme(name)
+function ThemeManagerMixin:UnregisterTheme(name)
     if self.activeThemeName == name then
         Loolib:Error("ThemeManager:UnregisterTheme - cannot unregister active theme")
         return
@@ -59,13 +62,13 @@ end
 --- Check if a theme is registered
 -- @param name string - Theme name
 -- @return boolean
-function LoolibThemeManagerMixin:HasTheme(name)
+function ThemeManagerMixin:HasTheme(name)
     return self.themes[name] ~= nil
 end
 
 --- Get all registered theme names
 -- @return table - Array of theme names
-function LoolibThemeManagerMixin:GetThemeNames()
+function ThemeManagerMixin:GetThemeNames()
     local names = {}
     for name in pairs(self.themes) do
         names[#names + 1] = name
@@ -80,7 +83,7 @@ end
 
 --- Set the active theme
 -- @param name string - Theme name to activate
-function LoolibThemeManagerMixin:SetActiveTheme(name)
+function ThemeManagerMixin:SetActiveTheme(name)
     local theme = self.themes[name]
     if not theme then
         Loolib:Error("ThemeManager:SetActiveTheme - theme not found: " .. tostring(name))
@@ -97,20 +100,20 @@ end
 
 --- Get the active theme
 -- @return table - The active theme table
-function LoolibThemeManagerMixin:GetActiveTheme()
+function ThemeManagerMixin:GetActiveTheme()
     return self.activeTheme
 end
 
 --- Get the active theme name
 -- @return string - The active theme name
-function LoolibThemeManagerMixin:GetActiveThemeName()
+function ThemeManagerMixin:GetActiveThemeName()
     return self.activeThemeName
 end
 
 --- Get a specific theme by name
 -- @param name string - Theme name
 -- @return table|nil - The theme table or nil
-function LoolibThemeManagerMixin:GetTheme(name)
+function ThemeManagerMixin:GetTheme(name)
     return self.themes[name]
 end
 
@@ -123,7 +126,7 @@ end
 -- @param key string - Value key within category
 -- @param fallback any - Fallback value if not found
 -- @return any - The theme value
-function LoolibThemeManagerMixin:GetValue(category, key, fallback)
+function ThemeManagerMixin:GetValue(category, key, fallback)
     if not self.activeTheme then
         return fallback
     end
@@ -145,7 +148,7 @@ end
 -- @param colorName string - Color name
 -- @param fallback table - Fallback color {r, g, b, a}
 -- @return table - Color table {r, g, b, a}
-function LoolibThemeManagerMixin:GetColor(colorName, fallback)
+function ThemeManagerMixin:GetColor(colorName, fallback)
     return self:GetValue("colors", colorName, fallback or {1, 1, 1, 1})
 end
 
@@ -153,7 +156,7 @@ end
 -- @param fontName string - Font name
 -- @param fallback string - Fallback font object name
 -- @return string - Font object name
-function LoolibThemeManagerMixin:GetFont(fontName, fallback)
+function ThemeManagerMixin:GetFont(fontName, fallback)
     return self:GetValue("fonts", fontName, fallback or "GameFontNormal")
 end
 
@@ -161,7 +164,7 @@ end
 -- @param backdropName string - Backdrop name
 -- @param fallback table - Fallback backdrop table
 -- @return table - Backdrop table
-function LoolibThemeManagerMixin:GetBackdrop(backdropName, fallback)
+function ThemeManagerMixin:GetBackdrop(backdropName, fallback)
     return self:GetValue("backdrops", backdropName, fallback)
 end
 
@@ -169,7 +172,7 @@ end
 -- @param spacingName string - Spacing name
 -- @param fallback number - Fallback spacing value
 -- @return number - Spacing value
-function LoolibThemeManagerMixin:GetSpacing(spacingName, fallback)
+function ThemeManagerMixin:GetSpacing(spacingName, fallback)
     return self:GetValue("spacing", spacingName, fallback or 8)
 end
 
@@ -177,7 +180,7 @@ end
 -- @param componentName string - Component name (e.g., "Button", "EditBox")
 -- @param fallback table - Fallback configuration
 -- @return table - Component configuration
-function LoolibThemeManagerMixin:GetComponentConfig(componentName, fallback)
+function ThemeManagerMixin:GetComponentConfig(componentName, fallback)
     return self:GetValue("components", componentName, fallback or {})
 end
 
@@ -185,7 +188,7 @@ end
 -- @param path string - Dot-separated path (e.g., "colors.accent")
 -- @param fallback any - Fallback value
 -- @return any - The value at the path
-function LoolibThemeManagerMixin:GetPath(path, fallback)
+function ThemeManagerMixin:GetPath(path, fallback)
     if not self.activeTheme then
         return fallback
     end
@@ -212,7 +215,7 @@ end
 -- @param frame Frame - The frame with backdrop
 -- @param bgColor string - Background color name
 -- @param borderColor string - Border color name
-function LoolibThemeManagerMixin:ApplyBackdropColors(frame, bgColor, borderColor)
+function ThemeManagerMixin:ApplyBackdropColors(frame, bgColor, borderColor)
     if not frame.SetBackdropColor then
         return
     end
@@ -231,7 +234,7 @@ end
 --- Apply theme font to a font string
 -- @param fontString FontString - The font string
 -- @param fontName string - Font name from theme
-function LoolibThemeManagerMixin:ApplyFont(fontString, fontName)
+function ThemeManagerMixin:ApplyFont(fontString, fontName)
     local font = self:GetFont(fontName)
     if font then
         fontString:SetFontObject(font)
@@ -241,7 +244,7 @@ end
 --- Apply theme text color to a font string
 -- @param fontString FontString - The font string
 -- @param colorName string - Color name from theme
-function LoolibThemeManagerMixin:ApplyTextColor(fontString, colorName)
+function ThemeManagerMixin:ApplyTextColor(fontString, colorName)
     local color = self:GetColor(colorName)
     fontString:SetTextColor(color[1], color[2], color[3], color[4] or 1)
 end
@@ -249,7 +252,7 @@ end
 --- Apply full theme styling to a frame based on component type
 -- @param frame Frame - The frame to style
 -- @param componentType string - Component type (e.g., "Button", "Panel")
-function LoolibThemeManagerMixin:ApplyComponentStyle(frame, componentType)
+function ThemeManagerMixin:ApplyComponentStyle(frame, componentType)
     local config = self:GetComponentConfig(componentType)
     if not config then
         return
@@ -284,20 +287,20 @@ end
 --- Register a callback for theme changes
 -- @param callback function - Function(previousTheme, newTheme)
 -- @param owner any - Owner object for the callback
-function LoolibThemeManagerMixin:RegisterThemeCallback(callback, owner)
+function ThemeManagerMixin:RegisterThemeCallback(callback, owner)
     self.callbacks[owner] = callback
 end
 
 --- Unregister a theme change callback
 -- @param owner any - Owner object
-function LoolibThemeManagerMixin:UnregisterThemeCallback(owner)
+function ThemeManagerMixin:UnregisterThemeCallback(owner)
     self.callbacks[owner] = nil
 end
 
 --- Trigger theme changed callbacks
 -- @param previousTheme string - Previous theme name
 -- @param newTheme string - New theme name
-function LoolibThemeManagerMixin:TriggerThemeChanged(previousTheme, newTheme)
+function ThemeManagerMixin:TriggerThemeChanged(previousTheme, newTheme)
     for owner, callback in pairs(self.callbacks) do
         local success, err = pcall(callback, previousTheme, newTheme)
         if not success then
@@ -314,7 +317,7 @@ end
 -- @param hex string - Hex color string (e.g., "#FF5500" or "FF5500")
 -- @param alpha number - Alpha value (0-1, default 1)
 -- @return table - Color table {r, g, b, a}
-function LoolibThemeManagerMixin:ColorFromHex(hex, alpha)
+function ThemeManagerMixin:ColorFromHex(hex, alpha)
     hex = hex:gsub("#", "")
 
     local r = tonumber(hex:sub(1, 2), 16) / 255
@@ -329,7 +332,7 @@ end
 -- @param color2 table - Second color {r, g, b, a}
 -- @param t number - Blend factor (0 = color1, 1 = color2)
 -- @return table - Blended color
-function LoolibThemeManagerMixin:BlendColors(color1, color2, t)
+function ThemeManagerMixin:BlendColors(color1, color2, t)
     t = math.max(0, math.min(1, t))
 
     return {
@@ -344,7 +347,7 @@ end
 -- @param color table - Color to lighten
 -- @param amount number - Amount to lighten (0-1)
 -- @return table - Lightened color
-function LoolibThemeManagerMixin:LightenColor(color, amount)
+function ThemeManagerMixin:LightenColor(color, amount)
     return self:BlendColors(color, {1, 1, 1, color[4] or 1}, amount)
 end
 
@@ -352,7 +355,7 @@ end
 -- @param color table - Color to darken
 -- @param amount number - Amount to darken (0-1)
 -- @return table - Darkened color
-function LoolibThemeManagerMixin:DarkenColor(color, amount)
+function ThemeManagerMixin:DarkenColor(color, amount)
     return self:BlendColors(color, {0, 0, 0, color[4] or 1}, amount)
 end
 
@@ -360,31 +363,30 @@ end
     Singleton Instance
 ----------------------------------------------------------------------]]
 
-LoolibThemeManager = LoolibCreateFromMixins(LoolibThemeManagerMixin)
-LoolibThemeManager:Init()
+local ThemeManager = ThemeManagerModule.Manager or CreateFromMixins(ThemeManagerMixin)
+ThemeManager:Init()
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local ThemeModule = {
-    Mixin = LoolibThemeManagerMixin,
-    Manager = LoolibThemeManager,
+ThemeManagerModule.Mixin = ThemeManagerMixin
+ThemeManagerModule.Manager = ThemeManager
+ThemeManagerModule.GetValue = function(...) return ThemeManager:GetValue(...) end
+ThemeManagerModule.GetColor = function(...) return ThemeManager:GetColor(...) end
+ThemeManagerModule.GetFont = function(...) return ThemeManager:GetFont(...) end
+ThemeManagerModule.GetBackdrop = function(...) return ThemeManager:GetBackdrop(...) end
+ThemeManagerModule.GetSpacing = function(...) return ThemeManager:GetSpacing(...) end
+ThemeManagerModule.GetComponentConfig = function(...) return ThemeManager:GetComponentConfig(...) end
+ThemeManagerModule.SetActiveTheme = function(...) return ThemeManager:SetActiveTheme(...) end
+ThemeManagerModule.RegisterTheme = function(...) return ThemeManager:RegisterTheme(...) end
 
-    -- Convenience functions
-    GetValue = function(...) return LoolibThemeManager:GetValue(...) end,
-    GetColor = function(...) return LoolibThemeManager:GetColor(...) end,
-    GetFont = function(...) return LoolibThemeManager:GetFont(...) end,
-    GetBackdrop = function(...) return LoolibThemeManager:GetBackdrop(...) end,
-    GetSpacing = function(...) return LoolibThemeManager:GetSpacing(...) end,
-    GetComponentConfig = function(...) return LoolibThemeManager:GetComponentConfig(...) end,
-    SetActiveTheme = function(...) return LoolibThemeManager:SetActiveTheme(...) end,
-    RegisterTheme = function(...) return LoolibThemeManager:RegisterTheme(...) end,
-}
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
+UI.Theme = ThemeManagerModule
+UI.ThemeManager = ThemeManager
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
-UI.Theme = ThemeModule
-UI.ThemeManager = LoolibThemeManager
+Theme.Manager = ThemeManagerModule
+Loolib.ThemeManagerMixin = ThemeManagerMixin
+Loolib.ThemeManager = ThemeManager
 
-Loolib:RegisterModule("Theme", ThemeModule)
+Loolib:RegisterModule("Theme.Manager", ThemeManagerModule)

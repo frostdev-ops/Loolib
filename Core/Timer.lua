@@ -1,3 +1,5 @@
+local Loolib = LibStub("Loolib")
+
 --[[--------------------------------------------------------------------
     Loolib - WoW 12.0+ Addon Library
     Timer - AceTimer-3.0 compatible timer scheduling system
@@ -6,25 +8,21 @@
     with callback support for methods and functions.
 ----------------------------------------------------------------------]]
 
-local Loolib = LibStub("Loolib")
-
--- Local references for performance
-local GetTime = GetTime
 local C_Timer = C_Timer
+local GetTime = GetTime
+local error = error
+local pairs = pairs
+local select = select
 local type = type
+local unpack = unpack
+
 local max = math.max
+
+local TimerModule = Loolib.Timer or {}
+local TimerMixin = TimerModule.Mixin or {}
 
 -- Global handle counter for unique timer IDs
 local timerHandleCounter = 0
-
---[[--------------------------------------------------------------------
-    LoolibTimerMixin
-
-    Mixin for objects that need timer scheduling capabilities.
-    Can be mixed into addons to provide AceTimer-like functionality.
-----------------------------------------------------------------------]]
-
-LoolibTimerMixin = {}
 
 --[[--------------------------------------------------------------------
     Internal Helper Functions
@@ -52,10 +50,6 @@ local function ValidateDelay(delay)
     return type(delay) == "number" and delay > 0
 end
 
---[[--------------------------------------------------------------------
-    Timer Creation and Management
-----------------------------------------------------------------------]]
-
 --- Initialize timer storage for this object
 -- @param self table - The object instance
 local function EnsureTimerStorage(self)
@@ -64,13 +58,38 @@ local function EnsureTimerStorage(self)
     end
 end
 
+local function InvokeTimerCallback(owner, callback, args, argCount, context)
+    if type(callback) == "string" then
+        local method = owner[callback]
+        if method then
+            if argCount > 0 then
+                method(owner, unpack(args, 1, argCount))
+            else
+                method(owner)
+            end
+        else
+            Loolib:Error(context .. ": method '" .. callback .. "' not found")
+        end
+        return
+    end
+
+    if argCount > 0 then
+        callback(unpack(args, 1, argCount))
+    else
+        callback()
+    end
+end
+
+--[[--------------------------------------------------------------------
+    Timer Creation and Management
+----------------------------------------------------------------------]]
+
 --- Schedule a one-shot timer
 -- @param callback function|string - Function to call or method name
 -- @param delay number - Seconds to wait before firing
 -- @param ... - Arguments to pass to callback
 -- @return string - Timer handle for cancellation
-function LoolibTimerMixin:ScheduleTimer(callback, delay, ...)
-    -- Validate parameters
+function TimerMixin:ScheduleTimer(callback, delay, ...)
     if not ValidateCallback(callback) then
         error("ScheduleTimer: callback must be a function or string (method name)", 2)
     end
@@ -81,15 +100,11 @@ function LoolibTimerMixin:ScheduleTimer(callback, delay, ...)
 
     EnsureTimerStorage(self)
 
-    -- Generate unique handle
     local handle = GenerateTimerHandle()
-
-    -- Capture arguments for callback
-    local args = {...}
+    local args = { ... }
     local argCount = select("#", ...)
 
-    -- Store timer info
-    local timerInfo = {
+    self.timers[handle] = {
         handle = handle,
         callback = callback,
         endTime = GetTime() + delay,
@@ -98,43 +113,14 @@ function LoolibTimerMixin:ScheduleTimer(callback, delay, ...)
         argCount = argCount,
     }
 
-    self.timers[handle] = timerInfo
-
-    -- Create the C_Timer callback
-    local timerCallback = function()
-        -- Check if timer still exists (not cancelled)
-        if not self.timers[handle] then
+    C_Timer.After(delay, function()
+        if not self.timers or not self.timers[handle] then
             return
         end
 
-        -- Remove timer before firing (one-shot)
         self.timers[handle] = nil
-
-        -- Execute callback
-        if type(callback) == "string" then
-            -- Method name - call self[callback](self, ...)
-            local method = self[callback]
-            if method then
-                if argCount > 0 then
-                    method(self, unpack(args, 1, argCount))
-                else
-                    method(self)
-                end
-            else
-                Loolib:Error("ScheduleTimer: method '" .. callback .. "' not found")
-            end
-        else
-            -- Function - call callback(...)
-            if argCount > 0 then
-                callback(unpack(args, 1, argCount))
-            else
-                callback()
-            end
-        end
-    end
-
-    -- Schedule with C_Timer
-    C_Timer.After(delay, timerCallback)
+        InvokeTimerCallback(self, callback, args, argCount, "ScheduleTimer")
+    end)
 
     return handle
 end
@@ -144,8 +130,7 @@ end
 -- @param delay number - Seconds between each execution
 -- @param ... - Arguments to pass to callback
 -- @return string - Timer handle for cancellation
-function LoolibTimerMixin:ScheduleRepeatingTimer(callback, delay, ...)
-    -- Validate parameters
+function TimerMixin:ScheduleRepeatingTimer(callback, delay, ...)
     if not ValidateCallback(callback) then
         error("ScheduleRepeatingTimer: callback must be a function or string (method name)", 2)
     end
@@ -156,14 +141,9 @@ function LoolibTimerMixin:ScheduleRepeatingTimer(callback, delay, ...)
 
     EnsureTimerStorage(self)
 
-    -- Generate unique handle
     local handle = GenerateTimerHandle()
-
-    -- Capture arguments for callback
-    local args = {...}
+    local args = { ... }
     local argCount = select("#", ...)
-
-    -- Store timer info (endTime will be updated each tick)
     local timerInfo = {
         handle = handle,
         callback = callback,
@@ -172,47 +152,19 @@ function LoolibTimerMixin:ScheduleRepeatingTimer(callback, delay, ...)
         delay = delay,
         args = args,
         argCount = argCount,
-        ticker = nil, -- Will be set below
+        ticker = nil,
     }
 
     self.timers[handle] = timerInfo
 
-    -- Create the C_Timer callback
-    local timerCallback = function()
-        -- Check if timer still exists (not cancelled)
-        if not self.timers[handle] then
+    timerInfo.ticker = C_Timer.NewTicker(delay, function()
+        if not self.timers or not self.timers[handle] then
             return
         end
 
-        -- Update next fire time
         timerInfo.endTime = GetTime() + delay
-
-        -- Execute callback
-        if type(callback) == "string" then
-            -- Method name - call self[callback](self, ...)
-            local method = self[callback]
-            if method then
-                if argCount > 0 then
-                    method(self, unpack(args, 1, argCount))
-                else
-                    method(self)
-                end
-            else
-                Loolib:Error("ScheduleRepeatingTimer: method '" .. callback .. "' not found")
-            end
-        else
-            -- Function - call callback(...)
-            if argCount > 0 then
-                callback(unpack(args, 1, argCount))
-            else
-                callback()
-            end
-        end
-    end
-
-    -- Schedule with C_Timer.NewTicker
-    local ticker = C_Timer.NewTicker(delay, timerCallback)
-    timerInfo.ticker = ticker
+        InvokeTimerCallback(self, callback, args, argCount, "ScheduleRepeatingTimer")
+    end)
 
     return handle
 end
@@ -224,7 +176,7 @@ end
 --- Cancel a scheduled timer
 -- @param handle string - Timer handle returned from Schedule methods
 -- @return boolean - True if cancelled, false if not found
-function LoolibTimerMixin:CancelTimer(handle)
+function TimerMixin:CancelTimer(handle)
     if not self.timers then
         return false
     end
@@ -234,31 +186,26 @@ function LoolibTimerMixin:CancelTimer(handle)
         return false
     end
 
-    -- Cancel ticker if it's a repeating timer
     if timerInfo.repeating and timerInfo.ticker then
         timerInfo.ticker:Cancel()
     end
 
-    -- Remove from storage
     self.timers[handle] = nil
-
     return true
 end
 
 --- Cancel all timers for this object
-function LoolibTimerMixin:CancelAllTimers()
+function TimerMixin:CancelAllTimers()
     if not self.timers then
         return
     end
 
-    -- Cancel each timer
-    for handle, timerInfo in pairs(self.timers) do
+    for _, timerInfo in pairs(self.timers) do
         if timerInfo.repeating and timerInfo.ticker then
             timerInfo.ticker:Cancel()
         end
     end
 
-    -- Clear storage
     self.timers = {}
 end
 
@@ -269,7 +216,7 @@ end
 --- Get time remaining on a timer
 -- @param handle string - Timer handle
 -- @return number|nil - Seconds remaining, or nil if not found
-function LoolibTimerMixin:TimeLeft(handle)
+function TimerMixin:TimeLeft(handle)
     if not self.timers then
         return nil
     end
@@ -279,21 +226,19 @@ function LoolibTimerMixin:TimeLeft(handle)
         return nil
     end
 
-    -- Calculate time remaining
-    local remaining = timerInfo.endTime - GetTime()
-    return max(0, remaining)
+    return max(0, timerInfo.endTime - GetTime())
 end
 
 --- Check if a timer exists
 -- @param handle string - Timer handle
 -- @return boolean - True if timer exists and is active
-function LoolibTimerMixin:IsTimerActive(handle)
+function TimerMixin:IsTimerActive(handle)
     return self.timers and self.timers[handle] ~= nil
 end
 
 --- Get all active timer handles
 -- @return table - Array of timer handles
-function LoolibTimerMixin:GetActiveTimers()
+function TimerMixin:GetActiveTimers()
     if not self.timers then
         return {}
     end
@@ -308,7 +253,7 @@ end
 
 --- Get count of active timers
 -- @return number - Number of active timers
-function LoolibTimerMixin:GetTimerCount()
+function TimerMixin:GetTimerCount()
     if not self.timers then
         return 0
     end
@@ -325,8 +270,8 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local TimerModule = {
-    Mixin = LoolibTimerMixin,
-}
+Loolib.Timer = TimerModule
+Loolib.Timer.Mixin = TimerMixin
 
-Loolib:RegisterModule("Timer", TimerModule)
+Loolib:RegisterModule("Core.Timer", TimerModule)
+Loolib:RegisterModule("Timer.Mixin", TimerMixin)

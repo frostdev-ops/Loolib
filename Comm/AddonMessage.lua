@@ -16,13 +16,41 @@
     - Backpressure API: IsQueueFull(), GetQueuePressure()
 ----------------------------------------------------------------------]]
 
+local LibStub = LibStub
+local assert = assert
+local CreateFrame = CreateFrame
+local C_ChatInfo = C_ChatInfo
+local Enum = Enum
+local error = error
+local GetFramerate = GetFramerate
+local GetTime = GetTime
+local hooksecurefunc = hooksecurefunc
+local ipairs = ipairs
+local math = math
+local next = next
+local pairs = pairs
+local pcall = pcall
+local string = string
+local table = table
+local tostring = tostring
+local type = type
+local wipe = wipe
+
 local Loolib = LibStub("Loolib")
+-- FIX(critical-01): Use Loolib.Mixin/CreateFromMixins directly instead of unstable module lookup
+local ApplyMixins = assert(Loolib.Mixin,
+    "Loolib.Mixin must be loaded before Comm/AddonMessage.lua")
+local CreateFromMixins = assert(Loolib.CreateFromMixins,
+    "Loolib.CreateFromMixins must be loaded before Comm/AddonMessage.lua")
+local Comm = Loolib.Comm or Loolib:GetOrCreateModule("Comm")
+
+Loolib.Comm = Comm
 
 --[[--------------------------------------------------------------------
     Constants
 ----------------------------------------------------------------------]]
 
-LoolibCommMixin = {}
+local CommMixin = {}
 
 -- Maximum message size for addon channel
 local MAX_MESSAGE_SIZE = 255
@@ -473,7 +501,7 @@ end
 ----------------------------------------------------------------------]]
 
 --- Initialize the comm system (called automatically on first use)
-function LoolibCommMixin:Init()
+function CommMixin:Init()
     InitializeCommFrame()
 end
 
@@ -481,7 +509,7 @@ end
 -- @param prefix string - Addon message prefix (1-16 characters)
 -- @param callback function - function(prefix, message, distribution, sender)
 -- @param owner any - Optional owner for the callback
-function LoolibCommMixin:RegisterComm(prefix, callback, owner)
+function CommMixin:RegisterComm(prefix, callback, owner)
     if type(prefix) ~= "string" or #prefix < 1 or #prefix > 16 then
         error("RegisterComm: prefix must be a string of 1-16 characters", 2)
     end
@@ -501,14 +529,14 @@ end
 
 --- Unregister a prefix
 -- @param prefix string
-function LoolibCommMixin:UnregisterComm(prefix)
+function CommMixin:UnregisterComm(prefix)
     registeredPrefixes[prefix] = nil
 end
 
 --- Check if a prefix is registered
 -- @param prefix string
 -- @return boolean
-function LoolibCommMixin:IsCommRegistered(prefix)
+function CommMixin:IsCommRegistered(prefix)
     return registeredPrefixes[prefix] ~= nil
 end
 
@@ -521,7 +549,7 @@ end
 -- @param callbackFn function|nil - Called after each part is sent: callback(arg, bytesSent)
 -- @param callbackArg any - Argument passed to callback
 -- @return boolean - true if queued, false if dropped due to queue full
-function LoolibCommMixin:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg)
+function CommMixin:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg)
     if type(prefix) ~= "string" then
         error("SendCommMessage: prefix must be a string", 2)
     end
@@ -582,7 +610,7 @@ end
 -- @param text string - Message content (must fit in one packet, ≤ 254 bytes)
 -- @param distribution string - Distribution channel
 -- @param target string|nil - Target for WHISPER
-function LoolibCommMixin:SendCommMessageInstant(prefix, text, distribution, target)
+function CommMixin:SendCommMessageInstant(prefix, text, distribution, target)
     if #text > MAX_MESSAGE_SIZE - 1 then
         error("SendCommMessageInstant: message too long for instant send", 2)
     end
@@ -593,12 +621,12 @@ end
 
 --- Get the total number of queued messages across all priority queues
 -- @return number
-function LoolibCommMixin:GetQueuedMessageCount()
+function CommMixin:GetQueuedMessageCount()
     return TotalQueueSize()
 end
 
 --- Clear all queued messages
-function LoolibCommMixin:ClearSendQueue()
+function CommMixin:ClearSendQueue()
     queues.ALERT:Reset()
     queues.NORMAL:Reset()
     queues.BULK:Reset()
@@ -608,7 +636,7 @@ end
 
 --- Clear queued messages for a specific prefix
 -- @param prefix string
-function LoolibCommMixin:ClearSendQueueForPrefix(prefix)
+function CommMixin:ClearSendQueueForPrefix(prefix)
     local function clearQueue(queue)
         local kept    = CreateFIFO()
         local removed = 0
@@ -635,26 +663,26 @@ end
 
 --- Get current throttle state
 -- @return number, number - Available bytes, max burst bytes
-function LoolibCommMixin:GetThrottleState()
+function CommMixin:GetThrottleState()
     GetThrottleAllowance()  -- Update available
     return throttleAvailable, THROTTLE_BURST
 end
 
 --- Clean up stale incomplete multi-part messages
 -- @param maxAge number - Maximum age in seconds (default 60)
-function LoolibCommMixin:CleanupPendingMessages(maxAge)
+function CommMixin:CleanupPendingMessages(maxAge)
     CleanupStalePending(maxAge)
 end
 
 --- Check if the send queue is at capacity (BULK messages will be dropped)
 -- @return boolean
-function LoolibCommMixin:IsQueueFull()
+function CommMixin:IsQueueFull()
     return TotalQueueSize() >= MAX_QUEUE_SIZE
 end
 
 --- Get current queue pressure as a ratio from 0.0 (empty) to 1.0 (full)
 -- @return number
-function LoolibCommMixin:GetQueuePressure()
+function CommMixin:GetQueuePressure()
     return math.min(1.0, TotalQueueSize() / MAX_QUEUE_SIZE)
 end
 
@@ -664,8 +692,10 @@ end
 
 --- Create a new Comm instance
 -- @return table - A new Comm object
-function CreateLoolibComm()
-    local comm = LoolibCreateFromMixins(LoolibCommMixin)
+local function CreateComm()
+    local comm = CreateFromMixins(CommMixin)
+    comm.Priority = Comm.Priority
+    comm.PRIORITY = Comm.Priority
     comm:Init()
     return comm
 end
@@ -674,30 +704,28 @@ end
     Singleton Instance
 ----------------------------------------------------------------------]]
 
-LoolibComm = LoolibCreateFromMixins(LoolibCommMixin)
+ApplyMixins(Comm, CommMixin)
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local CommModule = {
-    Mixin  = LoolibCommMixin,
-    Create = CreateLoolibComm,
-    Comm   = LoolibComm,
+local priority = Comm.Priority or Comm.PRIORITY or {}
 
-    -- Priority constants (for external consumers)
-    PRIORITY_ALERT  = PRIORITY_ALERT,
-    PRIORITY_NORMAL = PRIORITY_NORMAL,
-    PRIORITY_BULK   = PRIORITY_BULK,
-}
+priority.ALERT = PRIORITY_ALERT
+priority.NORMAL = PRIORITY_NORMAL
+priority.BULK = PRIORITY_BULK
 
-Loolib:RegisterModule("AddonMessage", CommModule)
+Loolib.Comm.Mixin = CommMixin
+Loolib.Comm.Create = CreateComm
+Loolib.Comm.Instance = Comm
+Loolib.Comm.Comm = Comm
+Loolib.Comm.AddonMessage = Comm
+Loolib.Comm.Priority = priority
+Loolib.Comm.PRIORITY = priority
+Loolib.Comm.PRIORITY_ALERT = PRIORITY_ALERT
+Loolib.Comm.PRIORITY_NORMAL = PRIORITY_NORMAL
+Loolib.Comm.PRIORITY_BULK = PRIORITY_BULK
 
--- Also register in Comm module namespace
-local Comm = Loolib:GetOrCreateModule("Comm")
-Comm.AddonMessage = LoolibComm
-Comm.PRIORITY = {
-    ALERT  = PRIORITY_ALERT,
-    NORMAL = PRIORITY_NORMAL,
-    BULK   = PRIORITY_BULK,
-}
+Loolib:RegisterModule("Comm", Comm)
+Loolib:RegisterModule("AddonMessage", Comm)

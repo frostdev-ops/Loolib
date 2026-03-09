@@ -44,7 +44,7 @@ LOOLIB_CANVAS_TOOLS = {
 }
 
 -- LoolibCanvasToolbarMixin
-LoolibCanvasToolbarMixin = {}
+local LoolibCanvasToolbarMixin = {}
 
 function LoolibCanvasToolbarMixin:OnLoad()
     -- Current tool
@@ -458,7 +458,7 @@ function LoolibCanvasToolbarMixin:IsShown()
 end
 
 -- Factory function
-function LoolibCreateCanvasToolbar()
+local function LoolibCreateCanvasToolbar()
     local toolbar = {}
     LoolibMixin(toolbar, LoolibCanvasToolbarMixin)
     toolbar:OnLoad()

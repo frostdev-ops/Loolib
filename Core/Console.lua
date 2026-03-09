@@ -4,6 +4,7 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local Core = Loolib.Core or Loolib:GetOrCreateModule("Core")
 
 --[[--------------------------------------------------------------------
     LoolibConsoleMixin
@@ -12,12 +13,12 @@ local Loolib = LibStub("Loolib")
     Based on AceConsole-3.0 API.
 ----------------------------------------------------------------------]]
 
-LoolibConsoleMixin = {}
+local ConsoleMixin = Core.Console or Loolib:GetModule("Core.Console") or {}
 
 -- Storage for registered slash commands
-LoolibConsoleMixin.commands = LoolibConsoleMixin.commands or {}
-LoolibConsoleMixin.slashIndices = LoolibConsoleMixin.slashIndices or {}
-LoolibConsoleMixin.nextCommandId = LoolibConsoleMixin.nextCommandId or 1
+ConsoleMixin.commands = ConsoleMixin.commands or {}
+ConsoleMixin.slashIndices = ConsoleMixin.slashIndices or {}
+ConsoleMixin.nextCommandId = ConsoleMixin.nextCommandId or 1
 
 --[[--------------------------------------------------------------------
     Chat Output
@@ -29,7 +30,7 @@ LoolibConsoleMixin.nextCommandId = LoolibConsoleMixin.nextCommandId or 1
 --   Print(...) - Print to DEFAULT_CHAT_FRAME
 -- @param frame ChatFrame|any - The chat frame, or first part of message
 -- @param ... - Message components
-function LoolibConsoleMixin:Print(frame, ...)
+function ConsoleMixin:Print(frame, ...)
     local chatFrame, message
 
     -- Detect if first argument is a frame
@@ -56,7 +57,7 @@ end
 -- @param frame ChatFrame|string - The chat frame, or format string
 -- @param format string|any - The format string, or first format argument
 -- @param ... - Format arguments
-function LoolibConsoleMixin:Printf(frame, format, ...)
+function ConsoleMixin:Printf(frame, format, ...)
     local chatFrame, message
 
     -- Detect if first argument is a frame
@@ -79,7 +80,7 @@ end
 --- Format multiple values into a message string
 -- @param ... - Values to format
 -- @return string - Formatted message
-function LoolibConsoleMixin:_FormatMessage(...)
+function ConsoleMixin:_FormatMessage(...)
     local n = select("#", ...)
     if n == 0 then return "" end
 
@@ -101,7 +102,7 @@ end
 -- @param func function|string - Callback function or method name
 -- @param persist boolean - (Optional) Keep registration across reloads
 -- @return boolean - Success
-function LoolibConsoleMixin:RegisterChatCommand(command, func, persist)
+function ConsoleMixin:RegisterChatCommand(command, func, persist)
     if type(command) ~= "string" or command == "" then
         error("RegisterChatCommand: command must be a non-empty string", 2)
         return false
@@ -163,7 +164,7 @@ end
 --- Unregister a slash command
 -- @param command string - The command name (without /)
 -- @return boolean - Success
-function LoolibConsoleMixin:UnregisterChatCommand(command)
+function ConsoleMixin:UnregisterChatCommand(command)
     if type(command) ~= "string" then
         error("UnregisterChatCommand: command must be a string", 2)
         return false
@@ -193,7 +194,7 @@ function LoolibConsoleMixin:UnregisterChatCommand(command)
 end
 
 --- Unregister all slash commands
-function LoolibConsoleMixin:UnregisterAllChatCommands()
+function ConsoleMixin:UnregisterAllChatCommands()
     for command in pairs(self.commands) do
         self:UnregisterChatCommand(command)
     end
@@ -202,7 +203,7 @@ end
 --- Check if a command is registered
 -- @param command string - The command name (without /)
 -- @return boolean
-function LoolibConsoleMixin:IsCommandRegistered(command)
+function ConsoleMixin:IsCommandRegistered(command)
     return self.commands[command] ~= nil
 end
 
@@ -216,7 +217,7 @@ end
 -- @param numargs number - (Optional) Number of arguments to extract
 -- @param startpos number - (Optional) Starting position (default 1)
 -- @return ... - Parsed arguments
-function LoolibConsoleMixin:GetArgs(str, numargs, startpos)
+function ConsoleMixin:GetArgs(str, numargs, startpos)
     if type(str) ~= "string" then
         return
     end
@@ -297,4 +298,7 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-Loolib:RegisterModule("Console", LoolibConsoleMixin)
+Core.Console = ConsoleMixin
+Loolib.Console = ConsoleMixin
+
+Loolib:RegisterModule("Core.Console", ConsoleMixin)

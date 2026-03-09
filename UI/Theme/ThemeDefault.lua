@@ -6,15 +6,17 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local Theme = Loolib.Theme or Loolib:GetOrCreateModule("Theme")
+local ThemeManager = assert(Loolib.ThemeManager or (Theme.Manager and Theme.Manager.Manager), "Loolib.ThemeManager is required for ThemeDefault")
 
 --[[--------------------------------------------------------------------
     Standard Backdrops
 ----------------------------------------------------------------------]]
 
-LoolibBackdrop = LoolibBackdrop or {}
+local Backdrop = Loolib.Backdrop or Theme.Backdrop or {}
 
 -- Standard dialog backdrop (32x32 tiles)
-LoolibBackdrop.Dialog = {
+Backdrop.Dialog = {
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
     edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
     tile = true,
@@ -24,7 +26,7 @@ LoolibBackdrop.Dialog = {
 }
 
 -- Tooltip backdrop (16x16 tiles)
-LoolibBackdrop.Tooltip = {
+Backdrop.Tooltip = {
     bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true,
@@ -34,7 +36,7 @@ LoolibBackdrop.Tooltip = {
 }
 
 -- Simple panel backdrop
-LoolibBackdrop.Panel = {
+Backdrop.Panel = {
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
     edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
     tile = true,
@@ -44,7 +46,7 @@ LoolibBackdrop.Panel = {
 }
 
 -- Flat backdrop (no texture, just solid color)
-LoolibBackdrop.Flat = {
+Backdrop.Flat = {
     bgFile = "Interface\\Buttons\\WHITE8x8",
     edgeFile = "Interface\\Buttons\\WHITE8x8",
     tile = false,
@@ -53,7 +55,7 @@ LoolibBackdrop.Flat = {
 }
 
 -- Transparent with border
-LoolibBackdrop.TransparentBorder = {
+Backdrop.TransparentBorder = {
     bgFile = nil,
     edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = false,
@@ -65,7 +67,7 @@ LoolibBackdrop.TransparentBorder = {
     Default Theme Definition
 ----------------------------------------------------------------------]]
 
-LoolibThemeDefault = {
+local ThemeDefault = {
     name = "Default",
     description = "Standard Blizzard-style theme",
 
@@ -146,11 +148,11 @@ LoolibThemeDefault = {
         Backdrops
     ------------------------------------------------------------------]]
     backdrops = {
-        dialog = LoolibBackdrop.Dialog,
-        tooltip = LoolibBackdrop.Tooltip,
-        panel = LoolibBackdrop.Panel,
-        flat = LoolibBackdrop.Flat,
-        border = LoolibBackdrop.TransparentBorder,
+        dialog = Backdrop.Dialog,
+        tooltip = Backdrop.Tooltip,
+        panel = Backdrop.Panel,
+        flat = Backdrop.Flat,
+        border = Backdrop.TransparentBorder,
     },
 
     --[[----------------------------------------------------------------
@@ -337,7 +339,14 @@ LoolibThemeDefault = {
     Register the Default Theme
 ----------------------------------------------------------------------]]
 
-LoolibThemeManager:RegisterTheme("Default", LoolibThemeDefault)
+Theme.Backdrop = Backdrop
+Theme.Default = ThemeDefault
+Loolib.Backdrop = Backdrop
+
+ThemeManager:RegisterTheme("Default", ThemeDefault)
 
 -- Set as active theme
-LoolibThemeManager:SetActiveTheme("Default")
+ThemeManager:SetActiveTheme("Default")
+
+Loolib:RegisterModule("Theme.Backdrop", Backdrop)
+Loolib:RegisterModule("Theme.Default", ThemeDefault)

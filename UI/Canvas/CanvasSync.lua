@@ -58,7 +58,7 @@ local MSG_REQUEST_FULL = "REQ"  -- Request full sync from leader
     Uses delta encoding to minimize bandwidth and supports compression.
 ----------------------------------------------------------------------]]
 
-LoolibCanvasSyncMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local LoolibCanvasSyncMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
 
 --[[--------------------------------------------------------------------
     Initialization
@@ -875,7 +875,7 @@ end
 
 --- Create a new CanvasSync instance
 -- @return table - A new CanvasSync object
-function LoolibCreateCanvasSync()
+local function LoolibCreateCanvasSync()
     local sync = LoolibCreateFromMixins(LoolibCanvasSyncMixin)
     sync:OnLoad()
     return sync

@@ -3,75 +3,126 @@
     Config - Main entry point for the configuration system
 
     Provides a unified API for registering and managing addon options.
-    Combines ConfigRegistry and ConfigCmd for a simplified experience.
+    Combines registry, command, dialog, and profile helpers.
 ----------------------------------------------------------------------]]
+
+local _G = _G
+local ipairs = ipairs
+local select = select
+local string_format = string.format
+local type = type
+
+local StaticPopup_Show = StaticPopup_Show
 
 local Loolib = LibStub("Loolib")
+local Config = Loolib:GetOrCreateModule("Config")
+
+Loolib.Config = Config
+
+Loolib.Config.Compat = Config.Compat or {}
 
 --[[--------------------------------------------------------------------
-    LoolibConfig
+    Compatibility Wrappers
 
-    Main configuration system entry point. Provides convenience methods
-    that combine the registry and command-line subsystems.
+    These keep WoW's slash command and popup integration behind a
+    namespace-scoped API instead of scattering direct global writes.
 ----------------------------------------------------------------------]]
 
-LoolibConfig = {}
+function Config.Compat:RegisterSlashCommand(commandId, slashcmd, handler)
+    if type(commandId) ~= "string" or commandId == "" then
+        error("Loolib.Config.Compat:RegisterSlashCommand: commandId must be a non-empty string", 2)
+    end
+    if type(slashcmd) ~= "string" or slashcmd == "" then
+        error("Loolib.Config.Compat:RegisterSlashCommand: slashcmd must be a non-empty string", 2)
+    end
+    if type(handler) ~= "function" then
+        error("Loolib.Config.Compat:RegisterSlashCommand: handler must be a function", 2)
+    end
 
--- References to submodules (populated after they load)
-LoolibConfig.Types = nil       -- Set in ConfigTypes.lua
-LoolibConfig.Registry = nil    -- Set in ConfigRegistry.lua
-LoolibConfig.Cmd = nil         -- Set in ConfigCmd.lua
-LoolibConfig.Dialog = nil      -- Set in ConfigDialog.lua
-LoolibConfig.ProfileOptions = nil  -- Set in ProfileOptions.lua
+    _G.SlashCmdList = _G.SlashCmdList or {}
+
+    _G["SLASH_" .. commandId .. "1"] = "/" .. slashcmd
+    _G.SlashCmdList[commandId] = handler
+
+    return commandId
+end
+
+function Config.Compat:UnregisterSlashCommand(commandId)
+    if type(commandId) ~= "string" or commandId == "" then
+        return false
+    end
+
+    local index = 1
+    while _G["SLASH_" .. commandId .. index] do
+        _G["SLASH_" .. commandId .. index] = nil
+        index = index + 1
+    end
+
+    if _G.SlashCmdList then
+        _G.SlashCmdList[commandId] = nil
+    end
+    return true
+end
+
+function Config.Compat:EnsureStaticPopup(popupName, definition)
+    if type(popupName) ~= "string" or popupName == "" then
+        error("Loolib.Config.Compat:EnsureStaticPopup: popupName must be a non-empty string", 2)
+    end
+    if type(definition) ~= "table" then
+        error("Loolib.Config.Compat:EnsureStaticPopup: definition must be a table", 2)
+    end
+
+    _G.StaticPopupDialogs = _G.StaticPopupDialogs or {}
+    _G.StaticPopupDialogs[popupName] = _G.StaticPopupDialogs[popupName] or definition
+    return _G.StaticPopupDialogs[popupName]
+end
+
+function Config.Compat:ShowStaticPopup(popupName, text, data)
+    local dialogs = _G.StaticPopupDialogs
+    local dialog = dialogs and dialogs[popupName]
+    if not dialog then
+        return nil
+    end
+
+    if text ~= nil then
+        dialog.text = text
+    end
+
+    return StaticPopup_Show(popupName, nil, nil, data)
+end
 
 --[[--------------------------------------------------------------------
     Initialization
 ----------------------------------------------------------------------]]
 
---- Initialize the config system with references to submodules
--- Called after all Config modules are loaded
-function LoolibConfig:Initialize()
-    local RegistryModule = Loolib:GetModule("ConfigRegistry")
-    local CmdModule = Loolib:GetModule("ConfigCmd")
-    local DialogModule = Loolib:GetModule("ConfigDialog")
-    local ProfileOptionsModule = Loolib:GetModule("ProfileOptions")
-    local TypesModule = Loolib:GetModule("ConfigTypes")
-
-    self.Types = TypesModule
-    self.Registry = RegistryModule and RegistryModule.Registry
-    self.Cmd = CmdModule and CmdModule.Cmd
-    self.Dialog = DialogModule and DialogModule.Dialog
-    self.ProfileOptions = ProfileOptionsModule
+function Config:Initialize()
+    self.Types = self.Types or Config.Types
+    self.Registry = self.Registry or Config.Registry
+    self.Cmd = self.Cmd or Config.Cmd
+    self.Dialog = self.Dialog or Config.Dialog
+    self.ProfileOptions = self.ProfileOptions or Config.ProfileOptions
+    self.Compat = self.Compat or Config.Compat
 end
 
 --[[--------------------------------------------------------------------
     Localization Support
 ----------------------------------------------------------------------]]
 
---- Get a localized string
--- @param key string - The key to look up
--- @param ... - Formatting arguments
--- @return string - Localized string
-function LoolibConfig:GetLocaleString(key, ...)
-    -- Placeholder for actual localization system
-    -- In a real implementation, this would look up in Loolib.Locale
+function Config:GetLocaleString(key, ...)
     local strings = {
-        ["VALIDATION_ERROR"] = "Validation failed: %s",
-        ["REQUIRED_ERROR"] = "Value is required",
-        ["RANGE_ERROR"] = "Value must be between %s and %s",
-        -- Add more defaults as needed
+        VALIDATION_ERROR = "Validation failed: %s",
+        REQUIRED_ERROR = "Value is required",
+        RANGE_ERROR = "Value must be between %s and %s",
     }
-    
+
     local str = strings[key] or key
     if select("#", ...) > 0 then
-        -- Use pcall to safely handle formatting errors
-        local success, result = pcall(string.format, str, ...)
+        local success, result = pcall(string_format, str, ...)
         if success then
             return result
         end
-        -- If formatting fails, return unformatted string
-        return str
     end
+
     return str
 end
 
@@ -79,34 +130,19 @@ end
     Convenience Registration
 ----------------------------------------------------------------------]]
 
---- Register an options table with optional slash command
--- This is the primary entry point for addon configuration registration.
--- @param appName string - Unique identifier for the addon
--- @param options table|function - Options table or function returning options
--- @param slashcmd string|table - Slash command(s) to register (optional)
--- @return boolean - Success
---
--- Example:
---   LoolibConfig:RegisterOptionsTable("MyAddon", myOptions, "myaddon")
---   -- Now /myaddon opens config and MyAddon is registered
-function LoolibConfig:RegisterOptionsTable(appName, options, slashcmd)
-    -- Ensure we're initialized
-    if not self.Registry then
-        self:Initialize()
-    end
+function Config:RegisterOptionsTable(appName, options, slashcmd)
+    self:Initialize()
 
     if not self.Registry then
-        Loolib:Error("ConfigRegistry not loaded")
+        Loolib:Error("Loolib.Config.Registry not loaded")
         return false
     end
 
-    -- Register the options table
     local success = self.Registry:RegisterOptionsTable(appName, options)
     if not success then
         return false
     end
 
-    -- Register slash command if provided
     if slashcmd and self.Cmd then
         if type(slashcmd) == "string" then
             self.Cmd:CreateChatCommand(slashcmd, appName)
@@ -120,15 +156,11 @@ function LoolibConfig:RegisterOptionsTable(appName, options, slashcmd)
     return true
 end
 
---- Unregister an options table and its slash commands
--- @param appName string - The addon name
--- @return boolean - Success
-function LoolibConfig:UnregisterOptionsTable(appName)
+function Config:UnregisterOptionsTable(appName)
     if not self.Registry then
         return false
     end
 
-    -- Unregister commands first
     if self.Cmd then
         self.Cmd:UnregisterChatCommands(appName)
     end
@@ -140,27 +172,16 @@ end
     Options Table Access
 ----------------------------------------------------------------------]]
 
---- Get an options table
--- @param appName string - The addon name
--- @param uiType string - UI type for filtering (optional)
--- @return table|nil - The options table
-function LoolibConfig:GetOptionsTable(appName, uiType)
-    if not self.Registry then
-        self:Initialize()
-    end
+function Config:GetOptionsTable(appName, uiType)
+    self:Initialize()
     return self.Registry and self.Registry:GetOptionsTable(appName, uiType)
 end
 
---- Check if an options table is registered
--- @param appName string - The addon name
--- @return boolean
-function LoolibConfig:IsRegistered(appName)
+function Config:IsRegistered(appName)
     return self.Registry and self.Registry:IsRegistered(appName)
 end
 
---- Notify that options have changed (refresh UIs)
--- @param appName string - The addon name (or nil for all)
-function LoolibConfig:NotifyChange(appName)
+function Config:NotifyChange(appName)
     if self.Registry then
         self.Registry:NotifyChange(appName)
     end
@@ -170,39 +191,25 @@ end
     Dialog Access
 ----------------------------------------------------------------------]]
 
---- Open the configuration dialog
--- @param appName string - The addon name
--- @param ... - Optional path to group
--- @return Frame|nil - The dialog frame
-function LoolibConfig:Open(appName, ...)
-    if not self.Dialog then
-        self:Initialize()
-    end
+function Config:Open(appName, ...)
+    self:Initialize()
     return self.Dialog and self.Dialog:Open(appName, nil, ...)
 end
 
---- Close the configuration dialog
--- @param appName string - The addon name (or nil for all)
-function LoolibConfig:Close(appName)
-    if self.Dialog then
-        if appName then
-            self.Dialog:Close(appName)
-        else
-            self.Dialog:CloseAll()
-        end
+function Config:Close(appName)
+    if not self.Dialog then
+        return
+    end
+
+    if appName then
+        self.Dialog:Close(appName)
+    else
+        self.Dialog:CloseAll()
     end
 end
 
---- Add options to Blizzard Settings
--- @param appName string - The addon name
--- @param name string - Display name in settings
--- @param parent string - Parent category name (optional)
--- @param ... - Path to group (optional)
--- @return Frame|nil - The settings frame
-function LoolibConfig:AddToBlizOptions(appName, name, parent, ...)
-    if not self.Dialog then
-        self:Initialize()
-    end
+function Config:AddToBlizOptions(appName, name, parent, ...)
+    self:Initialize()
     return self.Dialog and self.Dialog:AddToBlizOptions(appName, name, parent, ...)
 end
 
@@ -210,14 +217,8 @@ end
     Command-Line Access
 ----------------------------------------------------------------------]]
 
---- Handle a slash command
--- @param slashcmd string - The slash command
--- @param appName string - The addon name
--- @param input string - User input
-function LoolibConfig:HandleCommand(slashcmd, appName, input)
-    if not self.Cmd then
-        self:Initialize()
-    end
+function Config:HandleCommand(slashcmd, appName, input)
+    self:Initialize()
     if self.Cmd then
         self.Cmd:HandleCommand(slashcmd, appName, input)
     end
@@ -227,59 +228,34 @@ end
     Profile Options
 ----------------------------------------------------------------------]]
 
---- Get profile options table for a database
--- @param db table - LoolibSavedVariables instance
--- @param noDefaultProfiles boolean - Don't include default profiles
--- @return table - Options table for profiles
-function LoolibConfig:GetProfileOptions(db, noDefaultProfiles)
-    if not self.ProfileOptions then
-        self:Initialize()
-    end
+function Config:GetProfileOptions(db, noDefaultProfiles)
+    self:Initialize()
     return self.ProfileOptions and self.ProfileOptions:GetOptionsTable(db, noDefaultProfiles)
 end
 
 --[[--------------------------------------------------------------------
-    Value Helpers (pass-through to Registry)
+    Value Helpers
 ----------------------------------------------------------------------]]
 
---- Resolve a property value (handles functions)
--- @param valueOrFunc any - Static value or function
--- @param info table - Info table
--- @return any - Resolved value
-function LoolibConfig:ResolveValue(valueOrFunc, info)
+function Config:ResolveValue(valueOrFunc, info)
     if self.Registry then
         return self.Registry:ResolveValue(valueOrFunc, info)
-    elseif type(valueOrFunc) == "function" then
+    end
+
+    if type(valueOrFunc) == "function" then
         return valueOrFunc(info)
     end
+
     return valueOrFunc
 end
 
---- Build info table for option callbacks
--- @param options table - Root options table
--- @param option table - Current option
--- @param appName string - App name
--- @param ... - Path to option
--- @return table - Info table
-function LoolibConfig:BuildInfoTable(options, option, appName, ...)
+function Config:BuildInfoTable(options, option, appName, ...)
     if self.Registry then
         return self.Registry:BuildInfoTable(options, option, appName, ...)
     end
+
     return {}
 end
 
---[[--------------------------------------------------------------------
-    Register with Loolib
-----------------------------------------------------------------------]]
-
-Loolib:RegisterModule("Config", LoolibConfig)
-
---[[--------------------------------------------------------------------
-    Auto-Initialize
-
-    Call Initialize() immediately after registration to ensure
-    LoolibConfig.Dialog, Registry, Cmd, etc. are available
-    before any addon tries to access them.
-----------------------------------------------------------------------]]
-
-LoolibConfig:Initialize()
+Loolib:RegisterModule("Config", Config)
+Config:Initialize()

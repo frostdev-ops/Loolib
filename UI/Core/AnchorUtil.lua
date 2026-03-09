@@ -4,8 +4,8 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
-
-LoolibAnchorUtil = {}
+local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
+local AnchorUtil = UI.AnchorUtil or Loolib:GetModule("UI.AnchorUtil") or {}
 
 --[[--------------------------------------------------------------------
     Point Utilities
@@ -18,7 +18,7 @@ LoolibAnchorUtil = {}
 -- @param relativePoint string - The point on relativeTo (nil = same as point)
 -- @param offsetX number - X offset (default 0)
 -- @param offsetY number - Y offset (default 0)
-function LoolibAnchorUtil.SetPoint(region, point, relativeTo, relativePoint, offsetX, offsetY)
+function AnchorUtil.SetPoint(region, point, relativeTo, relativePoint, offsetX, offsetY)
     region:ClearAllPoints()
     region:SetPoint(
         point,
@@ -33,7 +33,7 @@ end
 -- @param region Region - The region to anchor
 -- @param relativeTo Frame - The frame to fill (nil = parent)
 -- @param inset number - Optional inset from edges (applied to all sides)
-function LoolibAnchorUtil.SetAllPoints(region, relativeTo, inset)
+function AnchorUtil.SetAllPoints(region, relativeTo, inset)
     region:ClearAllPoints()
 
     if inset then
@@ -51,7 +51,7 @@ end
 -- @param right number - Right inset
 -- @param top number - Top inset
 -- @param bottom number - Bottom inset
-function LoolibAnchorUtil.SetAllPointsWithInsets(region, relativeTo, left, right, top, bottom)
+function AnchorUtil.SetAllPointsWithInsets(region, relativeTo, left, right, top, bottom)
     region:ClearAllPoints()
     region:SetPoint("TOPLEFT", relativeTo, "TOPLEFT", left or 0, -(top or 0))
     region:SetPoint("BOTTOMRIGHT", relativeTo, "BOTTOMRIGHT", -(right or 0), bottom or 0)
@@ -66,7 +66,7 @@ end
 -- @param relativeTo Region - The region to position relative to
 -- @param spacing number - Horizontal spacing (default 0)
 -- @param verticalOffset number - Vertical offset (default 0)
-function LoolibAnchorUtil.SetToRightOf(region, relativeTo, spacing, verticalOffset)
+function AnchorUtil.SetToRightOf(region, relativeTo, spacing, verticalOffset)
     region:ClearAllPoints()
     region:SetPoint("LEFT", relativeTo, "RIGHT", spacing or 0, verticalOffset or 0)
 end
@@ -76,7 +76,7 @@ end
 -- @param relativeTo Region - The region to position relative to
 -- @param spacing number - Horizontal spacing (default 0)
 -- @param verticalOffset number - Vertical offset (default 0)
-function LoolibAnchorUtil.SetToLeftOf(region, relativeTo, spacing, verticalOffset)
+function AnchorUtil.SetToLeftOf(region, relativeTo, spacing, verticalOffset)
     region:ClearAllPoints()
     region:SetPoint("RIGHT", relativeTo, "LEFT", -(spacing or 0), verticalOffset or 0)
 end
@@ -86,7 +86,7 @@ end
 -- @param relativeTo Region - The region to position relative to
 -- @param spacing number - Vertical spacing (default 0)
 -- @param horizontalOffset number - Horizontal offset (default 0)
-function LoolibAnchorUtil.SetBelow(region, relativeTo, spacing, horizontalOffset)
+function AnchorUtil.SetBelow(region, relativeTo, spacing, horizontalOffset)
     region:ClearAllPoints()
     region:SetPoint("TOP", relativeTo, "BOTTOM", horizontalOffset or 0, -(spacing or 0))
 end
@@ -96,7 +96,7 @@ end
 -- @param relativeTo Region - The region to position relative to
 -- @param spacing number - Vertical spacing (default 0)
 -- @param horizontalOffset number - Horizontal offset (default 0)
-function LoolibAnchorUtil.SetAbove(region, relativeTo, spacing, horizontalOffset)
+function AnchorUtil.SetAbove(region, relativeTo, spacing, horizontalOffset)
     region:ClearAllPoints()
     region:SetPoint("BOTTOM", relativeTo, "TOP", horizontalOffset or 0, spacing or 0)
 end
@@ -110,7 +110,7 @@ end
 -- @param relativeTo Frame - The frame to center within (nil = parent)
 -- @param verticalPoint string - Vertical anchor point ("TOP", "CENTER", "BOTTOM")
 -- @param verticalOffset number - Vertical offset
-function LoolibAnchorUtil.CenterHorizontally(region, relativeTo, verticalPoint, verticalOffset)
+function AnchorUtil.CenterHorizontally(region, relativeTo, verticalPoint, verticalOffset)
     region:ClearAllPoints()
 
     local point = verticalPoint or "CENTER"
@@ -122,7 +122,7 @@ end
 -- @param relativeTo Frame - The frame to center within
 -- @param horizontalPoint string - Horizontal anchor point ("LEFT", "CENTER", "RIGHT")
 -- @param horizontalOffset number - Horizontal offset
-function LoolibAnchorUtil.CenterVertically(region, relativeTo, horizontalPoint, horizontalOffset)
+function AnchorUtil.CenterVertically(region, relativeTo, horizontalPoint, horizontalOffset)
     region:ClearAllPoints()
 
     local point = horizontalPoint or "CENTER"
@@ -134,7 +134,7 @@ end
 -- @param relativeTo Frame - The frame to center within
 -- @param offsetX number - Horizontal offset
 -- @param offsetY number - Vertical offset
-function LoolibAnchorUtil.Center(region, relativeTo, offsetX, offsetY)
+function AnchorUtil.Center(region, relativeTo, offsetX, offsetY)
     region:ClearAllPoints()
     region:SetPoint("CENTER", relativeTo, "CENTER", offsetX or 0, offsetY or 0)
 end
@@ -149,7 +149,7 @@ end
 -- @param corner string - Corner: "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT"
 -- @param offsetX number - Horizontal offset
 -- @param offsetY number - Vertical offset
-function LoolibAnchorUtil.SetCorner(region, relativeTo, corner, offsetX, offsetY)
+function AnchorUtil.SetCorner(region, relativeTo, corner, offsetX, offsetY)
     region:ClearAllPoints()
     region:SetPoint(corner, relativeTo, corner, offsetX or 0, offsetY or 0)
 end
@@ -168,7 +168,7 @@ end
 -- @param paddingLeft number - Left padding
 -- @param paddingTop number - Top padding
 -- @return number, number - x, y position
-function LoolibAnchorUtil.CalculateGridPosition(index, columns, cellWidth, cellHeight, spacingX, spacingY, paddingLeft, paddingTop)
+function AnchorUtil.CalculateGridPosition(index, columns, cellWidth, cellHeight, spacingX, spacingY, paddingLeft, paddingTop)
     spacingX = spacingX or 0
     spacingY = spacingY or 0
     paddingLeft = paddingLeft or 0
@@ -194,8 +194,8 @@ end
 -- @param spacingY number - Vertical spacing
 -- @param paddingLeft number - Left padding
 -- @param paddingTop number - Top padding
-function LoolibAnchorUtil.SetGridPosition(region, parent, index, columns, cellWidth, cellHeight, spacingX, spacingY, paddingLeft, paddingTop)
-    local x, y = LoolibAnchorUtil.CalculateGridPosition(
+function AnchorUtil.SetGridPosition(region, parent, index, columns, cellWidth, cellHeight, spacingX, spacingY, paddingLeft, paddingTop)
+    local x, y = AnchorUtil.CalculateGridPosition(
         index, columns, cellWidth, cellHeight,
         spacingX, spacingY, paddingLeft, paddingTop
     )
@@ -211,7 +211,7 @@ end
 --- Apply multiple anchor points from a table
 -- @param region Region - The region to anchor
 -- @param points table - Array of point configs: { {point, relativeTo, relativePoint, x, y}, ... }
-function LoolibAnchorUtil.SetPointsFromTable(region, points)
+function AnchorUtil.SetPointsFromTable(region, points)
     region:ClearAllPoints()
 
     for _, pointConfig in ipairs(points) do
@@ -241,7 +241,7 @@ end
 -- @param spacing number - Vertical spacing between regions
 -- @param padding number - Padding from edge
 -- @param alignment string - Horizontal alignment ("LEFT", "CENTER", "RIGHT")
-function LoolibAnchorUtil.ChainVertically(regions, parent, startPoint, spacing, padding, alignment)
+function AnchorUtil.ChainVertically(regions, parent, startPoint, spacing, padding, alignment)
     startPoint = startPoint or "TOP"
     spacing = spacing or 0
     padding = padding or 0
@@ -281,7 +281,7 @@ end
 -- @param spacing number - Horizontal spacing between regions
 -- @param padding number - Padding from edge
 -- @param alignment string - Vertical alignment ("TOP", "CENTER", "BOTTOM")
-function LoolibAnchorUtil.ChainHorizontally(regions, parent, startPoint, spacing, padding, alignment)
+function AnchorUtil.ChainHorizontally(regions, parent, startPoint, spacing, padding, alignment)
     startPoint = startPoint or "LEFT"
     spacing = spacing or 0
     padding = padding or 0
@@ -322,7 +322,7 @@ end
 --- Clamp a frame to stay within screen bounds
 -- @param frame Frame - The frame to clamp
 -- @param margin number - Margin from screen edges
-function LoolibAnchorUtil.ClampToScreen(frame, margin)
+function AnchorUtil.ClampToScreen(frame, margin)
     margin = margin or 0
 
     local screenWidth = GetScreenWidth()
@@ -357,7 +357,7 @@ end
 
 --- Center a frame on the screen
 -- @param frame Frame - The frame to center
-function LoolibAnchorUtil.CenterOnScreen(frame)
+function AnchorUtil.CenterOnScreen(frame)
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 end
@@ -366,8 +366,7 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
--- Register in UI module
-local UI = Loolib:GetOrCreateModule("UI")
-UI.AnchorUtil = LoolibAnchorUtil
+UI.AnchorUtil = AnchorUtil
+Loolib.AnchorUtil = AnchorUtil
 
-Loolib:RegisterModule("AnchorUtil", LoolibAnchorUtil)
+Loolib:RegisterModule("UI.AnchorUtil", AnchorUtil)

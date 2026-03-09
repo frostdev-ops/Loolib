@@ -15,13 +15,15 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibCreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for PopupMenu")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for PopupMenu")
 
 --[[--------------------------------------------------------------------
     MenuItem Structure
 ----------------------------------------------------------------------]]
 
 --[[
-MenuItem = {
+Example MenuItem structure: {
     text = "Label",              -- Display text
     value = any,                 -- Value passed to callback
     icon = "path" or atlasName,  -- Optional icon
@@ -44,7 +46,7 @@ MenuItem = {
 ----------------------------------------------------------------------]]
 
 ---@class LoolibPopupMenuMixin
-LoolibPopupMenuMixin = {}
+local LoolibPopupMenuMixin = {}
 
 -- ============================================================
 -- INITIALIZATION
@@ -518,7 +520,7 @@ end
 ---@param parent Frame? Parent frame (defaults to UIParent)
 ---@param name string? Optional global name
 ---@return Frame
-function LoolibCreatePopupMenu(parent, name)
+local function LoolibCreatePopupMenu(parent, name)
     local menu = CreateFrame("Frame", name, parent or UIParent, BackdropTemplateMixin and "BackdropTemplate")
     LoolibMixin(menu, LoolibPopupMenuMixin)
     menu:OnLoad()
@@ -530,7 +532,7 @@ local sharedMenu = nil
 
 ---Get or create shared popup menu
 ---@return Frame
-function LoolibGetSharedPopupMenu()
+local function LoolibGetSharedPopupMenu()
     if not sharedMenu then
         sharedMenu = LoolibCreatePopupMenu()
     end
@@ -542,7 +544,7 @@ end
 ----------------------------------------------------------------------]]
 
 ---@class LoolibPopupMenuBuilderMixin
-LoolibPopupMenuBuilderMixin = {}
+local LoolibPopupMenuBuilderMixin = {}
 
 function LoolibPopupMenuBuilderMixin:Init()
     self._options = {}
@@ -617,7 +619,7 @@ end
 
 ---Create a popup menu builder for fluent API
 ---@return LoolibPopupMenuBuilderMixin
-function LoolibPopupMenu()
+local function LoolibPopupMenu()
     local builder = LoolibCreateFromMixins(LoolibPopupMenuBuilderMixin)
     builder:Init()
     return builder
@@ -627,7 +629,7 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local PopupMenuModule = {
+local popupMenuModule = {
     Mixin = LoolibPopupMenuMixin,
     BuilderMixin = LoolibPopupMenuBuilderMixin,
     Create = LoolibCreatePopupMenu,
@@ -635,9 +637,9 @@ local PopupMenuModule = {
     Builder = LoolibPopupMenu,
 }
 
-local UI = Loolib:GetOrCreateModule("UI")
-UI.PopupMenu = PopupMenuModule
-UI.CreatePopupMenu = LoolibCreatePopupMenu
-UI.GetSharedPopupMenu = LoolibGetSharedPopupMenu
+local ui = Loolib.UI or Loolib:GetOrCreateModule("UI")
+ui.PopupMenu = popupMenuModule
+ui.CreatePopupMenu = LoolibCreatePopupMenu
+ui.GetSharedPopupMenu = LoolibGetSharedPopupMenu
 
-Loolib:RegisterModule("PopupMenu", PopupMenuModule)
+Loolib:RegisterModule("Widgets.PopupMenu", popupMenuModule)

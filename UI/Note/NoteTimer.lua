@@ -23,6 +23,8 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for NoteTimer")
+local LoolibCallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib.CallbackRegistryMixin is required for NoteTimer")
 
 -- Verify dependencies are loaded
 assert(LoolibMixin, "Loolib/Core/Mixin.lua must be loaded before NoteTimer")
@@ -53,7 +55,7 @@ local TIMER_COLORS = {
     Manages countdown timers for encounter notes.
 ----------------------------------------------------------------------]]
 
-LoolibNoteTimerMixin = {}
+local LoolibNoteTimerMixin = {}
 
 --- Initialize the timer system
 function LoolibNoteTimerMixin:OnLoad()
@@ -453,7 +455,7 @@ end
 
 --- Create a new timer instance
 -- @return table Timer
-function LoolibCreateNoteTimer()
+local function LoolibCreateNoteTimer()
     local timer = {}
     LoolibMixin(timer, LoolibNoteTimerMixin)
     timer:OnLoad()
@@ -465,7 +467,7 @@ local defaultTimer = nil
 
 --- Get default timer instance (singleton)
 -- @return table Timer
-function LoolibGetNoteTimer()
+local function LoolibGetNoteTimer()
     if not defaultTimer then
         defaultTimer = LoolibCreateNoteTimer()
     end
@@ -477,11 +479,11 @@ end
 ----------------------------------------------------------------------]]
 
 -- Export constants
-LoolibNoteTimerStates = TIMER_STATES
-LoolibNoteTimerColors = TIMER_COLORS
+local LoolibNoteTimerStates = TIMER_STATES
+local LoolibNoteTimerColors = TIMER_COLORS
 
 -- Register with Loolib
-Loolib:RegisterModule("NoteTimer", {
+Loolib:RegisterModule("Note.NoteTimer", {
     Mixin = LoolibNoteTimerMixin,
     Create = LoolibCreateNoteTimer,
     Get = LoolibGetNoteTimer,

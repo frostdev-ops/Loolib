@@ -12,13 +12,35 @@
     - Control characters (\001-\004) and ^ are escaped
 ----------------------------------------------------------------------]]
 
+local LibStub = LibStub
+local assert = assert
+local error = error
+local math = math
+local pairs = pairs
+local select = select
+local string = string
+local table = table
+local tonumber = tonumber
+local tostring = tostring
+local type = type
+local unpack = unpack or table.unpack
+local wipe = wipe
+
 local Loolib = LibStub("Loolib")
+-- FIX(critical-01): Use Loolib.Mixin/CreateFromMixins directly instead of unstable module lookup
+local ApplyMixins = assert(Loolib.Mixin,
+    "Loolib.Mixin must be loaded before Comm/Serializer.lua")
+local CreateFromMixins = assert(Loolib.CreateFromMixins,
+    "Loolib.CreateFromMixins must be loaded before Comm/Serializer.lua")
+local Comm = Loolib.Comm or Loolib:GetOrCreateModule("Comm")
+
+Loolib.Comm = Comm
 
 --[[--------------------------------------------------------------------
     Constants and Protocol Definition
 ----------------------------------------------------------------------]]
 
-LoolibSerializerMixin = {}
+local SerializerMixin = {}
 
 -- Protocol version
 local PROTOCOL_VERSION = "1"
@@ -374,7 +396,7 @@ end
 --- Serialize one or more Lua values to a string
 -- @param ... - Values to serialize (any serializable type)
 -- @return string - The serialized representation
-function LoolibSerializerMixin:Serialize(...)
+function SerializerMixin:Serialize(...)
     local count = select("#", ...)
     if count == 0 then
         return MARKER .. PROTOCOL_VERSION
@@ -395,7 +417,7 @@ end
 --- Deserialize a string back to Lua values
 -- @param str string - The serialized string
 -- @return boolean, ... - Success flag followed by deserialized values
-function LoolibSerializerMixin:Deserialize(str)
+function SerializerMixin:Deserialize(str)
     if type(str) ~= "string" then
         return false, "Input must be a string"
     end
@@ -440,28 +462,42 @@ end
 
 --- Create a new Serializer instance
 -- @return table - A new Serializer object
-function CreateLoolibSerializer()
-    return LoolibCreateFromMixins(LoolibSerializerMixin)
+local function CreateSerializer()
+    return CreateFromMixins(SerializerMixin)
 end
 
 --[[--------------------------------------------------------------------
     Singleton Instance
 ----------------------------------------------------------------------]]
 
-LoolibSerializer = LoolibCreateFromMixins(LoolibSerializerMixin)
+local SerializerModule = Comm.Serializer
+local SerializerInstance
+
+if type(SerializerModule) == "table" and SerializerModule.Instance then
+    SerializerInstance = SerializerModule.Instance
+elseif type(SerializerModule) == "table"
+    and SerializerModule.Serialize
+    and SerializerModule.Deserialize then
+    SerializerInstance = SerializerModule
+    SerializerModule = {}
+else
+    SerializerModule = type(SerializerModule) == "table" and SerializerModule or {}
+    SerializerInstance = SerializerModule.Instance or Loolib.Serializer or {}
+end
+
+ApplyMixins(SerializerInstance, SerializerMixin)
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local SerializerModule = {
-    Mixin = LoolibSerializerMixin,
-    Create = CreateLoolibSerializer,
-    Serializer = LoolibSerializer,
-}
+Loolib.Comm.Serializer = SerializerModule
+Loolib.Comm.Serializer.Mixin = SerializerMixin
+Loolib.Comm.Serializer.Create = CreateSerializer
+Loolib.Comm.Serializer.Instance = SerializerInstance
+Loolib.Comm.Serializer.Serializer = SerializerInstance
 
+Loolib.Serializer = SerializerInstance
+
+Loolib:RegisterModule("Comm.Serializer", SerializerModule)
 Loolib:RegisterModule("Serializer", SerializerModule)
-
--- Also register in Comm module namespace
-local Comm = Loolib:GetOrCreateModule("Comm")
-Comm.Serializer = LoolibSerializer

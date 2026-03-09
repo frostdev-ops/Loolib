@@ -6,7 +6,17 @@
     management that can be included in addon configuration.
 ----------------------------------------------------------------------]]
 
+local ipairs = ipairs
+local next = next
+local pairs = pairs
+local time = time
+local tostring = tostring
+local type = type
+local wipe = wipe
+
 local Loolib = LibStub("Loolib")
+local Config = Loolib:GetOrCreateModule("Config")
+local CreateFromMixins = Loolib.CreateFromMixins
 
 --[[--------------------------------------------------------------------
     LoolibProfileOptionsMixin
@@ -14,7 +24,7 @@ local Loolib = LibStub("Loolib")
     Generates a complete options table for profile management UI.
 ----------------------------------------------------------------------]]
 
-LoolibProfileOptionsMixin = {}
+local ProfileOptionsMixin = {}
 
 --[[--------------------------------------------------------------------
     Options Table Generation
@@ -24,7 +34,7 @@ LoolibProfileOptionsMixin = {}
 -- @param db table - LoolibSavedVariables or compatible instance
 -- @param noDefaultProfiles boolean - Don't include default character profiles
 -- @return table - Options table compatible with ConfigRegistry
-function LoolibProfileOptionsMixin:GetOptionsTable(db, noDefaultProfiles)
+function ProfileOptionsMixin:GetOptionsTable(db, noDefaultProfiles)
     if not db then
         error("LoolibProfileOptions:GetOptionsTable requires a database instance", 2)
     end
@@ -336,7 +346,7 @@ end
 -- @param db table - Database instance
 -- @param noDefaultProfiles boolean - Exclude character-based default profiles
 -- @return table - Key-value pairs for dropdown
-function LoolibProfileOptionsMixin:GetProfileList(db, noDefaultProfiles)
+function ProfileOptionsMixin:GetProfileList(db, noDefaultProfiles)
     local profiles = {}
     local profileNames = db:GetProfiles()
 
@@ -364,7 +374,7 @@ end
 --- Create a compact profile options table (for embedding in smaller spaces)
 -- @param db table - Database instance
 -- @return table - Compact options table
-function LoolibProfileOptionsMixin:GetCompactOptionsTable(db)
+function ProfileOptionsMixin:GetCompactOptionsTable(db)
     return {
         type = "group",
         name = "Profiles",
@@ -424,9 +434,8 @@ end
 -- @param db table - Database instance
 -- @param parentFrame Frame - Optional parent frame
 -- @return Frame - The dialog frame
-function LoolibProfileOptionsMixin:CreateDialog(db, parentFrame)
-    local ConfigDialog = Loolib:GetModule("ConfigDialog")
-    if not ConfigDialog or not ConfigDialog.Dialog then
+function ProfileOptionsMixin:CreateDialog(db, parentFrame)
+    if not Config.Dialog then
         Loolib:Error("ConfigDialog not available")
         return nil
     end
@@ -435,18 +444,17 @@ function LoolibProfileOptionsMixin:CreateDialog(db, parentFrame)
     local appName = "_ProfileDialog_" .. tostring(db)
     local options = self:GetOptionsTable(db)
 
-    local ConfigRegistry = Loolib:GetModule("ConfigRegistry")
-    if ConfigRegistry and ConfigRegistry.Registry then
-        ConfigRegistry.Registry:RegisterOptionsTable(appName, options, true)
+    if Config.Registry then
+        Config.Registry:RegisterOptionsTable(appName, options, true)
     end
 
     -- Open the dialog
-    return ConfigDialog.Dialog:Open(appName, parentFrame)
+    return Config.Dialog:Open(appName, parentFrame)
 end
 
 --- Show export dialog
 -- @param db table - Database instance
-function LoolibProfileOptionsMixin:ShowExportDialog(db)
+function ProfileOptionsMixin:ShowExportDialog(db)
     local Serializer = Loolib:GetModule("Serializer")
     if not Serializer then
         Loolib:Error("Serializer module not found")
@@ -488,75 +496,66 @@ function LoolibProfileOptionsMixin:ShowExportDialog(db)
     -- We'll define a StaticPopup for now as a fallback.
     
     local popupName = "LOOLIB_EXPORT_PROFILE"
-    if not StaticPopupDialogs[popupName] then
-        StaticPopupDialogs[popupName] = {
-            text = "Export Profile: " .. currentProfile .. "\n(Ctrl+C to copy)",
-            button1 = "Close",
-            hasEditBox = true,
-            maxLetters = 0,
-            OnShow = function(self)
-                self.editBox:SetText(serialized)
-                self.editBox:SetFocus()
-                self.editBox:HighlightText()
-            end,
-            EditBoxOnEscapePressed = function(self)
-                self:GetParent():Hide()
-            end,
-            timeout = 0,
-            whileDead = true,
-            hideOnEscape = true,
-            preferredIndex = 3,
-        }
-    end
-    
-    -- Update text for this specific show
-    StaticPopupDialogs[popupName].text = "Export Profile: " .. currentProfile .. "\n(Ctrl+C to copy)"
-    StaticPopupDialogs[popupName].OnShow = function(self)
+    local popup = Config.Compat:EnsureStaticPopup(popupName, {
+        text = "Export Profile\n(Ctrl+C to copy)",
+        button1 = "Close",
+        hasEditBox = true,
+        maxLetters = 0,
+        EditBoxOnEscapePressed = function(self)
+            self:GetParent():Hide()
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    })
+
+    popup.text = "Export Profile: " .. currentProfile .. "\n(Ctrl+C to copy)"
+    popup.OnShow = function(self)
         self.editBox:SetText(serialized)
         self.editBox:SetFocus()
         self.editBox:HighlightText()
     end
-    
-    StaticPopup_Show(popupName)
+
+    Config.Compat:ShowStaticPopup(popupName)
 end
 
 --- Show import dialog
 -- @param db table - Database instance
-function LoolibProfileOptionsMixin:ShowImportDialog(db)
+function ProfileOptionsMixin:ShowImportDialog(db)
     local popupName = "LOOLIB_IMPORT_PROFILE"
-    if not StaticPopupDialogs[popupName] then
-        StaticPopupDialogs[popupName] = {
-            text = "Import Profile\n(Ctrl+V to paste)",
-            button1 = "Import",
-            button2 = "Cancel",
-            hasEditBox = true,
-            maxLetters = 0,
-            OnAccept = function(self)
-                local text = self.editBox:GetText()
-                Loolib.ProfileOptions:ImportProfile(db, text)
-            end,
-            EditBoxOnEnterPressed = function(self)
-                local text = self:GetText()
-                Loolib.ProfileOptions:ImportProfile(db, text)
-                self:GetParent():Hide()
-            end,
-            EditBoxOnEscapePressed = function(self)
-                self:GetParent():Hide()
-            end,
-            timeout = 0,
-            whileDead = true,
-            hideOnEscape = true,
-            preferredIndex = 3,
-        }
-    end
-    
-    StaticPopup_Show(popupName)
+    local profileOptions = Config.ProfileOptions or self
+    Config.Compat:EnsureStaticPopup(popupName, {
+        text = "Import Profile\n(Ctrl+V to paste)",
+        button1 = "Import",
+        button2 = "Cancel",
+        hasEditBox = true,
+        maxLetters = 0,
+        OnAccept = function(self)
+            local text = self.editBox:GetText()
+            profileOptions:ImportProfile(db, text)
+        end,
+        EditBoxOnEnterPressed = function(self)
+            local text = self:GetText()
+            profileOptions:ImportProfile(db, text)
+            self:GetParent():Hide()
+        end,
+        EditBoxOnEscapePressed = function(self)
+            self:GetParent():Hide()
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        preferredIndex = 3,
+    })
+
+    Config.Compat:ShowStaticPopup(popupName)
 end
 
 --- Import profile from string
 -- @param db table - Database instance
 -- @param str string - Serialized profile string
-function LoolibProfileOptionsMixin:ImportProfile(db, str)
+function ProfileOptionsMixin:ImportProfile(db, str)
     local Serializer = Loolib:GetModule("Serializer")
     if not Serializer then
         Loolib:Error("Serializer module not found")
@@ -620,20 +619,20 @@ end
 
 --- Create a new profile options instance
 -- @return table - New instance
-function CreateLoolibProfileOptions()
-    return LoolibCreateFromMixins(LoolibProfileOptionsMixin)
+local function CreateProfileOptions()
+    return CreateFromMixins(ProfileOptionsMixin)
 end
 
 -- Create the singleton instance
-local ProfileOptions = CreateLoolibProfileOptions()
+local ProfileOptions = CreateProfileOptions()
 
 --[[--------------------------------------------------------------------
     Register with Loolib
 ----------------------------------------------------------------------]]
 
 local ProfileOptionsModule = {
-    Mixin = LoolibProfileOptionsMixin,
-    Create = CreateLoolibProfileOptions,
+    Mixin = ProfileOptionsMixin,
+    Create = CreateProfileOptions,
 
     -- Convenience access to singleton methods
     GetOptionsTable = function(db, noDefaultProfiles)
@@ -645,6 +644,19 @@ local ProfileOptionsModule = {
     CreateDialog = function(db, parentFrame)
         return ProfileOptions:CreateDialog(db, parentFrame)
     end,
+    ShowExportDialog = function(db)
+        return ProfileOptions:ShowExportDialog(db)
+    end,
+    ShowImportDialog = function(db)
+        return ProfileOptions:ShowImportDialog(db)
+    end,
+    ImportProfile = function(db, str)
+        return ProfileOptions:ImportProfile(db, str)
+    end,
 }
+
+Loolib.Config.ProfileOptionsMixin = ProfileOptionsMixin
+Loolib.Config.CreateProfileOptions = CreateProfileOptions
+Loolib.Config.ProfileOptions = ProfileOptions
 
 Loolib:RegisterModule("ProfileOptions", ProfileOptionsModule)

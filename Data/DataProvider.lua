@@ -7,6 +7,33 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local error = error
+local ipairs = ipairs
+local type = type
+local max = math.max
+local min = math.min
+local sort = table.sort
+local insert = table.insert
+local remove = table.remove
+local wipe = wipe
+
+local function GetRequiredModule(name)
+    local module = Loolib:GetModule(name)
+    if not module then
+        error("Loolib module '" .. name .. "' is required", 2)
+    end
+    return module
+end
+
+local CallbackRegistryMixin = GetRequiredModule("CallbackRegistry").Mixin
+-- FIX(critical-01): Use Loolib.CreateFromMixins directly instead of unstable "Mixin" module lookup
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required")
+
+local Data = Loolib.Data or Loolib:GetOrCreateModule("Data")
+Loolib.Data = Data
+
+local DataProviderModule = Data.DataProvider or Loolib:GetModule("Data.DataProvider") or {}
+Loolib.Data.DataProvider = DataProviderModule
 
 --[[--------------------------------------------------------------------
     LoolibDataProviderMixin
@@ -14,7 +41,8 @@ local Loolib = LibStub("Loolib")
     A mixin that manages a collection of data with change notifications.
 ----------------------------------------------------------------------]]
 
-LoolibDataProviderMixin = LoolibCreateFromMixins(LoolibCallbackRegistryMixin)
+local DataProviderMixin = DataProviderModule.Mixin or CreateFromMixins(CallbackRegistryMixin)
+Loolib.Data.DataProvider.Mixin = DataProviderMixin
 
 -- Define callback events
 local DATA_PROVIDER_EVENTS = {
@@ -28,8 +56,8 @@ local DATA_PROVIDER_EVENTS = {
 
 --- Initialize the data provider
 -- @param initialData table - Optional initial data array
-function LoolibDataProviderMixin:Init(initialData)
-    LoolibCallbackRegistryMixin.OnLoad(self)
+function DataProviderMixin:Init(initialData)
+    CallbackRegistryMixin.OnLoad(self)
     self:GenerateCallbackEvents(DATA_PROVIDER_EVENTS)
 
     self.data = {}
@@ -52,10 +80,10 @@ end
 -- @param elementData any - The data to insert
 -- @param insertIndex number - Optional index to insert at
 -- @return number - The index where the element was inserted
-function LoolibDataProviderMixin:Insert(elementData, insertIndex)
+function DataProviderMixin:Insert(elementData, insertIndex)
     if insertIndex then
-        insertIndex = math.max(1, math.min(insertIndex, #self.data + 1))
-        table.insert(self.data, insertIndex, elementData)
+        insertIndex = max(1, min(insertIndex, #self.data + 1))
+        insert(self.data, insertIndex, elementData)
     else
         insertIndex = #self.data + 1
         self.data[insertIndex] = elementData
@@ -70,19 +98,19 @@ end
 
 --- Insert an element at the beginning
 -- @param elementData any - The data to insert
-function LoolibDataProviderMixin:Prepend(elementData)
+function DataProviderMixin:Prepend(elementData)
     return self:Insert(elementData, 1)
 end
 
 --- Insert an element at the end
 -- @param elementData any - The data to insert
-function LoolibDataProviderMixin:Append(elementData)
+function DataProviderMixin:Append(elementData)
     return self:Insert(elementData)
 end
 
 --- Insert multiple elements from a table
 -- @param tbl table - Array of elements to insert
-function LoolibDataProviderMixin:InsertTable(tbl)
+function DataProviderMixin:InsertTable(tbl)
     for _, elementData in ipairs(tbl) do
         self.data[#self.data + 1] = elementData
     end
@@ -93,7 +121,7 @@ end
 
 --- Insert multiple elements
 -- @param ... any - Elements to insert
-function LoolibDataProviderMixin:InsertMany(...)
+function DataProviderMixin:InsertMany(...)
     for i = 1, select("#", ...) do
         self.data[#self.data + 1] = select(i, ...)
     end
@@ -109,7 +137,7 @@ end
 --- Remove an element by value
 -- @param elementData any - The element to remove
 -- @return boolean - True if removed
-function LoolibDataProviderMixin:Remove(elementData)
+function DataProviderMixin:Remove(elementData)
     for i, data in ipairs(self.data) do
         if data == elementData then
             return self:RemoveIndex(i) ~= nil
@@ -121,12 +149,12 @@ end
 --- Remove an element by index
 -- @param index number - The index to remove
 -- @return any - The removed element or nil
-function LoolibDataProviderMixin:RemoveIndex(index)
+function DataProviderMixin:RemoveIndex(index)
     if index < 1 or index > #self.data then
         return nil
     end
 
-    local removed = table.remove(self.data, index)
+    local removed = remove(self.data, index)
 
     self:InvalidateFiltered()
     self:TriggerEvent("OnRemove", removed, index)
@@ -138,12 +166,12 @@ end
 --- Remove elements matching a predicate
 -- @param predicate function - Function(elementData) returns true to remove
 -- @return number - Number of elements removed
-function LoolibDataProviderMixin:RemoveByPredicate(predicate)
+function DataProviderMixin:RemoveByPredicate(predicate)
     local removed = 0
 
     for i = #self.data, 1, -1 do
         if predicate(self.data[i]) then
-            table.remove(self.data, i)
+            remove(self.data, i)
             removed = removed + 1
         end
     end
@@ -157,7 +185,7 @@ function LoolibDataProviderMixin:RemoveByPredicate(predicate)
 end
 
 --- Remove all elements
-function LoolibDataProviderMixin:Flush()
+function DataProviderMixin:Flush()
     local hadData = #self.data > 0
     wipe(self.data)
     self:InvalidateFiltered()
@@ -175,7 +203,7 @@ end
 --- Get an element by index
 -- @param index number - The index
 -- @return any - The element or nil
-function LoolibDataProviderMixin:Find(index)
+function DataProviderMixin:Find(index)
     if self.filterFunc and self.filteredData then
         return self.filteredData[index]
     end
@@ -185,7 +213,7 @@ end
 --- Get the index of an element
 -- @param elementData any - The element to find
 -- @return number|nil - The index or nil
-function LoolibDataProviderMixin:FindIndex(elementData)
+function DataProviderMixin:FindIndex(elementData)
     local dataToSearch = self.filteredData or self.data
     for i, data in ipairs(dataToSearch) do
         if data == elementData then
@@ -198,7 +226,7 @@ end
 --- Find an element by predicate
 -- @param predicate function - Function(elementData) returns true for match
 -- @return any, number - Element and index, or nil
-function LoolibDataProviderMixin:FindByPredicate(predicate)
+function DataProviderMixin:FindByPredicate(predicate)
     local dataToSearch = self.filteredData or self.data
     for i, data in ipairs(dataToSearch) do
         if predicate(data) then
@@ -211,7 +239,7 @@ end
 --- Find all elements matching a predicate
 -- @param predicate function - Function(elementData) returns true for match
 -- @return table - Array of matching elements
-function LoolibDataProviderMixin:FindAllByPredicate(predicate)
+function DataProviderMixin:FindAllByPredicate(predicate)
     local results = {}
     local dataToSearch = self.filteredData or self.data
     for _, data in ipairs(dataToSearch) do
@@ -225,7 +253,7 @@ end
 --- Check if an element exists
 -- @param elementData any - The element to check
 -- @return boolean
-function LoolibDataProviderMixin:Contains(elementData)
+function DataProviderMixin:Contains(elementData)
     return self:FindIndex(elementData) ~= nil
 end
 
@@ -235,7 +263,7 @@ end
 
 --- Get the number of elements
 -- @return number
-function LoolibDataProviderMixin:GetSize()
+function DataProviderMixin:GetSize()
     if self.filterFunc and self.filteredData then
         return #self.filteredData
     end
@@ -244,26 +272,26 @@ end
 
 --- Get the unfiltered size
 -- @return number
-function LoolibDataProviderMixin:GetUnfilteredSize()
+function DataProviderMixin:GetUnfilteredSize()
     return #self.data
 end
 
 --- Check if the provider is empty
 -- @return boolean
-function LoolibDataProviderMixin:IsEmpty()
+function DataProviderMixin:IsEmpty()
     return self:GetSize() == 0
 end
 
 --- Iterate over elements
 -- @return iterator
-function LoolibDataProviderMixin:Enumerate()
+function DataProviderMixin:Enumerate()
     local dataToIterate = self.filteredData or self.data
     return ipairs(dataToIterate)
 end
 
 --- Iterate over raw (unfiltered) elements
 -- @return iterator
-function LoolibDataProviderMixin:EnumerateUnfiltered()
+function DataProviderMixin:EnumerateUnfiltered()
     return ipairs(self.data)
 end
 
@@ -271,10 +299,10 @@ end
 -- @param startIndex number - Start index (inclusive)
 -- @param endIndex number - End index (inclusive)
 -- @return table - Array of elements in range
-function LoolibDataProviderMixin:GetRange(startIndex, endIndex)
+function DataProviderMixin:GetRange(startIndex, endIndex)
     local result = {}
     local dataToSearch = self.filteredData or self.data
-    local maxIndex = math.min(endIndex, #dataToSearch)
+    local maxIndex = min(endIndex, #dataToSearch)
 
     for i = startIndex, maxIndex do
         result[#result + 1] = dataToSearch[i]
@@ -289,20 +317,20 @@ end
 
 --- Set the sort comparator
 -- @param sortFunc function - Comparison function(a, b) returns true if a < b
-function LoolibDataProviderMixin:SetSortComparator(sortFunc)
+function DataProviderMixin:SetSortComparator(sortFunc)
     self.sortFunc = sortFunc
     self.pendingSort = true
 end
 
 --- Clear the sort comparator
-function LoolibDataProviderMixin:ClearSortComparator()
+function DataProviderMixin:ClearSortComparator()
     self.sortFunc = nil
 end
 
 --- Sort the data
-function LoolibDataProviderMixin:Sort()
+function DataProviderMixin:Sort()
     if self.sortFunc then
-        table.sort(self.data, self.sortFunc)
+        sort(self.data, self.sortFunc)
         self:InvalidateFiltered()
         self.pendingSort = false
         self:TriggerEvent("OnSort")
@@ -311,12 +339,12 @@ end
 
 --- Check if sort is pending
 -- @return boolean
-function LoolibDataProviderMixin:IsSortPending()
+function DataProviderMixin:IsSortPending()
     return self.pendingSort
 end
 
 --- Sort if pending
-function LoolibDataProviderMixin:SortIfPending()
+function DataProviderMixin:SortIfPending()
     if self.pendingSort then
         self:Sort()
     end
@@ -328,20 +356,20 @@ end
 
 --- Set the filter function
 -- @param filterFunc function - Function(elementData) returns true to include
-function LoolibDataProviderMixin:SetFilter(filterFunc)
+function DataProviderMixin:SetFilter(filterFunc)
     self.filterFunc = filterFunc
     self:InvalidateFiltered()
 end
 
 --- Clear the filter
-function LoolibDataProviderMixin:ClearFilter()
+function DataProviderMixin:ClearFilter()
     self.filterFunc = nil
     self.filteredData = nil
     self:TriggerEvent("OnSizeChanged", #self.data)
 end
 
 --- Invalidate the filtered cache
-function LoolibDataProviderMixin:InvalidateFiltered()
+function DataProviderMixin:InvalidateFiltered()
     if self.filterFunc then
         self.filteredData = nil
         self.pendingFilter = true
@@ -349,7 +377,7 @@ function LoolibDataProviderMixin:InvalidateFiltered()
 end
 
 --- Apply the filter
-function LoolibDataProviderMixin:ApplyFilter()
+function DataProviderMixin:ApplyFilter()
     if not self.filterFunc then
         self.filteredData = nil
         return
@@ -367,14 +395,14 @@ function LoolibDataProviderMixin:ApplyFilter()
 end
 
 --- Apply filter if pending
-function LoolibDataProviderMixin:ApplyFilterIfPending()
+function DataProviderMixin:ApplyFilterIfPending()
     if self.pendingFilter then
         self:ApplyFilter()
     end
 end
 
 --- Ensure data is up to date (sorted and filtered)
-function LoolibDataProviderMixin:EnsureUpToDate()
+function DataProviderMixin:EnsureUpToDate()
     self:SortIfPending()
     self:ApplyFilterIfPending()
 end
@@ -385,7 +413,7 @@ end
 
 --- Update an element and trigger notification
 -- @param elementData any - The element that was updated
-function LoolibDataProviderMixin:UpdateElement(elementData)
+function DataProviderMixin:UpdateElement(elementData)
     local index = self:FindIndex(elementData)
     if index then
         self:TriggerEvent("OnUpdate", elementData, index)
@@ -395,7 +423,7 @@ end
 --- Update an element at a specific index
 -- @param index number - The index to update
 -- @param newData any - The new data (or nil to keep existing and just trigger update)
-function LoolibDataProviderMixin:UpdateIndex(index, newData)
+function DataProviderMixin:UpdateIndex(index, newData)
     if index >= 1 and index <= #self.data then
         if newData ~= nil then
             self.data[index] = newData
@@ -407,7 +435,7 @@ end
 
 --- Replace all data
 -- @param newData table - New data array
-function LoolibDataProviderMixin:ReplaceAll(newData)
+function DataProviderMixin:ReplaceAll(newData)
     wipe(self.data)
     for _, elementData in ipairs(newData) do
         self.data[#self.data + 1] = elementData
@@ -424,7 +452,7 @@ end
 --- Map elements to a new array
 -- @param mapFunc function - Function(elementData, index) returns new value
 -- @return table - Array of mapped values
-function LoolibDataProviderMixin:Map(mapFunc)
+function DataProviderMixin:Map(mapFunc)
     local result = {}
     local dataToMap = self.filteredData or self.data
     for i, data in ipairs(dataToMap) do
@@ -437,7 +465,7 @@ end
 -- @param reduceFunc function - Function(accumulator, elementData, index)
 -- @param initialValue any - Initial accumulator value
 -- @return any - Final accumulated value
-function LoolibDataProviderMixin:Reduce(reduceFunc, initialValue)
+function DataProviderMixin:Reduce(reduceFunc, initialValue)
     local result = initialValue
     local dataToReduce = self.filteredData or self.data
     for i, data in ipairs(dataToReduce) do
@@ -448,7 +476,7 @@ end
 
 --- Get raw data (be careful modifying this directly)
 -- @return table - The underlying data array
-function LoolibDataProviderMixin:GetRawData()
+function DataProviderMixin:GetRawData()
     return self.data
 end
 
@@ -459,8 +487,8 @@ end
 --- Create a new data provider
 -- @param initialData table - Optional initial data
 -- @return table - A new DataProvider instance
-function CreateLoolibDataProvider(initialData)
-    local provider = LoolibCreateFromMixins(LoolibDataProviderMixin)
+local function CreateDataProvider(initialData)
+    local provider = CreateFromMixins(DataProviderMixin)
     provider:Init(initialData)
     return provider
 end
@@ -469,14 +497,9 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local DataProviderModule = {
-    Mixin = LoolibDataProviderMixin,
-    Create = CreateLoolibDataProvider,
-}
+Loolib.Data.DataProvider.Mixin = DataProviderMixin
+Loolib.Data.DataProvider.Create = CreateDataProvider
+Loolib.Data.DataProvider = DataProviderModule
+Loolib.Data.CreateDataProvider = CreateDataProvider
 
--- Register in Data module
-local Data = Loolib:GetOrCreateModule("Data")
-Data.DataProvider = DataProviderModule
-Data.CreateDataProvider = CreateLoolibDataProvider
-
-Loolib:RegisterModule("DataProvider", DataProviderModule)
+Loolib:RegisterModule("Data.DataProvider", DataProviderModule)

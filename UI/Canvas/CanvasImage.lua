@@ -67,7 +67,7 @@
 ---@field _image_GROUP number[] Group IDs of all images
 ---@field _image_SYNC number[] Sync IDs of all images (for network sync)
 ---@field _nextSyncId number Next available sync ID
-LoolibCanvasImageMixin = {}
+local LoolibCanvasImageMixin = {}
 
 ---Initialize the image manager with default settings.
 ---Called automatically by LoolibCreateCanvasImage().
@@ -663,7 +663,7 @@ end
 
 ---Create a new canvas image manager instance.
 ---@return LoolibCanvasImageMixin imageManager New image manager
-function LoolibCreateCanvasImage()
+local function LoolibCreateCanvasImage()
     local imageManager = {}
     LoolibMixin(imageManager, LoolibCanvasImageMixin)
     imageManager:OnLoad()

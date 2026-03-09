@@ -8,6 +8,36 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local bit = bit
+local ChatFontNormal = ChatFontNormal
+local CreateFrame = CreateFrame
+local UIParent = UIParent
+local error = error
+local ipairs = ipairs
+local pairs = pairs
+local pcall = pcall
+local print = print
+local strtrim = strtrim
+local tostring = tostring
+local type = type
+local concat = table.concat
+local char = string.char
+
+local function GetRequiredModule(name)
+    local module = Loolib:GetModule(name)
+    if not module then
+        error("Loolib module '" .. name .. "' is required", 2)
+    end
+    return module
+end
+
+local DeepCopy = GetRequiredModule("TableUtil").DeepCopy
+
+local Data = Loolib.Data or Loolib:GetOrCreateModule("Data")
+Loolib.Data = Data
+
+local ProfileManagerModule = Data.ProfileManager or Loolib:GetModule("Data.ProfileManager") or {}
+Loolib.Data.ProfileManager = ProfileManagerModule
 
 --[[--------------------------------------------------------------------
     LoolibProfileManagerMixin
@@ -17,7 +47,8 @@ local Loolib = LibStub("Loolib")
     operations for common UI patterns.
 ----------------------------------------------------------------------]]
 
-LoolibProfileManagerMixin = {}
+local ProfileManagerMixin = ProfileManagerModule.Mixin or {}
+Loolib.Data.ProfileManager.Mixin = ProfileManagerMixin
 
 --[[--------------------------------------------------------------------
     Profile List Generation
@@ -26,7 +57,7 @@ LoolibProfileManagerMixin = {}
 --- Get a formatted profile list for dropdowns
 -- @param db table - SavedVariables database
 -- @return table - Array of {text, value} tables suitable for dropdown menus
-function LoolibProfileManagerMixin:GetProfileList(db)
+function ProfileManagerMixin:GetProfileList(db)
     if not db then
         return {}
     end
@@ -50,7 +81,7 @@ end
 --- Get profile list with additional metadata
 -- @param db table - SavedVariables database
 -- @return table - Array of profile info tables with name, isCurrent, isDefault
-function LoolibProfileManagerMixin:GetProfileListDetailed(db)
+function ProfileManagerMixin:GetProfileListDetailed(db)
     if not db then
         return {}
     end
@@ -82,7 +113,7 @@ end
 -- @param name string - Profile name
 -- @return boolean - Success
 -- @return string - Error message (if failed)
-function LoolibProfileManagerMixin:CreateProfile(db, name)
+function ProfileManagerMixin:CreateProfile(db, name)
     if not db then
         return false, "Database not provided"
     end
@@ -132,7 +163,7 @@ end
 -- @param name string - Profile name
 -- @return boolean - Success
 -- @return string - Error message (if failed)
-function LoolibProfileManagerMixin:DeleteProfile(db, name)
+function ProfileManagerMixin:DeleteProfile(db, name)
     if not db then
         return false, "Database not provided"
     end
@@ -193,7 +224,7 @@ end
 -- @param destName string - Destination profile name (nil to copy to current)
 -- @return boolean - Success
 -- @return string - Error message (if failed)
-function LoolibProfileManagerMixin:CopyProfile(db, sourceName, destName)
+function ProfileManagerMixin:CopyProfile(db, sourceName, destName)
     if not db then
         return false, "Database not provided"
     end
@@ -265,7 +296,7 @@ end
 --- Get profiles associated with current character/realm/class
 -- @param db table - SavedVariables database
 -- @return table - Table with character, realm, class profile info
-function LoolibProfileManagerMixin:GetCharacterProfiles(db)
+function ProfileManagerMixin:GetCharacterProfiles(db)
     if not db then
         return {}
     end
@@ -286,7 +317,7 @@ end
 -- @param db table - SavedVariables database
 -- @param profileName string - Profile name to search for
 -- @return table - Array of character keys using this profile
-function LoolibProfileManagerMixin:GetCharactersUsingProfile(db, profileName)
+function ProfileManagerMixin:GetCharactersUsingProfile(db, profileName)
     if not db or not profileName then
         return {}
     end
@@ -312,7 +343,7 @@ end
 -- @param profileName string - Profile name (nil for current)
 -- @return boolean - Success
 -- @return string - Error message (if failed)
-function LoolibProfileManagerMixin:ResetProfile(db, profileName)
+function ProfileManagerMixin:ResetProfile(db, profileName)
     if not db then
         return false, "Database not provided"
     end
@@ -351,7 +382,7 @@ end
 -- @param name string - Profile name to validate
 -- @return boolean - Valid
 -- @return string - Error message (if invalid)
-function LoolibProfileManagerMixin:ValidateProfileName(name)
+function ProfileManagerMixin:ValidateProfileName(name)
     if not name or name == "" then
         return false, "Profile name cannot be empty"
     end
@@ -378,7 +409,7 @@ end
 -- @param name string - Profile name
 -- @return boolean - Can delete
 -- @return string - Reason (if cannot delete)
-function LoolibProfileManagerMixin:CanDeleteProfile(db, name)
+function ProfileManagerMixin:CanDeleteProfile(db, name)
     if not db or not name then
         return false, "Invalid parameters"
     end
@@ -410,7 +441,7 @@ end
 -- @param profileName string - Profile name (nil for current)
 -- @return string - Base64 encoded profile data
 -- @return string - Error message (if failed)
-function LoolibProfileManagerMixin:ExportProfile(db, profileName)
+function ProfileManagerMixin:ExportProfile(db, profileName)
     if not db then
         return nil, "Database not provided"
     end
@@ -469,7 +500,7 @@ function LoolibProfileManagerMixin:ExportProfile(db, profileName)
     else
         -- No compressor available, just base64 encode the serialized data
         -- Use a simple base64 implementation
-        encoded = "S:" .. LoolibProfileManagerMixin:Base64Encode(serialized)
+        encoded = "S:" .. self:Base64Encode(serialized)
     end
 
     -- Fire event
@@ -486,7 +517,7 @@ end
 -- @param targetProfileName string - Target profile name (nil to auto-generate)
 -- @return boolean - Success
 -- @return string - Error message or profile name
-function LoolibProfileManagerMixin:ImportProfile(db, encodedString, targetProfileName)
+function ProfileManagerMixin:ImportProfile(db, encodedString, targetProfileName)
     if not db then
         return false, "Database not provided"
     end
@@ -532,7 +563,7 @@ function LoolibProfileManagerMixin:ImportProfile(db, encodedString, targetProfil
         serialized = decompressed
     else
         -- Serialized-only format
-        serialized = LoolibProfileManagerMixin:Base64Decode(data)
+        serialized = self:Base64Decode(data)
         if not serialized then
             return false, "Failed to decode base64 data"
         end
@@ -598,7 +629,7 @@ function LoolibProfileManagerMixin:ImportProfile(db, encodedString, targetProfil
 
     for key, value in pairs(profileData) do
         if type(value) == "table" then
-            currentProfileData[key] = LoolibTableUtil.DeepCopy(value)
+            currentProfileData[key] = DeepCopy(value)
         else
             currentProfileData[key] = value
         end
@@ -625,7 +656,7 @@ end
 --- Encode a string to base64
 -- @param data string - Data to encode
 -- @return string - Base64 encoded string
-function LoolibProfileManagerMixin:Base64Encode(data)
+function ProfileManagerMixin:Base64Encode(data)
     local result = {}
     local len = #data
 
@@ -652,13 +683,13 @@ function LoolibProfileManagerMixin:Base64Encode(data)
         end
     end
 
-    return table.concat(result)
+    return concat(result)
 end
 
 --- Decode a base64 string
 -- @param data string - Base64 encoded string
 -- @return string - Decoded data
-function LoolibProfileManagerMixin:Base64Decode(data)
+function ProfileManagerMixin:Base64Decode(data)
     -- Remove whitespace and padding
     data = data:gsub("%s", ""):gsub("=", "")
 
@@ -680,17 +711,17 @@ function LoolibProfileManagerMixin:Base64Decode(data)
             n = bit.bor(n, c4)
         end
 
-        result[#result + 1] = string.char(bit.band(bit.rshift(n, 16), 0xFF))
+        result[#result + 1] = char(bit.band(bit.rshift(n, 16), 0xFF))
 
         if c3 then
-            result[#result + 1] = string.char(bit.band(bit.rshift(n, 8), 0xFF))
+            result[#result + 1] = char(bit.band(bit.rshift(n, 8), 0xFF))
         end
         if c4 then
-            result[#result + 1] = string.char(bit.band(n, 0xFF))
+            result[#result + 1] = char(bit.band(n, 0xFF))
         end
     end
 
-    return table.concat(result)
+    return concat(result)
 end
 
 --[[--------------------------------------------------------------------
@@ -703,7 +734,7 @@ end
 -- @param targetProfile string - Target profile name
 -- @return boolean - Success
 -- @return string - Error message (if failed)
-function LoolibProfileManagerMixin:CopyProfileTo(db, sourceProfile, targetProfile)
+function ProfileManagerMixin:CopyProfileTo(db, sourceProfile, targetProfile)
     if not db then
         return false, "Database not provided"
     end
@@ -763,7 +794,7 @@ function LoolibProfileManagerMixin:CopyProfileTo(db, sourceProfile, targetProfil
 
     for key, value in pairs(sourceData) do
         if type(value) == "table" then
-            targetData[key] = LoolibTableUtil.DeepCopy(value)
+            targetData[key] = DeepCopy(value)
         else
             targetData[key] = value
         end
@@ -782,7 +813,7 @@ end
 -- @param profileName string - Profile name (nil for current)
 -- @return boolean - Success
 -- @return string - Error message (if failed)
-function LoolibProfileManagerMixin:ResetProfileToDefaults(db, profileName)
+function ProfileManagerMixin:ResetProfileToDefaults(db, profileName)
     if not db then
         return false, "Database not provided"
     end
@@ -849,7 +880,7 @@ end
 --- Generate an AceConfig-compatible options table for profile management
 -- @param db table - SavedVariables database
 -- @return table - Options table for profile management
-function LoolibProfileManagerMixin:GenerateProfileOptionsTable(db)
+function ProfileManagerMixin:GenerateProfileOptionsTable(db)
     local self = self  -- Reference for closures
 
     local options = {
@@ -1110,12 +1141,7 @@ end
     Register with Loolib
 ----------------------------------------------------------------------]]
 
-local ProfileManagerModule = {
-    Mixin = LoolibProfileManagerMixin,
-}
+Loolib.Data.ProfileManager.Mixin = ProfileManagerMixin
+Loolib.Data.ProfileManager = ProfileManagerModule
 
--- Register in Data module
-local Data = Loolib:GetOrCreateModule("Data")
-Data.ProfileManager = ProfileManagerModule
-
-Loolib:RegisterModule("ProfileManager", ProfileManagerModule)
+Loolib:RegisterModule("Data.ProfileManager", ProfileManagerModule)

@@ -23,9 +23,10 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for NoteFrame")
 
 ---@class LoolibNoteFrameMixin
-LoolibNoteFrameMixin = {}
+local LoolibNoteFrameMixin = {}
 
 -- ============================================================
 -- INITIALIZATION
@@ -559,7 +560,7 @@ end
 ---@param parent Frame? Parent frame
 ---@param name string? Global name
 ---@return Frame
-function LoolibCreateNoteFrame(parent, name)
+local function LoolibCreateNoteFrame(parent, name)
     local frame = CreateFrame("Frame", name, parent or UIParent, "BackdropTemplate")
 
     -- Apply mixins
@@ -600,7 +601,7 @@ end
 -- REGISTER WITH LOOLIB
 -- ============================================================
 
-Loolib:RegisterModule("NoteFrame", {
+Loolib:RegisterModule("Note.NoteFrame", {
     Mixin = LoolibNoteFrameMixin,
     Create = LoolibCreateNoteFrame,
 })

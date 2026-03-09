@@ -1,3 +1,6 @@
+local Loolib = LibStub("Loolib")
+local Debug = Loolib.Debug or Loolib:GetOrCreateModule("Debug")
+
 --[[--------------------------------------------------------------------
     Dump - Pretty-print function for debugging Lua values
 
@@ -6,7 +9,7 @@
     and depth limiting.
 ----------------------------------------------------------------------]]
 
-LoolibDumpMixin = {}
+local DumpMixin = Debug.Dump or Loolib:GetModule("Debug.Dump") or {}
 
 -- Default maximum recursion depth
 local DEFAULT_MAX_DEPTH = 5
@@ -170,7 +173,7 @@ end
 -- @param value - Any Lua value to dump
 -- @param name string|nil - Optional name to display
 -- @param maxDepth number|nil - Maximum recursion depth (default 5, max 10)
-function LoolibDumpMixin:Dump(value, name, maxDepth)
+function DumpMixin:Dump(value, name, maxDepth)
     -- Validate and normalize maxDepth
     if maxDepth == nil then
         maxDepth = DEFAULT_MAX_DEPTH
@@ -211,7 +214,7 @@ end
 --- Quick dump with a single line limit (shows first 100 chars)
 -- @param value - The value to dump
 -- @param name string|nil - Optional name
-function LoolibDumpMixin:DumpLine(value, name)
+function DumpMixin:DumpLine(value, name)
     local visited = {}
     local valueStr = DumpValue(value, visited, 0, 2)
 
@@ -237,7 +240,7 @@ end
 --- Dump a table's keys (without values)
 -- @param tbl table - The table to inspect
 -- @param name string|nil - Optional name
-function LoolibDumpMixin:DumpKeys(tbl, name)
+function DumpMixin:DumpKeys(tbl, name)
     if type(tbl) ~= "table" then
         error("DumpKeys requires a table argument")
     end
@@ -266,5 +269,6 @@ end
     Module Registration
 ----------------------------------------------------------------------]]
 
-local Loolib = LibStub("Loolib")
-Loolib:RegisterModule("Dump", LoolibDumpMixin)
+Debug.Dump = DumpMixin
+
+Loolib:RegisterModule("Debug.Dump", DumpMixin)

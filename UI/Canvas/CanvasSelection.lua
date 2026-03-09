@@ -84,7 +84,7 @@ if not Loolib then return end
     @field _iconManager table Reference to canvas icon manager
     @field _imageManager table Reference to canvas image manager
 ----------------------------------------------------------------------------]]--
-LoolibCanvasSelectionMixin = {}
+local LoolibCanvasSelectionMixin = {}
 
 --[[----------------------------------------------------------------------------
     Initialization
@@ -690,7 +690,7 @@ end
 
 ---Factory function to create a new canvas selection manager.
 ---@return LoolibCanvasSelectionMixin selection New selection manager instance
-function LoolibCreateCanvasSelection()
+local function LoolibCreateCanvasSelection()
     local selection = {}
     LoolibMixin(selection, LoolibCanvasSelectionMixin)
     selection:OnLoad()

@@ -7,6 +7,7 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for NoteParser")
 
 --[[--------------------------------------------------------------------
     TOKEN TYPES
@@ -42,7 +43,7 @@ local NODE_TYPES = {
 ----------------------------------------------------------------------]]
 
 ---@class LoolibNoteParserMixin
-LoolibNoteParserMixin = {}
+local LoolibNoteParserMixin = {}
 
 function LoolibNoteParserMixin:OnLoad()
     self._tokens = {}
@@ -538,7 +539,7 @@ end
 
 --- Create a new parser instance
 --- @return table Parser
-function LoolibCreateNoteParser()
+local function LoolibCreateNoteParser()
     local parser = {}
     LoolibMixin(parser, LoolibNoteParserMixin)
     parser:OnLoad()
@@ -550,7 +551,7 @@ local defaultParser = nil
 
 --- Get default parser instance
 --- @return table Parser
-function LoolibGetNoteParser()
+local function LoolibGetNoteParser()
     if not defaultParser then
         defaultParser = LoolibCreateNoteParser()
     end
@@ -562,11 +563,11 @@ end
 ----------------------------------------------------------------------]]
 
 -- Export constants
-LoolibNoteTokenTypes = TOKEN_TYPES
-LoolibNoteNodeTypes = NODE_TYPES
+local LoolibNoteTokenTypes = TOKEN_TYPES
+local LoolibNoteNodeTypes = NODE_TYPES
 
 -- Register with Loolib
-Loolib:RegisterModule("NoteParser", {
+Loolib:RegisterModule("Note.NoteParser", {
     Mixin = LoolibNoteParserMixin,
     Create = LoolibCreateNoteParser,
     Get = LoolibGetNoteParser,
