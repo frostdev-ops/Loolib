@@ -588,3 +588,4 @@ Loolib.Config.CreateRegistry = CreateConfigRegistry
 Loolib.Config.Registry = ConfigRegistry
 
 Loolib:RegisterModule("ConfigRegistry", ConfigRegistryModule)
+Loolib:RegisterModule("Config.Registry", ConfigRegistryModule)

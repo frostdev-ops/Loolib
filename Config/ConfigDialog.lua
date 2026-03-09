@@ -9,7 +9,7 @@
     - Core/Mixin.lua (LoolibCreateFromMixins)
     - Events/CallbackRegistry.lua (LoolibCallbackRegistryMixin)
     - Config/ConfigRegistry.lua (ConfigRegistry for options access)
-    - Config/ConfigTypes.lua (LoolibConfigTypes for type info)
+    - Config/ConfigTypes.lua (ConfigTypes for type info)
 ----------------------------------------------------------------------]]
 
 local CreateFrame = CreateFrame
@@ -64,14 +64,12 @@ local WIDTH_MULTIPLIERS = {
 }
 
 --[[--------------------------------------------------------------------
-    LoolibConfigDialogMixin
+    ConfigDialogMixin
 
     Main dialog system that renders options tables as interactive UI.
 ----------------------------------------------------------------------]]
 
 local ConfigDialogMixin = CreateFromMixins(CallbackRegistryMixin)
-local LoolibConfigDialogMixin = ConfigDialogMixin
-local LoolibConfigTypes = ConfigTypes
 
 local DIALOG_EVENTS = {
     "OnDialogOpened",
@@ -102,7 +100,7 @@ end
 --- Get or initialize filter state for a dialog
 -- @param appName string - The app name
 -- @return table - Filter state { searchText, typeFilters, activeFilterCount }
-function LoolibConfigDialogMixin:GetFilterState(appName)
+function ConfigDialogMixin:GetFilterState(appName)
     if not self.filterStates[appName] then
         self.filterStates[appName] = {
             searchText = "",
@@ -115,7 +113,7 @@ end
 
 --- Clear all filters for a dialog
 -- @param appName string - The app name
-function LoolibConfigDialogMixin:ClearAllFilters(appName)
+function ConfigDialogMixin:ClearAllFilters(appName)
     local filterState = self:GetFilterState(appName)
     filterState.searchText = ""
     wipe(filterState.typeFilters)
@@ -132,7 +130,7 @@ end
 
 --- Update filter count display
 -- @param appName string - The app name
-function LoolibConfigDialogMixin:UpdateFilterUI(appName)
+function ConfigDialogMixin:UpdateFilterUI(appName)
     local dialog = self.dialogs[appName]
     if not dialog then return end
 
@@ -177,7 +175,7 @@ end
 -- @param filterState table - Current filter state
 -- @param registry table - The config registry
 -- @return boolean - True if option should be shown
-function LoolibConfigDialogMixin:ShouldShowOption(option, info, filterState, registry)
+function ConfigDialogMixin:ShouldShowOption(option, info, filterState, registry)
     -- Skip if already hidden by config
     if registry:IsHidden(option, info, "dialog") then
         return false
@@ -222,7 +220,7 @@ end
 -- @param filterState table - Current filter state
 -- @param appName string - App name
 -- @return boolean - True if group has visible children
-function LoolibConfigDialogMixin:HasVisibleChildren(group, rootOptions, registry, path, filterState, appName)
+function ConfigDialogMixin:HasVisibleChildren(group, rootOptions, registry, path, filterState, appName)
     if not group.args then
         return false
     end
@@ -253,7 +251,7 @@ end
 --- Check if filters are currently active
 -- @param appName string - App name
 -- @return boolean - True if any filters are active
-function LoolibConfigDialogMixin:HasActiveFilters(appName)
+function ConfigDialogMixin:HasActiveFilters(appName)
     local filterState = self:GetFilterState(appName)
     if filterState.searchText ~= "" then
         return true
@@ -276,7 +274,7 @@ end
 -- @param template string - Template to use
 -- @param frameTypeOverride string - Optional override for CreateFrame type
 -- @return Frame - The widget
-function LoolibConfigDialogMixin:AcquireWidget(widgetType, parent, template, frameTypeOverride)
+function ConfigDialogMixin:AcquireWidget(widgetType, parent, template, frameTypeOverride)
     local pool = self.widgetPools[widgetType]
     if not pool then
         pool = { inactive = {} }
@@ -309,7 +307,7 @@ end
 
 --- Release all widgets for a specific dialog content frame
 -- @param container Frame - The container to clear
-function LoolibConfigDialogMixin:ReleaseWidgets(container)
+function ConfigDialogMixin:ReleaseWidgets(container)
     if not container then return end
     
     -- Release children (Frames)
@@ -364,7 +362,7 @@ end
 -- @param container Frame - Optional parent frame (creates standalone if nil)
 -- @param ... - Optional path to open specific group
 -- @return Frame - Dialog frame
-function LoolibConfigDialogMixin:Open(appName, container, ...)
+function ConfigDialogMixin:Open(appName, container, ...)
     local registry = Config.Registry
 
     if not registry then
@@ -412,7 +410,7 @@ end
 
 --- Close dialog for specific app
 -- @param appName string - The app name
-function LoolibConfigDialogMixin:Close(appName)
+function ConfigDialogMixin:Close(appName)
     local dialog = self.dialogs[appName]
     if dialog then
         dialog:Hide()
@@ -421,7 +419,7 @@ function LoolibConfigDialogMixin:Close(appName)
 end
 
 --- Close all open dialogs
-function LoolibConfigDialogMixin:CloseAll()
+function ConfigDialogMixin:CloseAll()
     for appName, dialog in pairs(self.dialogs) do
         if dialog:IsShown() then
             dialog:Hide()
@@ -434,7 +432,7 @@ end
 -- @param appName string - App name
 -- @param ... - Path components
 -- @return boolean - Success
-function LoolibConfigDialogMixin:SelectGroup(appName, ...)
+function ConfigDialogMixin:SelectGroup(appName, ...)
     local dialog = self.dialogs[appName]
     if not dialog then
         return false
@@ -454,12 +452,12 @@ end
 -- @param appName string - App name
 -- @param width number - Width
 -- @param height number - Height
-function LoolibConfigDialogMixin:SetDefaultSize(appName, width, height)
+function ConfigDialogMixin:SetDefaultSize(appName, width, height)
     self.defaultSizes[appName] = {width = width, height = height}
 end
 
 --- Select first available group
-function LoolibConfigDialogMixin:SelectFirstGroup(appName, options)
+function ConfigDialogMixin:SelectFirstGroup(appName, options)
     if not options.args then
         self.selectedPaths[appName] = {}
         return
@@ -491,7 +489,7 @@ end
 -- @param options table - Options table
 -- @param container Frame - Parent frame (or nil)
 -- @return Frame - Dialog frame
-function LoolibConfigDialogMixin:CreateDialog(appName, options, container)
+function ConfigDialogMixin:CreateDialog(appName, options, container)
     -- Get size (supports configurable dimensions)
     local width, height = GetDialogDimensions(appName, self.defaultSizes)
 
@@ -612,7 +610,7 @@ local FILTER_OPTION_TYPES = {"toggle", "input", "range", "select", "multiselect"
 
 --- Create the filter bar UI
 -- @param dialog Frame - The dialog frame
-function LoolibConfigDialogMixin:CreateFilterBar(dialog)
+function ConfigDialogMixin:CreateFilterBar(dialog)
     local appName = dialog.appName
     local dialogMixin = self
 
@@ -745,7 +743,7 @@ end
 
 --- Show the type filter dropdown menu
 -- @param dialog Frame - The dialog frame
-function LoolibConfigDialogMixin:ShowTypeFilterMenu(dialog)
+function ConfigDialogMixin:ShowTypeFilterMenu(dialog)
     local appName = dialog.appName
     local filterState = self:GetFilterState(appName)
     local typeFilters = filterState.typeFilters
@@ -830,7 +828,7 @@ end
 ----------------------------------------------------------------------]]
 
 --- Create tree layout (left tree + right content)
-function LoolibConfigDialogMixin:CreateTreeLayout(dialog)
+function ConfigDialogMixin:CreateTreeLayout(dialog)
     local content = dialog.content
 
     -- Tree container (left side) - offset by filter bar height
@@ -890,7 +888,7 @@ function LoolibConfigDialogMixin:CreateTreeLayout(dialog)
 end
 
 --- Create tab layout
-function LoolibConfigDialogMixin:CreateTabLayout(dialog)
+function ConfigDialogMixin:CreateTabLayout(dialog)
     local content = dialog.content
 
     -- Hide filter bar in tab layout (tabs replace navigation, filter is clutter)
@@ -935,7 +933,7 @@ function LoolibConfigDialogMixin:CreateTabLayout(dialog)
 end
 
 --- Create simple layout (no navigation)
-function LoolibConfigDialogMixin:CreateSimpleLayout(dialog)
+function ConfigDialogMixin:CreateSimpleLayout(dialog)
     local content = dialog.content
 
     -- Options container fills entire content (offset by filter bar)
@@ -973,7 +971,7 @@ end
 
 --- Refresh dialog content
 -- @param appName string - App name
-function LoolibConfigDialogMixin:RefreshContent(appName)
+function ConfigDialogMixin:RefreshContent(appName)
     local dialog = self.dialogs[appName]
     if not dialog or not dialog:IsShown() then
         return
@@ -1003,7 +1001,7 @@ function LoolibConfigDialogMixin:RefreshContent(appName)
 end
 
 --- Render tree navigation
-function LoolibConfigDialogMixin:RenderTree(dialog, options, registry)
+function ConfigDialogMixin:RenderTree(dialog, options, registry)
     local treeContent = dialog.treeContent
     if not treeContent then return end
 
@@ -1120,7 +1118,7 @@ function LoolibConfigDialogMixin:RenderTree(dialog, options, registry)
 end
 
 --- Render tab navigation
-function LoolibConfigDialogMixin:RenderTabs(dialog, options, registry)
+function ConfigDialogMixin:RenderTabs(dialog, options, registry)
     local tabBar = dialog.tabBar
     if not tabBar then return end
 
@@ -1271,7 +1269,7 @@ function LoolibConfigDialogMixin:RenderTabs(dialog, options, registry)
 end
 
 --- Check if two paths are equal
-function LoolibConfigDialogMixin:PathEquals(path1, path2)
+function ConfigDialogMixin:PathEquals(path1, path2)
     if #path1 ~= #path2 then return false end
     for i, v in ipairs(path1) do
         if v ~= path2[i] then return false end
@@ -1284,7 +1282,7 @@ end
 ----------------------------------------------------------------------]]
 
 --- Render options for a group
-function LoolibConfigDialogMixin:RenderOptions(dialog, group, rootOptions, registry, path)
+function ConfigDialogMixin:RenderOptions(dialog, group, rootOptions, registry, path)
     local optionsContent = dialog.optionsContent
     if not optionsContent then return end
 
@@ -1383,7 +1381,7 @@ function LoolibConfigDialogMixin:RenderOptions(dialog, group, rootOptions, regis
 end
 
 --- Render an inline group
-function LoolibConfigDialogMixin:RenderInlineGroup(parent, group, rootOptions, registry, path, yOffset, contentWidth, appName)
+function ConfigDialogMixin:RenderInlineGroup(parent, group, rootOptions, registry, path, yOffset, contentWidth, appName)
     local info = registry:BuildInfoTable(rootOptions, group, appName, unpack(path))
     local groupName = registry:ResolveValue(group.name, info)
     local filterState = self:GetFilterState(appName)
@@ -1507,7 +1505,7 @@ end
 ----------------------------------------------------------------------]]
 
 --- Render a single widget
-function LoolibConfigDialogMixin:RenderWidget(parent, option, rootOptions, registry, info, yOffset, contentWidth)
+function ConfigDialogMixin:RenderWidget(parent, option, rootOptions, registry, info, yOffset, contentWidth)
     local optType = option.type
     local name = registry:ResolveValue(option.name, info) or info[#info]
     local desc = registry:ResolveValue(option.desc, info)
@@ -1553,7 +1551,7 @@ function LoolibConfigDialogMixin:RenderWidget(parent, option, rootOptions, regis
 end
 
 --- Render header
-function LoolibConfigDialogMixin:RenderHeader(parent, name, yOffset, contentWidth)
+function ConfigDialogMixin:RenderHeader(parent, name, yOffset, contentWidth)
     local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     header:SetPoint("TOPLEFT", 8, yOffset - 8)
     header:SetText(name)
@@ -1569,9 +1567,9 @@ function LoolibConfigDialogMixin:RenderHeader(parent, name, yOffset, contentWidt
 end
 
 --- Render description
-function LoolibConfigDialogMixin:RenderDescription(parent, option, name, desc, yOffset, contentWidth)
+function ConfigDialogMixin:RenderDescription(parent, option, name, desc, yOffset, contentWidth)
     local fontSize = option.fontSize or "medium"
-    local fontObject = LoolibConfigTypes.fontSizes[fontSize] or "GameFontNormal"
+    local fontObject = ConfigTypes.fontSizes[fontSize] or "GameFontNormal"
 
     -- Render image if provided
     if option.image and type(option.image) == "string" and option.image ~= "" then
@@ -1606,7 +1604,7 @@ function LoolibConfigDialogMixin:RenderDescription(parent, option, name, desc, y
 end
 
 --- Render toggle (checkbox)
-function LoolibConfigDialogMixin:RenderToggle(parent, option, name, desc, registry, info, disabled, yOffset)
+function ConfigDialogMixin:RenderToggle(parent, option, name, desc, registry, info, disabled, yOffset)
     local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
     check:SetPoint("TOPLEFT", 8, yOffset + 4)
     check:SetSize(24, 24)
@@ -1656,7 +1654,7 @@ function LoolibConfigDialogMixin:RenderToggle(parent, option, name, desc, regist
 end
 
 --- Render input (editbox)
-function LoolibConfigDialogMixin:RenderInput(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
+function ConfigDialogMixin:RenderInput(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
     local container = CreateFrame("Frame", nil, parent)
     container:SetPoint("TOPLEFT", 8, yOffset)
     container:SetSize(LABEL_WIDTH * widthMod + LABEL_WIDTH, option.multiline and 80 or 28)
@@ -1738,7 +1736,7 @@ function LoolibConfigDialogMixin:RenderInput(parent, option, name, desc, registr
 end
 
 --- Render range (slider)
-function LoolibConfigDialogMixin:RenderRange(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
+function ConfigDialogMixin:RenderRange(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
     local container = CreateFrame("Frame", nil, parent)
     container:SetPoint("TOPLEFT", 8, yOffset)
     container:SetSize(LABEL_WIDTH * widthMod + LABEL_WIDTH + 50, 40)
@@ -1841,7 +1839,7 @@ function LoolibConfigDialogMixin:RenderRange(parent, option, name, desc, registr
 end
 
 --- Render select (dropdown)
-function LoolibConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
+function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
     local container = CreateFrame("Frame", nil, parent)
     container:SetPoint("TOPLEFT", 8, yOffset)
     container:SetSize(LABEL_WIDTH * widthMod + LABEL_WIDTH, 28)
@@ -1998,7 +1996,7 @@ function LoolibConfigDialogMixin:RenderSelect(parent, option, name, desc, regist
 end
 
 --- Render multiselect
-function LoolibConfigDialogMixin:RenderMultiSelect(parent, option, name, desc, registry, info, disabled, yOffset, contentWidth)
+function ConfigDialogMixin:RenderMultiSelect(parent, option, name, desc, registry, info, disabled, yOffset, contentWidth)
     -- Header
     local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     header:SetPoint("TOPLEFT", 8, yOffset)
@@ -2067,7 +2065,7 @@ function LoolibConfigDialogMixin:RenderMultiSelect(parent, option, name, desc, r
 end
 
 --- Render color picker
-function LoolibConfigDialogMixin:RenderColor(parent, option, name, desc, registry, info, disabled, yOffset)
+function ConfigDialogMixin:RenderColor(parent, option, name, desc, registry, info, disabled, yOffset)
     local container = CreateFrame("Frame", nil, parent)
     container:SetPoint("TOPLEFT", 8, yOffset)
     container:SetSize(LABEL_WIDTH + 80, 28)
@@ -2191,7 +2189,7 @@ function LoolibConfigDialogMixin:RenderColor(parent, option, name, desc, registr
 end
 
 --- Render execute button
-function LoolibConfigDialogMixin:RenderExecute(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
+function ConfigDialogMixin:RenderExecute(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
     local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
     btn:SetPoint("TOPLEFT", 8, yOffset + 2)
     btn:SetSize(LABEL_WIDTH * widthMod, 24)
@@ -2235,7 +2233,7 @@ function LoolibConfigDialogMixin:RenderExecute(parent, option, name, desc, regis
 end
 
 --- Render keybinding
-function LoolibConfigDialogMixin:RenderKeybinding(parent, option, name, desc, registry, info, disabled, yOffset)
+function ConfigDialogMixin:RenderKeybinding(parent, option, name, desc, registry, info, disabled, yOffset)
     local container = CreateFrame("Frame", nil, parent)
     container:SetPoint("TOPLEFT", 8, yOffset)
     container:SetSize(LABEL_WIDTH + 120, 28)
@@ -2331,7 +2329,7 @@ function LoolibConfigDialogMixin:RenderKeybinding(parent, option, name, desc, re
 end
 
 --- Render texture display/selector
-function LoolibConfigDialogMixin:RenderTexture(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
+function ConfigDialogMixin:RenderTexture(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
     local container = CreateFrame("Frame", nil, parent)
     container:SetPoint("TOPLEFT", 8, yOffset)
     
@@ -2426,7 +2424,7 @@ function LoolibConfigDialogMixin:RenderTexture(parent, option, name, desc, regis
 end
 
 --- Render font selector
-function LoolibConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
+function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
     local container = CreateFrame("Frame", nil, parent)
     container:SetPoint("TOPLEFT", 8, yOffset)
     container:SetSize(LABEL_WIDTH * widthMod + LABEL_WIDTH, 28)
@@ -2634,7 +2632,7 @@ end
 -- @param parent string - Parent category name (optional)
 -- @param ... - Path to group (optional)
 -- @return Frame - Settings frame
-function LoolibConfigDialogMixin:AddToBlizOptions(appName, name, parent, ...)
+function ConfigDialogMixin:AddToBlizOptions(appName, name, parent, ...)
     local registry = Config.Registry
 
     if not registry then

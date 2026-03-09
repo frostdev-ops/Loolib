@@ -660,3 +660,4 @@ Loolib.Config.CreateProfileOptions = CreateProfileOptions
 Loolib.Config.ProfileOptions = ProfileOptions
 
 Loolib:RegisterModule("ProfileOptions", ProfileOptionsModule)
+Loolib:RegisterModule("Config.ProfileOptions", ProfileOptionsModule)

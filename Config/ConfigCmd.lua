@@ -802,3 +802,4 @@ Loolib.Config.CreateCmd = CreateConfigCmd
 Loolib.Config.Cmd = ConfigCmd
 
 Loolib:RegisterModule("ConfigCmd", ConfigCmdModule)
+Loolib:RegisterModule("Config.Cmd", ConfigCmdModule)

@@ -263,3 +263,4 @@ end
 Loolib.Config.Types = ConfigTypes
 
 Loolib:RegisterModule("ConfigTypes", ConfigTypes)
+Loolib:RegisterModule("Config.Types", ConfigTypes)
