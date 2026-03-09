@@ -231,13 +231,29 @@ end
 -- @param warningType number - Warning type ID
 -- @param warningMessage string - The warning message
 function LoolibErrorHandlerMixin:OnLuaWarning(warningType, warningMessage)
-    -- LUA_WARNING fires globally for all addons. Only record warnings that
-    -- originate from Loolib or a registered Loolib-based addon.
+    -- LUA_WARNING fires synchronously — the original call stack IS preserved.
+    -- However, Loolib's event dispatch frames are always on top of the stack:
+    --   Loolib/Debug/ErrorHandler.lua  (this handler + anonymous closure)
+    --   Loolib/Events/CallbackRegistry.lua  (TriggerEvent + pcall)
+    --   Loolib/Events/EventRegistry.lua  (OnEvent + anonymous closure)
+    -- Strip these dispatch frames before checking for addon paths.
     local stackStr = debugstack(2, 20, 20)
-    local isOwn = stackStr:find("AddOns/Loolib/", 1, true) ~= nil
+
+    -- Filter out Loolib event dispatch infrastructure
+    local filteredLines = {}
+    for line in stackStr:gmatch("[^\n]+") do
+        if not line:find("Loolib/Debug/", 1, true)
+           and not line:find("Loolib/Events/", 1, true) then
+            filteredLines[#filteredLines + 1] = line
+        end
+    end
+    local filteredStack = table.concat(filteredLines, "\n")
+
+    -- Check filtered stack for Loolib functional code or registered addons
+    local isOwn = filteredStack:find("AddOns/Loolib/", 1, true) ~= nil
     if not isOwn then
         for addonName in pairs(Loolib.addons) do
-            if stackStr:find("AddOns/" .. addonName .. "/", 1, true) then
+            if filteredStack:find("AddOns/" .. addonName .. "/", 1, true) then
                 isOwn = true
                 break
             end
