@@ -5,7 +5,7 @@
 ## Version: 2.0.0
 ## X-Category: Library
 ## X-License: MIT
-## SavedVariables:
+
 
 # ============================================================
 # LibStub - Library versioning and distribution
