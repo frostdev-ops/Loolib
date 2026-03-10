@@ -23,6 +23,7 @@ Core\Constants.lua
 Core\Timer.lua
 Core\Addon.lua
 Core\Compat.lua
+Compat\GlobalBridge.lua
 
 # ============================================================
 # Events - Callback and event system

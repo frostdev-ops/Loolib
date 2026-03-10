@@ -9,7 +9,6 @@
 local Loolib = LibStub("Loolib")
 local error = error
 local ipairs = ipairs
-local type = type
 local max = math.max
 local min = math.min
 local sort = table.sort

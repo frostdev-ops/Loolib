@@ -50,6 +50,11 @@ local MAX_MATCH_LENGTH = 258
 local MIN_MATCH_LENGTH = 3
 local MAX_DISTANCE = 32768
 
+-- Hash-chain constants for O(N * chainLen) LZ77 matching (replaces naive O(N * 32768))
+local HASH_SIZE = 65536
+local HASH_MASK = HASH_SIZE - 1
+local MAX_CHAIN_LEN = 64
+
 -- Huffman tree limits
 local MAX_BITS = 15
 local LITERAL_COUNT = 286  -- 0-255 literals + 256 end + 257-285 length codes
@@ -95,6 +100,12 @@ local BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345
 local BASE64_DECODE = {}
 for i = 1, #BASE64_CHARS do
     BASE64_DECODE[BASE64_CHARS:sub(i, i)] = i - 1
+end
+
+-- Pre-computed lookup table for EncodeForPrint (avoids per-char sub() calls)
+local BASE64_LOOKUP = {}
+for i = 0, 63 do
+    BASE64_LOOKUP[i] = BASE64_CHARS:sub(i + 1, i + 1)
 end
 
 --[[--------------------------------------------------------------------
@@ -312,40 +323,79 @@ local FIXED_DISTANCE_TREE = BuildHuffmanTree(FIXED_DISTANCE_LENGTHS, 32)
 local FIXED_LITERAL_DECODE = BuildDecodeTable(FIXED_LITERAL_LENGTHS, 288)
 local FIXED_DISTANCE_DECODE = BuildDecodeTable(FIXED_DISTANCE_LENGTHS, 32)
 
+-- Pre-computed bit-reversed codes for fixed Huffman trees (avoids per-call reversal in hot loop)
+local FIXED_LIT_REV = {}
+local FIXED_LIT_LEN = {}
+do
+    for sym = 0, 287 do
+        local entry = FIXED_LITERAL_TREE[sym]
+        if entry then
+            local code = entry.code
+            local len = entry.length
+            local rev = 0
+            for i = 0, len - 1 do
+                if band(code, lshift(1, len - 1 - i)) ~= 0 then
+                    rev = bor(rev, lshift(1, i))
+                end
+            end
+            FIXED_LIT_REV[sym] = rev
+            FIXED_LIT_LEN[sym] = len
+        end
+    end
+end
+
+local FIXED_DIST_REV = {}
+local FIXED_DIST_LEN = {}
+do
+    for sym = 0, 31 do
+        local entry = FIXED_DISTANCE_TREE[sym]
+        if entry then
+            local code = entry.code
+            local len = entry.length
+            local rev = 0
+            for i = 0, len - 1 do
+                if band(code, lshift(1, len - 1 - i)) ~= 0 then
+                    rev = bor(rev, lshift(1, i))
+                end
+            end
+            FIXED_DIST_REV[sym] = rev
+            FIXED_DIST_LEN[sym] = len
+        end
+    end
+end
+
 --[[--------------------------------------------------------------------
     LZ77 Compression - Find Repeated Strings
 ----------------------------------------------------------------------]]
 
-local function FindLongestMatch(data, pos, windowStart, maxLen)
+-- Hash-chain LZ77: O(N * MAX_CHAIN_LEN) vs naive O(N * 32768)
+-- head[hash] = most recent position with that 3-byte hash
+-- prev[pos]  = previous position in the same hash chain
+local function FindLongestMatchHC(data, pos, head, prev, maxLen)
     local bestLength = 0
     local bestDistance = 0
 
     local dataLen = #data
-    local searchStart = math.max(1, pos - MAX_WINDOW_SIZE)
     local maxSearchLen = math.min(maxLen, dataLen - pos + 1, MAX_MATCH_LENGTH)
 
-    if maxSearchLen < MIN_MATCH_LENGTH then
+    if maxSearchLen < MIN_MATCH_LENGTH or pos + 2 > dataLen then
         return 0, 0
     end
 
-    -- Get bytes for 3-byte prefix match (avoids substring creation)
     local b1 = data:byte(pos)
     local b2 = data:byte(pos + 1)
     local b3 = data:byte(pos + 2)
+    local h = band(bxor(lshift(b1, 10), lshift(b2, 5), b3), HASH_MASK)
 
-    -- Need at least 3 bytes for minimum match
-    if not b3 then
-        return 0, 0
-    end
+    local searchPos = head[h]
+    local chainLen = 0
+    local windowStart = pos - MAX_WINDOW_SIZE
 
-    for searchPos = pos - 1, searchStart, -1 do
-        -- Compare 3-byte prefix using bytes (zero garbage)
-        local sb1 = data:byte(searchPos)
-        local sb2 = data:byte(searchPos + 1)
-        local sb3 = data:byte(searchPos + 2)
-
-        if sb1 == b1 and sb2 == b2 and sb3 == b3 then
-            -- Found potential match, extend it
+    while searchPos and searchPos > windowStart and chainLen < MAX_CHAIN_LEN do
+        if data:byte(searchPos) == b1
+            and data:byte(searchPos + 1) == b2
+            and data:byte(searchPos + 2) == b3 then
+            -- Extend the 3-byte prefix match
             local length = 3
             while length < maxSearchLen do
                 if data:byte(searchPos + length) ~= data:byte(pos + length) then
@@ -353,7 +403,6 @@ local function FindLongestMatch(data, pos, windowStart, maxLen)
                 end
                 length = length + 1
             end
-
             if length > bestLength then
                 bestLength = length
                 bestDistance = pos - searchPos
@@ -362,12 +411,17 @@ local function FindLongestMatch(data, pos, windowStart, maxLen)
                 end
             end
         end
+        searchPos = prev[searchPos]
+        chainLen = chainLen + 1
     end
+
+    -- Update hash chain for this position
+    prev[pos] = head[h]
+    head[h] = pos
 
     if bestLength < MIN_MATCH_LENGTH then
         return 0, 0
     end
-
     return bestLength, bestDistance
 end
 
@@ -395,6 +449,24 @@ local function GetDistanceCode(distance)
     return 29, distance - DISTANCE_BASE[30]
 end
 
+-- Pre-computed O(1) lookup tables for match encoding (replaces linear search per match)
+local LENGTH_CODE_LOOKUP_C = {}  -- [length]   = lengthCode
+local LENGTH_CODE_LOOKUP_E = {}  -- [length]   = extraBits
+local DIST_CODE_LOOKUP_C = {}    -- [distance] = distCode
+local DIST_CODE_LOOKUP_E = {}    -- [distance] = extraBits
+do
+    for len = 3, 258 do
+        local code, extra = GetLengthCode(len)
+        LENGTH_CODE_LOOKUP_C[len] = code
+        LENGTH_CODE_LOOKUP_E[len] = extra
+    end
+    for dist = 1, 32768 do
+        local code, extra = GetDistanceCode(dist)
+        DIST_CODE_LOOKUP_C[dist] = code
+        DIST_CODE_LOOKUP_E[dist] = extra
+    end
+end
+
 --[[--------------------------------------------------------------------
     DEFLATE Compression
 ----------------------------------------------------------------------]]
@@ -419,35 +491,54 @@ end
 
 local function CompressBlockFixed(writer, data, startPos, endPos)
     local pos = startPos
+    local head = {}  -- hash -> most-recent position
+    local prev = {}  -- position -> previous position with same hash
 
     while pos <= endPos do
-        local length, distance = FindLongestMatch(data, pos, startPos, math.min(MAX_MATCH_LENGTH, endPos - pos + 1))
+        local length, distance = FindLongestMatchHC(data, pos, head, prev,
+            math.min(MAX_MATCH_LENGTH, endPos - pos + 1))
 
         if length >= MIN_MATCH_LENGTH then
-            -- Write length/distance pair
-            local lengthCode, lengthExtra = GetLengthCode(length)
-            local distCode, distExtra = GetDistanceCode(distance)
+            -- Write length/distance pair using pre-computed tables (O(1) lookups)
+            local lengthCode = LENGTH_CODE_LOOKUP_C[length]
+            local lengthExtra = LENGTH_CODE_LOOKUP_E[length]
+            local distCode = DIST_CODE_LOOKUP_C[distance]
+            local distExtra = DIST_CODE_LOOKUP_E[distance]
 
-            WriteHuffmanCode(writer, FIXED_LITERAL_TREE, lengthCode)
+            writer:WriteBits(FIXED_LIT_REV[lengthCode], FIXED_LIT_LEN[lengthCode])
             if LENGTH_EXTRA_BITS[lengthCode - 256] > 0 then
                 writer:WriteBits(lengthExtra, LENGTH_EXTRA_BITS[lengthCode - 256])
             end
 
-            WriteHuffmanCode(writer, FIXED_DISTANCE_TREE, distCode)
+            writer:WriteBits(FIXED_DIST_REV[distCode], FIXED_DIST_LEN[distCode])
             if DISTANCE_EXTRA_BITS[distCode + 1] > 0 then
                 writer:WriteBits(distExtra, DISTANCE_EXTRA_BITS[distCode + 1])
             end
 
+            -- Update hash chains for positions skipped by this match
+            for i = 1, length - 1 do
+                local p = pos + i
+                if p + 2 <= endPos then
+                    local b1 = data:byte(p)
+                    local b2 = data:byte(p + 1)
+                    local b3 = data:byte(p + 2)
+                    local h = band(bxor(lshift(b1, 10), lshift(b2, 5), b3), HASH_MASK)
+                    prev[p] = head[h]
+                    head[h] = p
+                end
+            end
+
             pos = pos + length
         else
-            -- Write literal byte
-            WriteHuffmanCode(writer, FIXED_LITERAL_TREE, data:byte(pos))
+            -- Write literal byte using pre-computed reversed code
+            local byte = data:byte(pos)
+            writer:WriteBits(FIXED_LIT_REV[byte], FIXED_LIT_LEN[byte])
             pos = pos + 1
         end
     end
 
     -- Write end of block
-    WriteHuffmanCode(writer, FIXED_LITERAL_TREE, 256)
+    writer:WriteBits(FIXED_LIT_REV[256], FIXED_LIT_LEN[256])
 end
 
 local function CompressBlockStored(writer, data, startPos, endPos)
@@ -849,17 +940,18 @@ local function EncodeForPrint(data)
 
         local n = bor(lshift(b1, 16), lshift(b2, 8), b3)
 
-        result[#result + 1] = BASE64_CHARS:sub(rshift(n, 18) + 1, rshift(n, 18) + 1)
-        result[#result + 1] = BASE64_CHARS:sub(band(rshift(n, 12), 0x3F) + 1, band(rshift(n, 12), 0x3F) + 1)
+        -- Use pre-built lookup table: eliminates 4 sub() calls per 3 bytes
+        result[#result + 1] = BASE64_LOOKUP[rshift(n, 18)]
+        result[#result + 1] = BASE64_LOOKUP[band(rshift(n, 12), 0x3F)]
 
         if i + 1 <= len then
-            result[#result + 1] = BASE64_CHARS:sub(band(rshift(n, 6), 0x3F) + 1, band(rshift(n, 6), 0x3F) + 1)
+            result[#result + 1] = BASE64_LOOKUP[band(rshift(n, 6), 0x3F)]
         else
             result[#result + 1] = "="
         end
 
         if i + 2 <= len then
-            result[#result + 1] = BASE64_CHARS:sub(band(n, 0x3F) + 1, band(n, 0x3F) + 1)
+            result[#result + 1] = BASE64_LOOKUP[band(n, 0x3F)]
         else
             result[#result + 1] = "="
         end

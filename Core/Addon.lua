@@ -36,7 +36,7 @@ local tinsert = table.insert
 local initializationComplete = false
 local enableComplete = false
 local addonQueue = {}
-local enableQueue = {}
+local _enableQueue = {}
 
 local function EnsureAddonState(addon, name, parentAddon)
     addon.name = name or addon.name
@@ -70,6 +70,7 @@ local function ResolveLibrary(libName)
     end
 
     local success
+    ---@diagnostic disable-next-line: param-type-mismatch
     success, lib = pcall(LibStub, libName)
     if success then
         return lib
@@ -375,7 +376,7 @@ end
 --   NewAddon(existingObject, name) -> uses existingObject as base
 --   NewAddon(existingObject, name, lib1, lib2, ...) -> uses object + embeds libs
 -- @return table - The addon object
-local function NewAddon(self, arg1, arg2, ...)
+local function NewAddon(_, arg1, arg2, ...)
     local addon
     local name
     local libs
@@ -426,7 +427,7 @@ end
 -- @param name string - The addon name
 -- @param silent boolean|nil - If true, don't error if not found
 -- @return table|nil - The addon or nil
-local function GetAddon(self, name, silent)
+local function GetAddon(_, name, silent)
     local addon = Loolib.addons[name]
     if not addon and not silent then
         error(format("Addon '%s' does not exist", name), 2)
@@ -436,14 +437,14 @@ end
 
 --- Iterate over all registered addons
 -- @return iterator
-local function IterateAddons(self)
+local function IterateAddons(_)
     return pairs(Loolib.addons)
 end
 
 --- Embed a library into a target object
 -- @param target table - The object to embed into
 -- @param libName string - The library name
-local function EmbedLibrary(self, target, libName)
+local function EmbedLibrary(_, target, libName)
     local lib = ResolveLibrary(libName)
     if not lib then
         Loolib:Debug(format("Library '%s' not found for embedding", libName))
@@ -483,6 +484,7 @@ local AddonLifecycleFrame = CreateFrame("Frame")
 AddonLifecycleFrame:RegisterEvent("ADDON_LOADED")
 AddonLifecycleFrame:RegisterEvent("PLAYER_LOGIN")
 
+---@diagnostic disable-next-line: unused-vararg
 AddonLifecycleFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         if not initializationComplete then

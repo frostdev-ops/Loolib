@@ -6,7 +6,7 @@
 local LOOLIB_MAJOR = "Loolib"
 local LOOLIB_MINOR = 3
 
-local Loolib, oldVersion = LibStub:NewLibrary(LOOLIB_MAJOR, LOOLIB_MINOR)
+local Loolib, _oldVersion = LibStub:NewLibrary(LOOLIB_MAJOR, LOOLIB_MINOR)
 if not Loolib then return end
 
 -- Preserve existing data on upgrade
@@ -14,6 +14,8 @@ Loolib.modules = Loolib.modules or {}
 Loolib.moduleAliases = Loolib.moduleAliases or {}
 Loolib.addons = Loolib.addons or {}  -- Addon registry (populated by Core/Addon.lua)
 Loolib.version = LOOLIB_MINOR
+
+---@diagnostic disable: need-check-nil
 
 local function SplitModulePath(name)
     return { strsplit(".", name) }
@@ -82,11 +84,12 @@ function Loolib:RegisterModule(name, tbl)
 
     local parent, key = ResolveModulePath(self, name, true)
     local nested = parent[key]
-    if nested and nested ~= tbl then
-        error(string.format("Namespace path '%s' is already occupied", name), 2)
+    if nested == nil then
+        parent[key] = tbl
+    elseif nested ~= tbl and type(nested) ~= "table" then
+        error(string.format("Namespace path '%s' is occupied by a non-table value", name), 2)
     end
 
-    parent[key] = tbl
     self.modules[name] = tbl
     SetModuleAlias(self, name)
     return tbl
@@ -208,7 +211,8 @@ end
 -- @param ... - Optional library names to embed
 -- @return table - The addon object with LoolibAddonMixin applied
 -- @see LoolibAddonMixin
-function Loolib:NewAddon(arg1, arg2, ...)
+---@diagnostic disable-next-line: unused-vararg
+function Loolib:NewAddon(_arg1, _arg2, ...)
     -- Stub - implemented in Core/Addon.lua
     error("Loolib:NewAddon requires Core/Addon.lua to be loaded", 2)
 end

@@ -47,6 +47,31 @@ Loolib.Data = Data
 local SavedVariablesModule = Data.SavedVariables or Loolib:GetModule("Data.SavedVariables") or {}
 Loolib.Data.SavedVariables = SavedVariablesModule
 
+local function EnsureTablePath(root, path)
+    local current = root
+    for _, key in ipairs(path or {}) do
+        if type(current[key]) ~= "table" then
+            current[key] = {}
+        end
+        current = current[key]
+    end
+    return current
+end
+
+local function GetTablePath(root, path)
+    local current = root
+    for _, key in ipairs(path or {}) do
+        if type(current) ~= "table" then
+            return nil
+        end
+        current = current[key]
+        if current == nil then
+            return nil
+        end
+    end
+    return current
+end
+
 --[[--------------------------------------------------------------------
     LoolibSavedVariablesMixin
 
@@ -85,12 +110,14 @@ function SavedVariablesMixin:Init(globalName, defaults, defaultProfile)
     self.currentProfile = nil
     self.namespaces = {}  -- Namespace storage
     self.scopeKeys = {}  -- Cached scope keys
+    self.dataPath = self.dataPath or nil
+    self.rootData = nil
 
     -- Register for ADDON_LOADED and PLAYER_LOGOUT
     local frame = CreateFrame("Frame")
     frame:RegisterEvent("ADDON_LOADED")
     frame:RegisterEvent("PLAYER_LOGOUT")
-    frame:SetScript("OnEvent", function(_, event, addonName)
+    frame:SetScript("OnEvent", function(_, event, _addonName)
         if event == "ADDON_LOADED" then
             -- We can't know which addon this is for, so we check if our global exists
             if _G[globalName] ~= nil or not self.initialized then
@@ -150,7 +177,12 @@ function SavedVariablesMixin:OnAddonLoaded()
         _G[self.globalName] = {}
     end
 
-    self.data = _G[self.globalName]
+    self.rootData = _G[self.globalName]
+    if self.dataPath and #self.dataPath > 0 then
+        self.data = EnsureTablePath(self.rootData, self.dataPath)
+    else
+        self.data = self.rootData
+    end
 
     -- Generate scope keys
     self:GenerateScopeKeys()
@@ -281,9 +313,10 @@ end
 
 --- Create metatable properties for scope access
 -- This allows: db.char, db.realm, db.profile, etc.
-local function CreateScopeAccessor(db)
+---@diagnostic disable-next-line: unused-function
+local function _CreateScopeAccessor(db)
     return setmetatable({}, {
-        __index = function(t, key)
+        __index = function(_, key)
             if key == "char" or key == "realm" or key == "class" or
                key == "race" or key == "faction" or key == "factionrealm" or
                key == "global" or key == "profile" then
@@ -707,7 +740,7 @@ function SavedVariablesMixin:RemoveDefaults()
 
     -- Strip defaults from all profiles
     if self.defaults.profile then
-        for profileName, profileData in pairs(self.data.profiles) do
+        for _, profileData in pairs(self.data.profiles) do
             RemoveDefaultsRecursive(profileData, self.defaults.profile)
         end
     end
@@ -719,7 +752,7 @@ function SavedVariablesMixin:RemoveDefaults()
             if scope == "global" then
                 RemoveDefaultsRecursive(self.data.global, self.defaults.global)
             elseif self.data[scope] then
-                for scopeKey, scopeData in pairs(self.data[scope]) do
+                for _, scopeData in pairs(self.data[scope]) do
                     RemoveDefaultsRecursive(scopeData, self.defaults[scope])
                 end
             end
@@ -727,7 +760,7 @@ function SavedVariablesMixin:RemoveDefaults()
     end
 
     -- Strip defaults from namespaces
-    for name, namespace in pairs(self.namespaces) do
+    for _, namespace in pairs(self.namespaces) do
         namespace:RemoveDefaults()
     end
 end
@@ -804,7 +837,7 @@ local function CreateSavedVariables(globalName, defaults, defaultProfile)
     -- Create scope accessor metatable
     -- This allows: db.profile, db.char, db.global, etc.
     local accessor = setmetatable({}, {
-        __index = function(t, key)
+        __index = function(_, key)
             -- Check for scope access
             if key == "char" or key == "realm" or key == "class" or
                key == "race" or key == "faction" or key == "factionrealm" or
@@ -814,12 +847,73 @@ local function CreateSavedVariables(globalName, defaults, defaultProfile)
             -- Otherwise, access the sv object itself
             return sv[key]
         end,
-        __newindex = function(t, key, value)
+        __newindex = function(_, key, value)
             sv[key] = value
         end
     })
 
     return accessor
+end
+
+local function CreateSavedVariablesAtPath(globalName, dataPath, defaults, defaultProfile)
+    local sv = CreateFromMixins(SavedVariablesMixin)
+    sv.dataPath = dataPath
+    sv:Init(globalName, defaults, defaultProfile)
+
+    local accessor = setmetatable({}, {
+        __index = function(_, key)
+            if key == "char" or key == "realm" or key == "class" or
+               key == "race" or key == "faction" or key == "factionrealm" or
+               key == "global" or key == "profile" then
+                return sv:GetScope(key)
+            end
+            return sv[key]
+        end,
+        __newindex = function(_, key, value)
+            sv[key] = value
+        end
+    })
+
+    return accessor
+end
+
+local function GetGlobalStorageRoot(globalName, create)
+    local root = _G[globalName]
+    if root == nil and create then
+        root = {}
+        _G[globalName] = root
+    end
+    return root
+end
+
+local function GetAddonDataRoot(addonName, create)
+    if type(addonName) ~= "string" or addonName == "" then
+        error("Loolib.Data.SavedVariables.GetAddonData: addonName must be a non-empty string", 2)
+    end
+
+    local root = GetGlobalStorageRoot("LoolibDB", create)
+    if not root then
+        return nil
+    end
+
+    if create then
+        return EnsureTablePath(root, { "addons", addonName })
+    end
+
+    local addons = GetTablePath(root, { "addons" })
+    if type(addons) ~= "table" then
+        return nil
+    end
+
+    return addons[addonName]
+end
+
+local function CreateAddonStore(addonName, defaults, defaultProfile)
+    if type(addonName) ~= "string" or addonName == "" then
+        error("Loolib.Data.SavedVariables.CreateAddonStore: addonName must be a non-empty string", 2)
+    end
+
+    return CreateSavedVariablesAtPath("LoolibDB", { "addons", addonName }, defaults, defaultProfile)
 end
 
 --[[--------------------------------------------------------------------
@@ -828,7 +922,12 @@ end
 
 Loolib.Data.SavedVariables.Mixin = SavedVariablesMixin
 Loolib.Data.SavedVariables.Create = CreateSavedVariables
+Loolib.Data.SavedVariables.CreateAtPath = CreateSavedVariablesAtPath
+Loolib.Data.SavedVariables.CreateAddonStore = CreateAddonStore
+Loolib.Data.SavedVariables.GetRootData = GetGlobalStorageRoot
+Loolib.Data.SavedVariables.GetAddonData = GetAddonDataRoot
 Loolib.Data.SavedVariables = SavedVariablesModule
 Loolib.Data.CreateSavedVariables = CreateSavedVariables
+Loolib.Data.CreateAddonStore = CreateAddonStore
 
 Loolib:RegisterModule("Data.SavedVariables", SavedVariablesModule)

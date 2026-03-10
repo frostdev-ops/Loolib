@@ -13,14 +13,11 @@
 ----------------------------------------------------------------------]]
 
 local CreateFrame = CreateFrame
-local InterfaceOptions_AddCategory = InterfaceOptions_AddCategory
 local Settings = Settings
 local UIParent = UIParent
 local ipairs = ipairs
 local next = next
 local pairs = pairs
-local table_insert = table.insert
-local table_remove = table.remove
 local tostring = tostring
 local type = type
 local unpack = unpack
@@ -280,7 +277,7 @@ function ConfigDialogMixin:AcquireWidget(widgetType, parent, template, frameType
         pool = { inactive = {} }
         self.widgetPools[widgetType] = pool
     end
-    
+
     local widget = table.remove(pool.inactive)
     if not widget then
         -- Create new
@@ -293,15 +290,15 @@ function ConfigDialogMixin:AcquireWidget(widgetType, parent, template, frameType
             elseif widgetType == "scrollframe" then frameType = "ScrollFrame"
             end
         end
-        
+
         widget = CreateFrame(frameType, nil, parent, template)
         widget.pooledWidgetType = widgetType
     end
-    
+
     widget:SetParent(parent)
     widget:Show()
     widget:ClearAllPoints()
-    
+
     return widget
 end
 
@@ -309,16 +306,16 @@ end
 -- @param container Frame - The container to clear
 function ConfigDialogMixin:ReleaseWidgets(container)
     if not container then return end
-    
+
     -- Release children (Frames)
     local children = {container:GetChildren()}
     for _, child in ipairs(children) do
         -- Recursively release children of this widget if it's a container
         self:ReleaseWidgets(child)
-        
+
         if child.pooledWidgetType and self.widgetPools[child.pooledWidgetType] then
             local pool = self.widgetPools[child.pooledWidgetType]
-            
+
             child:Hide()
             child:ClearAllPoints()
             if child:HasScript("OnEnter") then child:SetScript("OnEnter", nil) end
@@ -342,7 +339,7 @@ function ConfigDialogMixin:ReleaseWidgets(container)
             child:SetParent(nil)
         end
     end
-    
+
     -- Release regions (FontStrings, Textures)
     local regions = {container:GetRegions()}
     for _, region in ipairs(regions) do
@@ -490,6 +487,7 @@ end
 -- @param container Frame - Parent frame (or nil)
 -- @return Frame - Dialog frame
 function ConfigDialogMixin:CreateDialog(appName, options, container)
+    local registry = Config.Registry
     -- Get size (supports configurable dimensions)
     local width, height = GetDialogDimensions(appName, self.defaultSizes)
 
@@ -668,8 +666,8 @@ function ConfigDialogMixin:CreateFilterBar(dialog)
     dialog.clearSearchBtn = clearSearchBtn
 
     -- Search box events
-    searchBox:SetScript("OnTextChanged", function(self)
-        local text = self:GetText()
+    searchBox:SetScript("OnTextChanged", function()
+        local text = searchBox:GetText()
         clearSearchBtn:SetShown(text ~= "")
         placeholder:SetShown(text == "")
 
@@ -687,13 +685,13 @@ function ConfigDialogMixin:CreateFilterBar(dialog)
         end)
     end)
 
-    searchBox:SetScript("OnEscapePressed", function(self)
-        self:SetText("")
-        self:ClearFocus()
+    searchBox:SetScript("OnEscapePressed", function()
+        searchBox:SetText("")
+        searchBox:ClearFocus()
     end)
 
-    searchBox:SetScript("OnEnterPressed", function(self)
-        self:ClearFocus()
+    searchBox:SetScript("OnEnterPressed", function()
+        searchBox:ClearFocus()
     end)
 
     -- Type filter dropdown button
@@ -785,8 +783,8 @@ function ConfigDialogMixin:ShowTypeFilterMenu(dialog)
         label:SetText(optType:sub(1,1):upper() .. optType:sub(2))
 
         local itemType = optType
-        item:SetScript("OnClick", function(self)
-            if self:GetChecked() then
+        item:SetScript("OnClick", function()
+            if item:GetChecked() then
                 typeFilters[itemType] = nil  -- Show this type
             else
                 typeFilters[itemType] = false  -- Hide this type
@@ -803,21 +801,21 @@ function ConfigDialogMixin:ShowTypeFilterMenu(dialog)
 
     -- ESC key handling
     menu:EnableKeyboard(true)
-    menu:SetScript("OnKeyDown", function(self, key)
+    menu:SetScript("OnKeyDown", function(_, key)
         if key == "ESCAPE" then
-            self:Hide()
+            menu:Hide()
         else
             if not InCombatLockdown() then
-                self:SetPropagateKeyboardInput(true)
+                menu:SetPropagateKeyboardInput(true)
             end
         end
     end)
 
     -- Close on click outside
-    menu:SetScript("OnUpdate", function(self)
-        if not MouseIsOver(self) and not MouseIsOver(dialog.typeFilterBtn) then
+    menu:SetScript("OnUpdate", function()
+        if not MouseIsOver(menu) and not MouseIsOver(dialog.typeFilterBtn) then
             if IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton") then
-                self:Hide()
+                menu:Hide()
             end
         end
     end)
@@ -1360,7 +1358,7 @@ function ConfigDialogMixin:RenderOptions(dialog, group, rootOptions, registry, p
         elseif optType ~= "group" then
             -- Use filter predicate for non-group options
             if self:ShouldShowOption(opt, info, filterState, registry) then
-                yOffset = self:RenderWidget(optionsContent, opt, rootOptions, registry, info, yOffset, contentWidth)
+                yOffset = self:RenderWidget(optionsContent, opt, registry, info, yOffset, contentWidth)
                 optionsRendered = optionsRendered + 1
             end
         end
@@ -1456,7 +1454,7 @@ function ConfigDialogMixin:RenderInlineGroup(parent, group, rootOptions, registr
                     cell:SetSize(cellWidth, 1)
 
                     -- Render widget into cell at y=0
-                    local newY = self:RenderWidget(cell, opt, rootOptions, registry, optInfo, 0, cellWidth)
+                    local newY = self:RenderWidget(cell, opt, registry, optInfo, 0, cellWidth)
                     local widgetH = math.abs(newY)
                     cell:SetHeight(widgetH)
 
@@ -1488,7 +1486,7 @@ function ConfigDialogMixin:RenderInlineGroup(parent, group, rootOptions, registr
                 local optInfo = registry:BuildInfoTable(rootOptions, opt, appName, unpack(currentPath))
 
                 if opt.type ~= "group" and self:ShouldShowOption(opt, optInfo, filterState, registry) then
-                    innerOffset = self:RenderWidget(groupFrame, opt, rootOptions, registry, optInfo, innerOffset, innerContentWidth)
+                    innerOffset = self:RenderWidget(groupFrame, opt, registry, optInfo, innerOffset, innerContentWidth)
                 end
             end
         end
@@ -1505,7 +1503,7 @@ end
 ----------------------------------------------------------------------]]
 
 --- Render a single widget
-function ConfigDialogMixin:RenderWidget(parent, option, rootOptions, registry, info, yOffset, contentWidth)
+function ConfigDialogMixin:RenderWidget(parent, option, registry, info, yOffset, contentWidth)
     local optType = option.type
     local name = registry:ResolveValue(option.name, info) or info[#info]
     local desc = registry:ResolveValue(option.desc, info)
@@ -1524,7 +1522,7 @@ function ConfigDialogMixin:RenderWidget(parent, option, rootOptions, registry, i
     if optType == "header" then
         return self:RenderHeader(parent, name, yOffset, contentWidth)
     elseif optType == "description" then
-        return self:RenderDescription(parent, option, name, desc, yOffset, contentWidth)
+        return self:RenderDescription(parent, option, name, yOffset, contentWidth)
     elseif optType == "toggle" then
         return self:RenderToggle(parent, option, name, desc, registry, info, disabled, yOffset)
     elseif optType == "input" then
@@ -1534,7 +1532,7 @@ function ConfigDialogMixin:RenderWidget(parent, option, rootOptions, registry, i
     elseif optType == "select" then
         return self:RenderSelect(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
     elseif optType == "multiselect" then
-        return self:RenderMultiSelect(parent, option, name, desc, registry, info, disabled, yOffset, contentWidth)
+        return self:RenderMultiSelect(parent, option, name, registry, info, disabled, yOffset, contentWidth)
     elseif optType == "color" then
         return self:RenderColor(parent, option, name, desc, registry, info, disabled, yOffset)
     elseif optType == "execute" then
@@ -1542,7 +1540,7 @@ function ConfigDialogMixin:RenderWidget(parent, option, rootOptions, registry, i
     elseif optType == "keybinding" then
         return self:RenderKeybinding(parent, option, name, desc, registry, info, disabled, yOffset)
     elseif optType == "texture" then
-        return self:RenderTexture(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
+        return self:RenderTexture(parent, option, name, desc, registry, info, disabled, yOffset)
     elseif optType == "font" then
         return self:RenderFont(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
     end
@@ -1567,7 +1565,7 @@ function ConfigDialogMixin:RenderHeader(parent, name, yOffset, contentWidth)
 end
 
 --- Render description
-function ConfigDialogMixin:RenderDescription(parent, option, name, desc, yOffset, contentWidth)
+function ConfigDialogMixin:RenderDescription(parent, option, name, yOffset, contentWidth)
     local fontSize = option.fontSize or "medium"
     local fontObject = ConfigTypes.fontSizes[fontSize] or "GameFontNormal"
 
@@ -1629,8 +1627,8 @@ function ConfigDialogMixin:RenderToggle(parent, option, name, desc, registry, in
 
     -- Tooltip
     if desc then
-        check:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        check:SetScript("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget, "ANCHOR_RIGHT")
             GameTooltip:SetText(name, 1, 1, 1)
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
@@ -1645,8 +1643,8 @@ function ConfigDialogMixin:RenderToggle(parent, option, name, desc, registry, in
     end
 
     -- Handler
-    check:SetScript("OnClick", function(self)
-        local newValue = self:GetChecked()
+    check:SetScript("OnClick", function()
+        local newValue = check:GetChecked()
         registry:SetValue(option, info, newValue)
     end)
 
@@ -1698,8 +1696,8 @@ function ConfigDialogMixin:RenderInput(parent, option, name, desc, registry, inf
 
     -- Tooltip
     if desc then
-        editBox:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        editBox:SetScript("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget, "ANCHOR_RIGHT")
             GameTooltip:SetText(name, 1, 1, 1)
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
@@ -1714,21 +1712,21 @@ function ConfigDialogMixin:RenderInput(parent, option, name, desc, registry, inf
     end
 
     -- Handlers
-    editBox:SetScript("OnEnterPressed", function(self)
+    editBox:SetScript("OnEnterPressed", function()
         if not option.multiline then
-            registry:SetValue(option, info, self:GetText())
-            self:ClearFocus()
+            registry:SetValue(option, info, editBox:GetText())
+            editBox:ClearFocus()
         end
     end)
 
-    editBox:SetScript("OnEscapePressed", function(self)
-        self:SetText(registry:GetValue(option, info) or "")
-        self:ClearFocus()
+    editBox:SetScript("OnEscapePressed", function()
+        editBox:SetText(registry:GetValue(option, info) or "")
+        editBox:ClearFocus()
     end)
 
     if option.multiline then
-        editBox:SetScript("OnEditFocusLost", function(self)
-            registry:SetValue(option, info, self:GetText())
+        editBox:SetScript("OnEditFocusLost", function()
+            registry:SetValue(option, info, editBox:GetText())
         end)
     end
 
@@ -1793,8 +1791,8 @@ function ConfigDialogMixin:RenderRange(parent, option, name, desc, registry, inf
 
     -- Tooltip
     if desc then
-        slider:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        slider:SetScript("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget, "ANCHOR_RIGHT")
             GameTooltip:SetText(name, 1, 1, 1)
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:AddLine(string.format("Range: %s - %s", minVal, maxVal), 0.8, 0.8, 0.8)
@@ -1810,7 +1808,7 @@ function ConfigDialogMixin:RenderRange(parent, option, name, desc, registry, inf
     end
 
     -- Handler
-    slider:SetScript("OnValueChanged", function(self, val)
+    slider:SetScript("OnValueChanged", function(_, val)
         UpdateValueText(val)
         registry:SetValue(option, info, val)
     end)
@@ -1830,6 +1828,7 @@ function ConfigDialogMixin:RenderRange(parent, option, name, desc, registry, inf
         -- Anonymous slider - hide all FontStrings to suppress default labels
         for _, region in ipairs({slider:GetRegions()}) do
             if region:GetObjectType() == "FontString" then
+                ---@cast region FontString
                 region:SetText("")
             end
         end
@@ -1889,8 +1888,8 @@ function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, in
 
     -- Tooltip
     if desc then
-        dropdown:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        dropdown:SetScript("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget, "ANCHOR_RIGHT")
             GameTooltip:SetText(name, 1, 1, 1)
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
@@ -1905,10 +1904,10 @@ function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, in
     end
 
     -- Click handler - show menu
-    dropdown:SetScript("OnClick", function(self)
-        local menu = CreateFrame("Frame", nil, self, "BackdropTemplate")
+    dropdown:SetScript("OnClick", function()
+        local menu = CreateFrame("Frame", nil, dropdown, "BackdropTemplate")
         menu:SetFrameStrata("TOOLTIP")
-        menu:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, -2)
+        menu:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -2)
 
         menu:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8X8",
@@ -1934,7 +1933,7 @@ function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, in
         end
 
         local menuHeight = 8
-        local menuWidth = self:GetWidth()
+        local menuWidth = dropdown:GetWidth()
 
         for i, key in ipairs(sortedKeys) do
             local itemLabel = values[key] or tostring(key)
@@ -1972,21 +1971,21 @@ function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, in
             menu:SetPropagateKeyboardInput(false)
         end
         menu:EnableKeyboard(true)
-        menu:SetScript("OnKeyDown", function(self, key)
+        menu:SetScript("OnKeyDown", function(_, key)
             if key == "ESCAPE" then
-                self:Hide()
+                menu:Hide()
             else
                 if not InCombatLockdown() then
-                    self:SetPropagateKeyboardInput(true)
+                    menu:SetPropagateKeyboardInput(true)
                 end
             end
         end)
 
         -- Close on click outside
-        menu:SetScript("OnUpdate", function(self)
-            if not MouseIsOver(self) and not MouseIsOver(dropdown) then
+        menu:SetScript("OnUpdate", function()
+            if not MouseIsOver(menu) and not MouseIsOver(dropdown) then
                 if IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton") then
-                    self:Hide()
+                    menu:Hide()
                 end
             end
         end)
@@ -1996,7 +1995,7 @@ function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, in
 end
 
 --- Render multiselect
-function ConfigDialogMixin:RenderMultiSelect(parent, option, name, desc, registry, info, disabled, yOffset, contentWidth)
+function ConfigDialogMixin:RenderMultiSelect(parent, option, name, registry, info, disabled, yOffset, contentWidth)
     -- Header
     local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     header:SetPoint("TOPLEFT", 8, yOffset)
@@ -2044,8 +2043,8 @@ function ConfigDialogMixin:RenderMultiSelect(parent, option, name, desc, registr
         end
 
         local itemKey = key
-        check:SetScript("OnClick", function(self)
-            local newValue = self:GetChecked()
+        check:SetScript("OnClick", function()
+            local newValue = check:GetChecked()
             -- For multiselect, we set key, value
             registry:SetValue(option, info, itemKey, newValue)
         end)
@@ -2109,8 +2108,8 @@ function ConfigDialogMixin:RenderColor(parent, option, name, desc, registry, inf
 
     -- Tooltip
     if desc then
-        swatch:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        swatch:SetScript("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget, "ANCHOR_RIGHT")
             GameTooltip:SetText(name, 1, 1, 1)
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
@@ -2132,57 +2131,30 @@ function ConfigDialogMixin:RenderColor(parent, option, name, desc, registry, inf
             if option.hasAlpha then
                 newA = ColorPickerFrame:GetColorAlpha() or 1
             end
-            
+
             swatchColor:SetColorTexture(newR, newG, newB, newA)
             registry:SetValue(option, info, newR, newG, newB, newA)
         end
-        
+
         local function OnCancel(previousValues)
             local prevR, prevG, prevB, prevA = unpack(previousValues)
             swatchColor:SetColorTexture(prevR, prevG, prevB, prevA)
             registry:SetValue(option, info, prevR, prevG, prevB, prevA)
         end
 
-        -- Use modern API if available (WoW 10.0+)
-        if ColorPickerFrame.SetupColorPickerAndShow then
-            local colorInfo = {
-                r = r,
-                g = g,
-                b = b,
-                opacity = a,
-                hasOpacity = option.hasAlpha,
-                swatchFunc = OnColorChanged,
-                opacityFunc = OnColorChanged,
-                cancelFunc = function()
-                    OnCancel({r, g, b, a})
-                end,
-            }
-            ColorPickerFrame:SetupColorPickerAndShow(colorInfo)
-        else
-            -- Legacy API fallback
-            local function LegacyColorCallback(restore)
-                local newR, newG, newB
-                if restore then
-                    newR, newG, newB = unpack(restore)
-                else
-                    newR, newG, newB = ColorPickerFrame:GetColorRGB()
-                end
-                local newA = option.hasAlpha and (1 - OpacitySliderFrame:GetValue()) or 1
-
-                swatchColor:SetColorTexture(newR, newG, newB, newA)
-                registry:SetValue(option, info, newR, newG, newB, newA)
-            end
-
-            ColorPickerFrame:SetColorRGB(r, g, b)
-            ColorPickerFrame.hasOpacity = option.hasAlpha
-            ColorPickerFrame.opacity = 1 - a
-            ColorPickerFrame.previousValues = {r, g, b, a}
-            ColorPickerFrame.func = LegacyColorCallback
-            ColorPickerFrame.opacityFunc = LegacyColorCallback
-            ColorPickerFrame.cancelFunc = LegacyColorCallback
-            ColorPickerFrame:Hide()
-            ColorPickerFrame:Show()
-        end
+        local colorInfo = {
+            r = r,
+            g = g,
+            b = b,
+            opacity = a,
+            hasOpacity = option.hasAlpha,
+            swatchFunc = OnColorChanged,
+            opacityFunc = OnColorChanged,
+            cancelFunc = function()
+                OnCancel({r, g, b, a})
+            end,
+        }
+        ColorPickerFrame:SetupColorPickerAndShow(colorInfo)
     end)
 
     return yOffset - 32
@@ -2201,8 +2173,8 @@ function ConfigDialogMixin:RenderExecute(parent, option, name, desc, registry, i
 
     -- Tooltip
     if desc then
-        btn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        btn:SetScript("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget, "ANCHOR_RIGHT")
             GameTooltip:SetText(name, 1, 1, 1)
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
@@ -2275,8 +2247,8 @@ function ConfigDialogMixin:RenderKeybinding(parent, option, name, desc, registry
 
     -- Tooltip
     if desc then
-        keyBtn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        keyBtn:SetScript("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget, "ANCHOR_RIGHT")
             GameTooltip:SetText(name, 1, 1, 1)
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:AddLine("Click to set key binding", 0.8, 0.8, 0.8)
@@ -2293,16 +2265,16 @@ function ConfigDialogMixin:RenderKeybinding(parent, option, name, desc, registry
 
     local isListening = false
 
-    keyBtn:SetScript("OnClick", function(self)
+    keyBtn:SetScript("OnClick", function()
         if isListening then
             return
         end
 
         isListening = true
         keyText:SetText("Press a key...")
-        self:SetBackdropBorderColor(1, 1, 0, 1)
+        keyBtn:SetBackdropBorderColor(1, 1, 0, 1)
 
-        self:SetScript("OnKeyDown", function(self, key)
+        keyBtn:SetScript("OnKeyDown", function(_, key)
             if key == "ESCAPE" then
                 -- Cancel
                 local currentVal = registry:GetValue(option, info)
@@ -2320,8 +2292,8 @@ function ConfigDialogMixin:RenderKeybinding(parent, option, name, desc, registry
             end
 
             isListening = false
-            self:SetScript("OnKeyDown", nil)
-            self:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+            keyBtn:SetScript("OnKeyDown", nil)
+            keyBtn:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
         end)
     end)
 
@@ -2329,10 +2301,10 @@ function ConfigDialogMixin:RenderKeybinding(parent, option, name, desc, registry
 end
 
 --- Render texture display/selector
-function ConfigDialogMixin:RenderTexture(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
+function ConfigDialogMixin:RenderTexture(parent, option, name, desc, registry, info, disabled, yOffset)
     local container = CreateFrame("Frame", nil, parent)
     container:SetPoint("TOPLEFT", 8, yOffset)
-    
+
     local texWidth = option.imageWidth or 32
     local texHeight = option.imageHeight or 32
     container:SetSize(LABEL_WIDTH + texWidth + 8, math.max(texHeight, 24))
@@ -2377,8 +2349,8 @@ function ConfigDialogMixin:RenderTexture(parent, option, name, desc, registry, i
 
     -- Tooltip
     if desc then
-        texFrame:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        texFrame:SetScript("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget, "ANCHOR_RIGHT")
             GameTooltip:SetText(name, 1, 1, 1)
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
@@ -2396,7 +2368,7 @@ function ConfigDialogMixin:RenderTexture(parent, option, name, desc, registry, i
     local values = option.values and registry:ResolveValue(option.values, info)
     if values and not disabled then
         texFrame:EnableMouse(true)
-        texFrame:SetScript("OnMouseDown", function(self)
+        texFrame:SetScript("OnMouseDown", function()
             -- Show texture selection menu (simplified - just cycles through)
             -- A full implementation would show a dropdown or grid picker
             local sortedKeys = {}
@@ -2404,7 +2376,7 @@ function ConfigDialogMixin:RenderTexture(parent, option, name, desc, registry, i
                 sortedKeys[#sortedKeys + 1] = k
             end
             table.sort(sortedKeys)
-            
+
             local current = registry:GetValue(option, info)
             local nextIdx = 1
             for i, k in ipairs(sortedKeys) do
@@ -2413,7 +2385,7 @@ function ConfigDialogMixin:RenderTexture(parent, option, name, desc, registry, i
                     break
                 end
             end
-            
+
             local newValue = sortedKeys[nextIdx]
             registry:SetValue(option, info, newValue)
             tex:SetTexture(newValue)
@@ -2448,7 +2420,7 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
             ["Fonts\\MORPHEUS.TTF"] = "Morpheus",
             ["Fonts\\SKURRI.TTF"] = "Skurri",
         }
-        
+
         -- Try to get fonts from LibSharedMedia if available
         local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
         if LSM then
@@ -2482,7 +2454,7 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
     local valueLabel = dropdown:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     valueLabel:SetPoint("LEFT", 8, 0)
     valueLabel:SetText(values[currentValue] or "Select Font")
-    
+
     -- Try to set the font preview
     if currentValue then
         local success = pcall(function()
@@ -2506,8 +2478,8 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
 
     -- Tooltip
     if desc then
-        dropdown:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        dropdown:SetScript("OnEnter", function(widget)
+            GameTooltip:SetOwner(widget, "ANCHOR_RIGHT")
             GameTooltip:SetText(name, 1, 1, 1)
             GameTooltip:AddLine(desc, 1, 0.82, 0, true)
             GameTooltip:Show()
@@ -2522,10 +2494,10 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
     end
 
     -- Click handler - show font menu
-    dropdown:SetScript("OnClick", function(self)
-        local menu = CreateFrame("Frame", nil, self, "BackdropTemplate")
+    dropdown:SetScript("OnClick", function()
+        local menu = CreateFrame("Frame", nil, dropdown, "BackdropTemplate")
         menu:SetFrameStrata("TOOLTIP")
-        menu:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, -2)
+        menu:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -2)
 
         menu:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8X8",
@@ -2546,7 +2518,7 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
         end)
 
         local menuHeight = 8
-        local menuWidth = self:GetWidth()
+        local menuWidth = dropdown:GetWidth()
 
         for i, key in ipairs(sortedKeys) do
             local itemLabel = values[key] or tostring(key)
@@ -2558,7 +2530,7 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
             local itemText = item:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
             itemText:SetPoint("LEFT", 8, 0)
             itemText:SetText(itemLabel)
-            
+
             -- Try to show in actual font
             pcall(function()
                 itemText:SetFont(key, 11)
@@ -2599,21 +2571,21 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
             menu:SetPropagateKeyboardInput(false)
         end
         menu:EnableKeyboard(true)
-        menu:SetScript("OnKeyDown", function(self, key)
+        menu:SetScript("OnKeyDown", function(_, key)
             if key == "ESCAPE" then
-                self:Hide()
+                menu:Hide()
             else
                 if not InCombatLockdown() then
-                    self:SetPropagateKeyboardInput(true)
+                    menu:SetPropagateKeyboardInput(true)
                 end
             end
         end)
 
         -- Close on click outside
-        menu:SetScript("OnUpdate", function(self)
-            if not MouseIsOver(self) and not MouseIsOver(dropdown) then
+        menu:SetScript("OnUpdate", function()
+            if not MouseIsOver(menu) and not MouseIsOver(dropdown) then
                 if IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton") then
-                    self:Hide()
+                    menu:Hide()
                 end
             end
         end)
@@ -2632,7 +2604,7 @@ end
 -- @param parent string - Parent category name (optional)
 -- @param ... - Path to group (optional)
 -- @return Frame - Settings frame
-function ConfigDialogMixin:AddToBlizOptions(appName, name, parent, ...)
+function ConfigDialogMixin:AddToBlizOptions(appName, name, parent)
     local registry = Config.Registry
 
     if not registry then
@@ -2649,7 +2621,7 @@ function ConfigDialogMixin:AddToBlizOptions(appName, name, parent, ...)
     -- Create the settings panel frame
     local panel = CreateFrame("Frame", nil, UIParent)
     panel.name = name or appName
-    
+
     -- Store reference to dialog mixin for use in callbacks
     local dialogInstance = self
 
@@ -2674,42 +2646,27 @@ function ConfigDialogMixin:AddToBlizOptions(appName, name, parent, ...)
             openBtn:SetSize(120, 22)
             openBtn:SetText("Open Config")
             openBtn:SetScript("OnClick", function()
-                -- Hide the settings panel
-                if SettingsPanel then
-                    SettingsPanel:Hide()
-                elseif InterfaceOptionsFrame then
-                    InterfaceOptionsFrame:Hide()
-                end
+                SettingsPanel:Hide()
                 dialogInstance:Open(appName)
             end)
         end
     end)
 
     -- Register with category system
-    if Settings and Settings.RegisterCanvasLayoutCategory then
-        -- WoW 10.0+ Settings API
-        local category
-        if parent then
-            local parentCategory = Settings.GetCategory(parent)
-            if parentCategory then
-                category = Settings.RegisterCanvasLayoutSubcategory(parentCategory, panel, panel.name)
-            end
+    local category
+    if parent then
+        local parentCategory = Settings.GetCategory(parent)
+        if parentCategory then
+            category = Settings.RegisterCanvasLayoutSubcategory(parentCategory, panel, panel.name)
         end
-
-        if not category then
-            category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
-        end
-
-        Settings.RegisterAddOnCategory(category)
-        self.blizPanels[appName] = {panel = panel, category = category}
-    else
-        -- Legacy interface options
-        if parent then
-            panel.parent = parent
-        end
-        InterfaceOptions_AddCategory(panel)
-        self.blizPanels[appName] = {panel = panel}
     end
+
+    if not category then
+        category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
+    end
+
+    Settings.RegisterAddOnCategory(category)
+    self.blizPanels[appName] = {panel = panel, category = category}
 
     return panel
 end

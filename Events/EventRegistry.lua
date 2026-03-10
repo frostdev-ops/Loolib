@@ -25,6 +25,7 @@ local CreateFromMixins = Loolib.CreateFromMixins
 local CreateFrame = CreateFrame
 local ipairs = ipairs
 local pairs = pairs
+---@diagnostic disable-next-line: undefined-field
 local unpack = unpack or table.unpack
 
 --[[--------------------------------------------------------------------

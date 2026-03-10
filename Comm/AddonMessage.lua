@@ -18,6 +18,7 @@
 
 local LibStub = LibStub
 local assert = assert
+local C_Timer = C_Timer
 local CreateFrame = CreateFrame
 local C_ChatInfo = C_ChatInfo
 local Enum = Enum
@@ -177,7 +178,7 @@ local commFrame = nil
 
 -- OnUpdate accumulators
 local onUpdateAccumulator = 0
-local cleanupAccumulator  = 0
+local ALERT_MAX_PER_TICK = 8
 
 --[[--------------------------------------------------------------------
     Internal Helper Functions
@@ -190,10 +191,6 @@ local function GenerateMessageID()
     end
     -- 4 hex chars: 65K IDs, same header size as before
     return string.format("%04X", messageIDCounter)
-end
-
-local function TotalQueueSize()
-    return queues.ALERT:Size() + queues.NORMAL:Size() + queues.BULK:Size()
 end
 
 local function GetEffectiveThrottleRate()
@@ -380,7 +377,7 @@ local function ProcessSendQueue()
     -- Respect throttle pause (WoW told us we're sending too fast)
     if now < throttlePauseUntil then return end
 
-    if TotalQueueSize() == 0 then
+    if totalQueued == 0 then
         if commFrame then commFrame:Hide() end
         return
     end
@@ -390,7 +387,8 @@ local function ProcessSendQueue()
     -- tryDrain: drain messages from a queue respecting budget constraints.
     -- ignoreBudget=true (ALERT): send regardless of allowance.
     -- isBulk=true (BULK): each message costs 4x against budget.
-    local function tryDrain(queue, isBulk, ignoreBudget)
+    local function tryDrain(queue, isBulk, ignoreBudget, maxMessages)
+        local drained = 0
         while queue:Size() > 0 do
             local item      = queue:Peek()
             local msgLen    = #item.text + MSG_OVERHEAD
@@ -428,15 +426,20 @@ local function ProcessSendQueue()
             if item.callback then
                 pcall(item.callback, item.arg, #item.text)
             end
+
+            drained = drained + 1
+            if maxMessages and drained >= maxMessages then
+                return
+            end
         end
     end
 
     -- Drain order: ALERT (all, ignores budget) → NORMAL → BULK
-    tryDrain(queues.ALERT,  false, true)
+    tryDrain(queues.ALERT,  false, true, ALERT_MAX_PER_TICK)
     if allowance > 0 then tryDrain(queues.NORMAL, false, false) end
     if allowance > 0 then tryDrain(queues.BULK,   true,  false) end
 
-    if TotalQueueSize() == 0 and commFrame then
+    if totalQueued == 0 and commFrame then
         commFrame:Hide()
     end
 end
@@ -452,16 +455,10 @@ end
 
 local function OnUpdate(self, elapsed)
     onUpdateAccumulator = onUpdateAccumulator + elapsed
-    cleanupAccumulator  = cleanupAccumulator  + elapsed
 
     if onUpdateAccumulator >= ONUPDATE_INTERVAL then
         onUpdateAccumulator = 0
         ProcessSendQueue()
-    end
-
-    if cleanupAccumulator >= CLEANUP_INTERVAL then
-        cleanupAccumulator = 0
-        CleanupStalePending()
     end
 end
 
@@ -490,6 +487,10 @@ local function InitializeCommFrame()
             throttleAvailable = math.max(0,
                 throttleAvailable - (#message + MSG_OVERHEAD))
         end
+    end)
+
+    commFrame.cleanupTicker = commFrame.cleanupTicker or C_Timer.NewTicker(CLEANUP_INTERVAL, function()
+        CleanupStalePending()
     end)
 
     -- Start hidden; shown on first enqueue
@@ -577,7 +578,7 @@ function CommMixin:SendCommMessage(prefix, text, distribution, target, prio, cal
     if not queues[prio] then prio = PRIORITY_NORMAL end
 
     -- Backpressure: drop BULK messages when queue is full; warn for NORMAL
-    local currentSize = TotalQueueSize()
+    local currentSize = totalQueued
     if currentSize >= MAX_QUEUE_SIZE then
         if prio == PRIORITY_BULK then
             Loolib:Debug("AddonMessage: queue full, dropping BULK message for prefix", prefix)
@@ -622,7 +623,7 @@ end
 --- Get the total number of queued messages across all priority queues
 -- @return number
 function CommMixin:GetQueuedMessageCount()
-    return TotalQueueSize()
+    return totalQueued
 end
 
 --- Clear all queued messages
@@ -658,7 +659,7 @@ function CommMixin:ClearSendQueueForPrefix(prefix)
                   + clearQueue(queues.NORMAL)
                   + clearQueue(queues.BULK)
     totalQueued = totalQueued - removed
-    if TotalQueueSize() == 0 and commFrame then commFrame:Hide() end
+    if totalQueued == 0 and commFrame then commFrame:Hide() end
 end
 
 --- Get current throttle state
@@ -677,13 +678,13 @@ end
 --- Check if the send queue is at capacity (BULK messages will be dropped)
 -- @return boolean
 function CommMixin:IsQueueFull()
-    return TotalQueueSize() >= MAX_QUEUE_SIZE
+    return totalQueued >= MAX_QUEUE_SIZE
 end
 
 --- Get current queue pressure as a ratio from 0.0 (empty) to 1.0 (full)
 -- @return number
 function CommMixin:GetQueuePressure()
-    return math.min(1.0, TotalQueueSize() / MAX_QUEUE_SIZE)
+    return math.min(1.0, totalQueued / MAX_QUEUE_SIZE)
 end
 
 --[[--------------------------------------------------------------------

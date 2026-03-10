@@ -55,6 +55,7 @@ end
     Components that want to fire custom events should include this mixin.
 ----------------------------------------------------------------------]]
 
+---@class LoolibCallbackRegistryMixin
 local CallbackRegistryMixin = {}
 
 --- Initialize the callback registry

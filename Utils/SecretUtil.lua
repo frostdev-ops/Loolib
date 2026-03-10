@@ -110,6 +110,7 @@ end
 -- @return string|nil englishClass
 -- @return number|nil classID
 function SecretUtil.SafeUnitClass(unit)
+    ---@type string?, string?, number?
     local localizedClass, englishClass, classID = UnitClass(unit)
 
     if not issecretvalue then return localizedClass, englishClass, classID end
@@ -124,6 +125,7 @@ end
 -- @param index number - Raid roster index
 -- @return string|nil name, ... (all 14 returns from GetRaidRosterInfo)
 function SecretUtil.SafeGetRaidRosterInfo(index)
+    ---@type string?, number?, number?, number?, string?, string?, string?, boolean?, boolean?, string?, boolean?, string?
     local name, rank, subgroup, level, class, fileName, zone,
           online, isDead, role, isML, combatRole = GetRaidRosterInfo(index)
 
@@ -154,6 +156,7 @@ end
 function SecretUtil.SafeGetPlayerInfoByGUID(guid)
     if not GetPlayerInfoByGUID then return nil end
 
+    ---@type string?, string?, string?, string?, number?, string?, string?
     local localizedClass, englishClass, localizedRace, englishRace,
           sex, name, realmName = GetPlayerInfoByGUID(guid)
 
@@ -169,6 +172,7 @@ function SecretUtil.SafeGetPlayerInfoByGUID(guid)
     if issecretvalue(englishClass) then englishClass = nil end
     if issecretvalue(localizedRace) then localizedRace = nil end
     if issecretvalue(englishRace) then englishRace = nil end
+    ---@diagnostic disable-next-line: cast-local-type
     if realmName and issecretvalue(realmName) then realmName = nil end
 
     return localizedClass, englishClass, localizedRace, englishRace,

@@ -23,7 +23,7 @@ local table = table
 local tonumber = tonumber
 local tostring = tostring
 local type = type
-local unpack = unpack or table.unpack
+local unpack = unpack or rawget(table, "unpack")
 local wipe = wipe
 
 local Loolib = LibStub("Loolib")
@@ -73,15 +73,6 @@ local ESCAPE_MAP = {
     ["^"] = "\001\005",     -- ^ -> \001\005
 }
 
--- Unescape mapping (reverse)
-local UNESCAPE_MAP = {
-    ["\001"] = "\001",
-    ["\002"] = "\002",
-    ["\003"] = "\003",
-    ["\004"] = "\004",
-    ["\005"] = "^",
-}
-
 -- Byte constants for zero-garbage parsing
 local MARKER_BYTE = string.byte("^")  -- 94
 local ESCAPE_BYTE = 1  -- \001
@@ -116,13 +107,6 @@ local function EscapeString(str)
     return str:gsub(CONTROL_CHARS, ESCAPE_MAP)
 end
 
-local function UnescapeString(str)
-    -- Replace \001X sequences with their unescaped values
-    return str:gsub("\001(.)", function(c)
-        return UNESCAPE_MAP[c] or c
-    end)
-end
-
 --[[--------------------------------------------------------------------
     Serialization Implementation
 ----------------------------------------------------------------------]]
@@ -144,7 +128,7 @@ end
 -- Append number directly to output table
 local function SerializeNumber(value, output)
     local n = #output
-    
+
     -- Handle special cases
     if value == math.huge then
         output[n + 1] = MARKER
@@ -397,6 +381,7 @@ end
 -- @param ... - Values to serialize (any serializable type)
 -- @return string - The serialized representation
 function SerializerMixin:Serialize(...)
+    local _ = self
     local count = select("#", ...)
     if count == 0 then
         return MARKER .. PROTOCOL_VERSION
@@ -418,6 +403,7 @@ end
 -- @param str string - The serialized string
 -- @return boolean, ... - Success flag followed by deserialized values
 function SerializerMixin:Deserialize(str)
+    local _ = self
     if type(str) ~= "string" then
         return false, "Input must be a string"
     end

@@ -6,13 +6,14 @@
     Combines registry, command, dialog, and profile helpers.
 ----------------------------------------------------------------------]]
 
-local _G = _G
 local ipairs = ipairs
 local select = select
 local string_format = string.format
 local type = type
 
 local StaticPopup_Show = StaticPopup_Show
+
+---@diagnostic disable: undefined-doc-name
 
 local Loolib = LibStub("Loolib")
 local Config = Loolib:GetOrCreateModule("Config")
@@ -28,6 +29,9 @@ Loolib.Config.Compat = Config.Compat or {}
     namespace-scoped API instead of scattering direct global writes.
 ----------------------------------------------------------------------]]
 
+---@param commandId string
+---@param slashcmd string
+---@param handler function
 function Config.Compat:RegisterSlashCommand(commandId, slashcmd, handler)
     if type(commandId) ~= "string" or commandId == "" then
         error("Loolib.Config.Compat:RegisterSlashCommand: commandId must be a non-empty string", 2)
@@ -39,14 +43,16 @@ function Config.Compat:RegisterSlashCommand(commandId, slashcmd, handler)
         error("Loolib.Config.Compat:RegisterSlashCommand: handler must be a function", 2)
     end
 
-    _G.SlashCmdList = _G.SlashCmdList or {}
+    SlashCmdList = SlashCmdList or {}
 
     _G["SLASH_" .. commandId .. "1"] = "/" .. slashcmd
-    _G.SlashCmdList[commandId] = handler
+    SlashCmdList[commandId] = handler
 
     return commandId
 end
 
+---@param commandId string
+---@return boolean
 function Config.Compat:UnregisterSlashCommand(commandId)
     if type(commandId) ~= "string" or commandId == "" then
         return false
@@ -58,12 +64,15 @@ function Config.Compat:UnregisterSlashCommand(commandId)
         index = index + 1
     end
 
-    if _G.SlashCmdList then
-        _G.SlashCmdList[commandId] = nil
+    if SlashCmdList then
+        SlashCmdList[commandId] = nil
     end
     return true
 end
 
+---@param popupName string
+---@param definition StaticPopupInfo
+---@return StaticPopupInfo
 function Config.Compat:EnsureStaticPopup(popupName, definition)
     if type(popupName) ~= "string" or popupName == "" then
         error("Loolib.Config.Compat:EnsureStaticPopup: popupName must be a non-empty string", 2)
@@ -72,13 +81,18 @@ function Config.Compat:EnsureStaticPopup(popupName, definition)
         error("Loolib.Config.Compat:EnsureStaticPopup: definition must be a table", 2)
     end
 
-    _G.StaticPopupDialogs = _G.StaticPopupDialogs or {}
-    _G.StaticPopupDialogs[popupName] = _G.StaticPopupDialogs[popupName] or definition
-    return _G.StaticPopupDialogs[popupName]
+    StaticPopupDialogs = StaticPopupDialogs or {}
+    StaticPopupDialogs[popupName] = StaticPopupDialogs[popupName] or definition
+    return StaticPopupDialogs[popupName]
 end
 
+---@param popupName string
+---@param text string|nil
+---@param data any
+---@return Frame|nil
 function Config.Compat:ShowStaticPopup(popupName, text, data)
-    local dialogs = _G.StaticPopupDialogs
+    local dialogs = StaticPopupDialogs
+    ---@type StaticPopupInfo|nil
     local dialog = dialogs and dialogs[popupName]
     if not dialog then
         return nil
@@ -208,9 +222,9 @@ function Config:Close(appName)
     end
 end
 
-function Config:AddToBlizOptions(appName, name, parent, ...)
+function Config:AddToBlizOptions(appName, name, parent)
     self:Initialize()
-    return self.Dialog and self.Dialog:AddToBlizOptions(appName, name, parent, ...)
+    return self.Dialog and self.Dialog:AddToBlizOptions(appName, name, parent)
 end
 
 --[[--------------------------------------------------------------------
