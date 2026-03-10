@@ -18,7 +18,7 @@ local Loolib = LibStub("Loolib")
 local LoolibCreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for PopupMenu")
 local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for PopupMenu")
 
-local LoolibCreatePopupMenu  -- forward declaration
+local CreatePopupMenu  -- forward declaration
 
 --[[--------------------------------------------------------------------
     MenuItem Structure
@@ -49,6 +49,13 @@ Example MenuItem structure: {
 
 ---@class LoolibPopupMenuMixin : Frame
 local LoolibPopupMenuMixin = {}
+
+local function GetOptionValue(option)
+    if option.value ~= nil then
+        return option.value
+    end
+    return option.text
+end
 
 -- ============================================================
 -- INITIALIZATION
@@ -415,12 +422,12 @@ function LoolibPopupMenuMixin:_CreateItem(option, index)
 
             -- Call item callback if exists
             if option.func then
-                option.func(option.value or option.text)
+                option.func(GetOptionValue(option))
             end
 
             -- Call menu callback
             if self.parentMenu._onSelectCallback then
-                self.parentMenu._onSelectCallback(option.value or option.text, option)
+                self.parentMenu._onSelectCallback(GetOptionValue(option), option)
             end
 
             -- Close menu unless keepOpen
@@ -450,10 +457,11 @@ function LoolibPopupMenuMixin:_ShowSubmenu(parentItem, subOptions)
     end
 
     -- Create submenu
-    local submenu = LoolibCreatePopupMenu()
+    local submenu = CreatePopupMenu()
     submenu._parentMenu = self
     submenu._menuLevel = self._menuLevel + 1
     submenu:SetOptions(subOptions)
+    submenu:OnSelect(self._onSelectCallback)
 
     -- Position to the right of parent item
     submenu:ShowAt(parentItem, "TOPLEFT", "TOPRIGHT", 0, 0)
@@ -522,7 +530,7 @@ end
 ---@param parent Frame? Parent frame (defaults to UIParent)
 ---@param name string? Optional global name
 ---@return Frame
-LoolibCreatePopupMenu = function(parent, name)
+CreatePopupMenu = function(parent, name)
     local menu = CreateFrame("Frame", name, parent or UIParent, BackdropTemplateMixin and "BackdropTemplate")
     LoolibMixin(menu, LoolibPopupMenuMixin)
     menu:OnLoad()
@@ -536,7 +544,7 @@ local sharedMenu = nil
 ---@return Frame
 local function LoolibGetSharedPopupMenu()
     if not sharedMenu then
-        sharedMenu = LoolibCreatePopupMenu()
+        sharedMenu = CreatePopupMenu()
     end
     return sharedMenu
 end
@@ -634,14 +642,14 @@ end
 local popupMenuModule = {
     Mixin = LoolibPopupMenuMixin,
     BuilderMixin = LoolibPopupMenuBuilderMixin,
-    Create = LoolibCreatePopupMenu,
+    Create = CreatePopupMenu,
     GetShared = LoolibGetSharedPopupMenu,
     Builder = LoolibPopupMenu,
 }
 
 local ui = Loolib.UI or Loolib:GetOrCreateModule("UI")
 ui.PopupMenu = popupMenuModule
-ui.CreatePopupMenu = LoolibCreatePopupMenu
+ui.CreatePopupMenu = CreatePopupMenu
 ui.GetSharedPopupMenu = LoolibGetSharedPopupMenu
 
 Loolib:RegisterModule("Widgets.PopupMenu", popupMenuModule)

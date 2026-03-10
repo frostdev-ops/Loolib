@@ -6,6 +6,18 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+local UI = Loolib.UI or {}
+local PopupMenu = UI.PopupMenu or {}
+
+local function GetSharedMenu()
+    assert(type(UI.GetSharedPopupMenu) == "function", "Loolib.UI.GetSharedPopupMenu is required for PopupMenu examples")
+    return UI.GetSharedPopupMenu()
+end
+
+local function CreateBuilder()
+    assert(type(PopupMenu.Builder) == "function", "Loolib.UI.PopupMenu.Builder is required for PopupMenu examples")
+    return PopupMenu.Builder()
+end
 
 --[[--------------------------------------------------------------------
     Example 1: Simple Right-Click Menu
@@ -13,7 +25,7 @@ local Loolib = LibStub("Loolib")
 
 local function Example1_SimpleMenu()
     -- Get the shared menu instance
-    local menu = LoolibGetSharedPopupMenu()
+    local menu = GetSharedMenu()
 
     -- Configure options
     menu:SetOptions({
@@ -37,7 +49,7 @@ end
 ----------------------------------------------------------------------]]
 
 local function Example2_Submenus()
-    local menu = LoolibGetSharedPopupMenu()
+    local menu = GetSharedMenu()
 
     menu:SetOptions({
         {text = "File", isTitle = true},
@@ -63,7 +75,7 @@ end
 ----------------------------------------------------------------------]]
 
 local function Example3_ChecksAndRadios()
-    local menu = LoolibGetSharedPopupMenu()
+    local menu = GetSharedMenu()
 
     menu:SetOptions({
         {text = "View Options", isTitle = true},
@@ -92,7 +104,7 @@ end
 ----------------------------------------------------------------------]]
 
 local function Example4_DisabledAndTooltips()
-    local menu = LoolibGetSharedPopupMenu()
+    local menu = GetSharedMenu()
 
     menu:SetOptions({
         {text = "Copy", value = "copy", tooltip = "Copy the selected text"},
@@ -115,7 +127,7 @@ end
 ----------------------------------------------------------------------]]
 
 local function Example5_FluentAPI()
-    LoolibPopupMenu()
+    CreateBuilder()
         :AddTitle("Actions")
         :AddOption("Edit", "edit", {icon = "Interface\\Icons\\INV_Misc_Note_01"})
         :AddOption("Delete", "delete", {colorCode = "|cFFFF0000"})
@@ -146,7 +158,7 @@ local function Example6_FrameRightClick()
     -- Right-click handler
     frame:SetScript("OnMouseDown", function(self, button)
         if button == "RightButton" then
-            LoolibPopupMenu()
+            CreateBuilder()
                 :AddTitle("Frame Options")
                 :AddOption("Move", "move")
                 :AddOption("Resize", "resize")
@@ -170,7 +182,10 @@ end
 
 local function Example7_CustomInstance()
     -- Create your own menu instance if you need multiple menus
-    local myMenu = LoolibCreatePopupMenu()
+    local myMenu = (Loolib.UI and Loolib.UI.CreatePopupMenu and Loolib.UI.CreatePopupMenu()) or nil
+    if not myMenu then
+        error("Loolib.UI.CreatePopupMenu is required for this example")
+    end
 
     myMenu:SetOptions({
         {text = "Option 1", value = 1},
@@ -191,7 +206,7 @@ end
 ----------------------------------------------------------------------]]
 
 local function Example8_AnchoredMenu(anchorFrame)
-    local menu = LoolibGetSharedPopupMenu()
+    local menu = GetSharedMenu()
 
     menu:SetOptions({
         {text = "Above", value = "above"},
@@ -213,7 +228,7 @@ end
 ----------------------------------------------------------------------]]
 
 local function Example9_ComplexNested()
-    LoolibPopupMenu()
+    CreateBuilder()
         :AddTitle("Edit")
         :AddOption("Undo", "undo", {icon = "Interface\\Buttons\\UI-RotationLeft-Button-Up"})
         :AddOption("Redo", "redo", {icon = "Interface\\Buttons\\UI-RotationRight-Button-Up"})
@@ -248,7 +263,7 @@ end
 ----------------------------------------------------------------------]]
 
 local function Example10_ItemCallbacks()
-    local menu = LoolibGetSharedPopupMenu()
+    local menu = GetSharedMenu()
 
     menu:SetOptions({
         {text = "Quick Action 1", func = function()

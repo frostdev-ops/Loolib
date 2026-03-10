@@ -7,6 +7,15 @@
     Usage: /lootestmenu
 ----------------------------------------------------------------------]]
 
+local Loolib = LibStub("Loolib")
+local UI = Loolib.UI or {}
+local PopupMenu = UI.PopupMenu or {}
+
+local function CreateBuilder()
+    assert(type(PopupMenu.Builder) == "function", "Loolib.UI.PopupMenu.Builder is required for PopupMenu test")
+    return PopupMenu.Builder()
+end
+
 -- Create test button on screen
 local testButton = CreateFrame("Button", "LoolibPopupMenuTestButton", UIParent, "UIPanelButtonTemplate")
 testButton:SetSize(150, 30)
@@ -20,7 +29,7 @@ bg:SetColorTexture(0.2, 0.3, 0.5, 0.8)
 
 -- Test function
 local function ShowTestMenu()
-    LoolibPopupMenu()
+    CreateBuilder()
         :AddTitle("Test Menu")
         :AddOption("Simple Action", "action1", {
             icon = "Interface\\Icons\\INV_Misc_QuestionMark",
@@ -82,7 +91,7 @@ end)
 
 -- Left-click shows at different position
 testButton:SetScript("OnClick", function(self)
-    LoolibPopupMenu()
+    CreateBuilder()
         :AddTitle("Anchored Menu")
         :AddOption("This menu is", "1")
         :AddOption("anchored to", "2")

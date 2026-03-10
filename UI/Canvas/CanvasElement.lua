@@ -12,7 +12,8 @@
 
     Usage:
         -- Create a canvas element
-        local element = LoolibCreateCanvasElement(LOOLIB_CANVAS_ELEMENT_TYPES.DOT)
+        local CanvasElement = Loolib:GetModule("CanvasElement")
+        local element = CanvasElement.Create(CanvasElement.TYPES.DOT)
         element:SetPosition(100, 150)
                :SetColor(4)
                :SetSize(8)
@@ -32,7 +33,7 @@ local Loolib = LibStub("Loolib")
 
 -- Local references for performance (removed unused aliases)
 
-local LoolibCreateCanvasElement  -- forward declaration
+local CreateCanvasElement  -- forward declaration
 
 --[[--------------------------------------------------------------------
     ELEMENT TYPES
@@ -368,7 +369,7 @@ end
 --- Clone element (deep copy)
 --- @return table New element with same properties
 function LoolibCanvasElementMixin:Clone()
-    local clone = LoolibCreateCanvasElement(self._elementType)
+    local clone = CreateCanvasElement(self._elementType)
     local data = self:Serialize()
     clone:Deserialize(data)
     clone._isLocked = self._isLocked
@@ -471,7 +472,7 @@ end
 --- Create a new canvas element with mixin applied
 --- @param elementType number Element type from LOOLIB_CANVAS_ELEMENT_TYPES
 --- @return table New canvas element
-LoolibCreateCanvasElement = function(elementType)
+CreateCanvasElement = function(elementType)
     local element = {}
     Loolib.Mixin(element, LoolibCanvasElementMixin)
     element:OnLoad()
@@ -493,7 +494,7 @@ Loolib:RegisterModule("CanvasElement", {
     COLORS = LOOLIB_CANVAS_COLORS,
 
     -- Factory
-    Create = LoolibCreateCanvasElement,
+    Create = CreateCanvasElement,
 
     -- Utilities
     GetColor = LoolibGetCanvasColor,

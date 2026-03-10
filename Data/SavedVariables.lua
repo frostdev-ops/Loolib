@@ -28,6 +28,16 @@ local sort = table.sort
 local wipe = wipe
 local gmatch = string.gmatch
 
+local function GuardSecretValue(value, fallback)
+    if value == nil then
+        return fallback
+    end
+    if issecretvalue and issecretvalue(value) then
+        return fallback
+    end
+    return value
+end
+
 local function GetRequiredModule(name)
     local module = Loolib:GetModule(name)
     if not module then
@@ -119,9 +129,12 @@ function SavedVariablesMixin:Init(globalName, defaults, defaultProfile)
     frame:RegisterEvent("PLAYER_LOGOUT")
     frame:SetScript("OnEvent", function(_, event, _addonName)
         if event == "ADDON_LOADED" then
-            -- We can't know which addon this is for, so we check if our global exists
-            if _G[globalName] ~= nil or not self.initialized then
+            -- We can't know which addon this is for, so wait until the saved variable exists.
+            if not self.initialized and _G[globalName] ~= nil then
                 self:OnAddonLoaded()
+                if self.initialized then
+                    frame:UnregisterEvent("ADDON_LOADED")
+                end
             end
         elseif event == "PLAYER_LOGOUT" then
             self:OnPlayerLogout()
@@ -131,6 +144,9 @@ function SavedVariablesMixin:Init(globalName, defaults, defaultProfile)
     -- Also try immediate initialization if already loaded
     if _G[globalName] ~= nil then
         self:OnAddonLoaded()
+        if self.initialized then
+            frame:UnregisterEvent("ADDON_LOADED")
+        end
     end
 end
 
@@ -144,11 +160,11 @@ function SavedVariablesMixin:GenerateScopeKeys()
         return  -- Already generated
     end
 
-    local playerName = UnitName("player")
-    local realmName = GetRealmName()
-    local className = select(2, UnitClass("player"))  -- Returns "WARRIOR", "MAGE", etc.
-    local raceName = select(2, UnitRace("player"))    -- Returns "Human", "Orc", etc.
-    local factionName = UnitFactionGroup("player")    -- Returns "Alliance" or "Horde"
+    local playerName = GuardSecretValue(UnitName("player"), "Player")
+    local realmName = GuardSecretValue(GetRealmName(), "UnknownRealm")
+    local className = GuardSecretValue(select(2, UnitClass("player")), "UNKNOWNCLASS")
+    local raceName = GuardSecretValue(select(2, UnitRace("player")), "UNKNOWNRACE")
+    local factionName = GuardSecretValue(UnitFactionGroup("player"), "Neutral")
 
     self.scopeKeys.char = playerName .. " - " .. realmName
     self.scopeKeys.realm = realmName
