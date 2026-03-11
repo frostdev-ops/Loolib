@@ -294,6 +294,42 @@ function FunctionUtil.Debounce(func, delay)
     end
 end
 
+--- Create a throttled function that fires on the leading edge and schedules
+-- exactly one trailing call if invoked during the cooldown period.
+-- Combines immediate response (leading) with a guaranteed trailing fire
+-- after a burst. Ideal for hot-path refresh functions where both the first
+-- and last call in a burst must execute (e.g. CouncilTable candidate refresh).
+-- @param func function - The function to throttle
+-- @param interval number - Minimum seconds between leading calls
+-- @return function - A throttled version
+function FunctionUtil.ThrottleWithTrailing(func, interval)
+    local lastCall = 0
+    local trailingTimer = nil
+
+    return function(...)
+        local now = GetTime()
+        if now - lastCall >= interval then
+            -- Leading edge: fire immediately, cancel any scheduled trailing call
+            if trailingTimer then
+                trailingTimer:Cancel()
+                trailingTimer = nil
+            end
+            lastCall = now
+            return func(...)
+        end
+
+        -- In cooldown: schedule exactly one trailing call (ignore extra calls)
+        if not trailingTimer then
+            local remaining = interval - (now - lastCall)
+            trailingTimer = C_Timer.NewTimer(remaining, function()
+                trailingTimer = nil
+                lastCall = GetTime()
+                func()
+            end)
+        end
+    end
+end
+
 --[[--------------------------------------------------------------------
     Delayed Execution
 ----------------------------------------------------------------------]]
