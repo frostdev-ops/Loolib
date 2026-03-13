@@ -1333,33 +1333,107 @@ function ConfigDialogMixin:RenderOptions(dialog, group, rootOptions, registry, p
 
     -- Render each option
     local sorted = registry:GetSortedOptions(group)
+    local numColumns = group.columns or 1
 
-    for _, item in ipairs(sorted) do
-        local opt = item.option
-        local currentPath = {}
-        for _, p in ipairs(path) do currentPath[#currentPath + 1] = p end
-        currentPath[#currentPath + 1] = item.key
+    if numColumns > 1 then
+        local innerContentWidth = contentWidth - CONTENT_PADDING * 2
+        local colWidth = innerContentWidth / numColumns
+        local col = 0
+        local rowStartOffset = yOffset
+        local rowMaxHeight = 0
 
-        local info = registry:BuildInfoTable(rootOptions, opt, appName, unpack(currentPath))
+        for _, item in ipairs(sorted) do
+            local opt = item.option
+            local currentPath = {}
+            for _, p in ipairs(path) do currentPath[#currentPath + 1] = p end
+            currentPath[#currentPath + 1] = item.key
 
-        local optType = opt.type
+            local info = registry:BuildInfoTable(rootOptions, opt, appName, unpack(currentPath))
+            local optType = opt.type
 
-        -- Handle inline groups
-        if optType == "group" and opt.inline then
-            -- Check if inline group has any visible children
-            local showInlineGroup = not registry:IsHidden(opt, info, "dialog")
-            if showInlineGroup and hasActiveFilters then
-                showInlineGroup = self:HasVisibleChildren(opt, rootOptions, registry, currentPath, filterState, appName)
-            end
-            if showInlineGroup then
-                yOffset = self:RenderInlineGroup(optionsContent, opt, rootOptions, registry, currentPath, yOffset, contentWidth, appName)
+            if optType == "group" and opt.inline then
+                local showInlineGroup = not registry:IsHidden(opt, info, "dialog")
+                if showInlineGroup and hasActiveFilters then
+                    showInlineGroup = self:HasVisibleChildren(opt, rootOptions, registry, currentPath, filterState, appName)
+                end
+                if showInlineGroup then
+                    if rowMaxHeight > 0 then
+                        yOffset = rowStartOffset - rowMaxHeight - WIDGET_SPACING
+                        rowStartOffset = yOffset
+                        col = 0
+                        rowMaxHeight = 0
+                    end
+
+                    yOffset = self:RenderInlineGroup(optionsContent, opt, rootOptions, registry, currentPath, yOffset, contentWidth, appName)
+                    rowStartOffset = yOffset
+                    optionsRendered = optionsRendered + 1
+                end
+            elseif optType ~= "group" and self:ShouldShowOption(opt, info, filterState, registry) then
+                local widthMod = WIDTH_MULTIPLIERS[opt.width] or WIDTH_MULTIPLIERS.normal
+                if opt.width == "full" then widthMod = 1.0 end
+                local colSpan = math.max(1, math.min(numColumns, math.floor(widthMod * numColumns + 0.5)))
+
+                if col + colSpan > numColumns then
+                    yOffset = rowStartOffset - rowMaxHeight - WIDGET_SPACING
+                    rowStartOffset = yOffset
+                    col = 0
+                    rowMaxHeight = 0
+                end
+
+                local cellX = CONTENT_PADDING + col * colWidth
+                local cellWidth = colSpan * colWidth
+                local cell = CreateFrame("Frame", nil, optionsContent)
+                cell:SetPoint("TOPLEFT", cellX, rowStartOffset)
+                cell:SetSize(cellWidth, 1)
+
+                local newY = self:RenderWidget(cell, opt, registry, info, 0, cellWidth)
+                local widgetH = math.abs(newY)
+                cell:SetHeight(widgetH)
+
+                rowMaxHeight = math.max(rowMaxHeight, widgetH)
+                col = col + colSpan
                 optionsRendered = optionsRendered + 1
+
+                if col >= numColumns then
+                    yOffset = rowStartOffset - rowMaxHeight - WIDGET_SPACING
+                    rowStartOffset = yOffset
+                    col = 0
+                    rowMaxHeight = 0
+                end
             end
-        elseif optType ~= "group" then
-            -- Use filter predicate for non-group options
-            if self:ShouldShowOption(opt, info, filterState, registry) then
-                yOffset = self:RenderWidget(optionsContent, opt, registry, info, yOffset, contentWidth)
-                optionsRendered = optionsRendered + 1
+        end
+
+        if rowMaxHeight > 0 then
+            yOffset = rowStartOffset - rowMaxHeight
+        end
+    else
+        for _, item in ipairs(sorted) do
+            local opt = item.option
+            local currentPath = {}
+            for _, p in ipairs(path) do currentPath[#currentPath + 1] = p end
+            currentPath[#currentPath + 1] = item.key
+
+            local info = registry:BuildInfoTable(rootOptions, opt, appName, unpack(currentPath))
+
+            local optType = opt.type
+
+            -- Handle inline groups
+            if optType == "group" and opt.inline then
+                -- Check if inline group has any visible children
+                local showInlineGroup = not registry:IsHidden(opt, info, "dialog")
+                if showInlineGroup and hasActiveFilters then
+                    showInlineGroup = self:HasVisibleChildren(opt, rootOptions, registry, currentPath, filterState, appName)
+                end
+                if showInlineGroup then
+                    yOffset = self:RenderInlineGroup(optionsContent, opt, rootOptions, registry, currentPath, yOffset, contentWidth, appName)
+                    optionsRendered = optionsRendered + 1
+                end
+            elseif optType ~= "group" then
+                -- Use filter predicate for non-group options
+                if self:ShouldShowOption(opt, info, filterState, registry) then
+                    yOffset = self:RenderWidget(optionsContent, opt, registry, info, yOffset, contentWidth)
+                    optionsRendered = optionsRendered + 1
+                end
             end
         end
     end
@@ -2197,6 +2271,8 @@ function ConfigDialogMixin:RenderExecute(parent, option, name, desc, registry, i
                 Loolib:Error("Execute error:", err)
                 -- Notify user
                 print("|cffff0000Error executing " .. name .. ":|r " .. tostring(err))
+            elseif type(registry.NotifyChange) == "function" and info and info[1] then
+                registry:NotifyChange(info[1])
             end
         end
     end)
