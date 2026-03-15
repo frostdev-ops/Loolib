@@ -17,6 +17,25 @@ local LoolibCreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFro
 local LoolibCallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib.CallbackRegistryMixin is required for ColorSwatch")
 local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for ColorSwatch")
 
+-- Cache globals
+local error = error
+local ipairs = ipairs
+local math_abs = math.abs
+local math_floor = math.floor
+local string_format = string.format
+local table_insert = table.insert
+local table_remove = table.remove
+local tonumber = tonumber
+local tostring = tostring
+local type = type
+local wipe = wipe
+
+-- Cache WoW globals
+local ColorPickerFrame = ColorPickerFrame
+local CreateFrame = CreateFrame
+local GameTooltip = GameTooltip
+local _G = _G
+
 --[[--------------------------------------------------------------------
     Color Presets
 ----------------------------------------------------------------------]]
@@ -52,12 +71,12 @@ local CLASS_COLORS = {
     Helper Functions
 ----------------------------------------------------------------------]]
 
--- Convert RGB to hex string
+-- INTERNAL: Convert RGB to hex string
 local function RGBToHex(r, g, b)
-    r = math.floor((r or 0) * 255 + 0.5)
-    g = math.floor((g or 0) * 255 + 0.5)
-    b = math.floor((b or 0) * 255 + 0.5)
-    return string.format("%02X%02X%02X", r, g, b)
+    r = math_floor((r or 0) * 255 + 0.5)
+    g = math_floor((g or 0) * 255 + 0.5)
+    b = math_floor((b or 0) * 255 + 0.5)
+    return string_format("%02X%02X%02X", r, g, b)
 end
 
 -- Convert hex string to RGB
@@ -162,7 +181,7 @@ function LoolibColorSwatchMixin:OnLoad()
         GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
         GameTooltip:SetText("Click to pick color", 1, 1, 1)
         if self.hasAlpha then
-            GameTooltip:AddLine("Current: #" .. RGBToHex(self.r, self.g, self.b) .. string.format(" (%.0f%% opacity)", self.a * 100), 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Current: #" .. RGBToHex(self.r, self.g, self.b) .. string_format(" (%.0f%% opacity)", self.a * 100), 0.7, 0.7, 0.7)
         else
             GameTooltip:AddLine("Current: #" .. RGBToHex(self.r, self.g, self.b), 0.7, 0.7, 0.7)
         end
@@ -182,10 +201,15 @@ end
 -- @param b number - Blue (0-1)
 -- @param a number - Alpha (0-1, optional)
 function LoolibColorSwatchMixin:SetColor(r, g, b, a)
-    self.r = r or 1
-    self.g = g or 1
-    self.b = b or 1
-    self.a = a or 1
+    -- Coerce to number, clamp to 0-1 for safety
+    r = tonumber(r) or 1
+    g = tonumber(g) or 1
+    b = tonumber(b) or 1
+    a = tonumber(a) or 1
+    self.r = (r < 0 and 0) or (r > 1 and 1) or r
+    self.g = (g < 0 and 0) or (g > 1 and 1) or g
+    self.b = (b < 0 and 0) or (b > 1 and 1) or b
+    self.a = (a < 0 and 0) or (a > 1 and 1) or a
     self:UpdateDisplay()
 end
 
@@ -255,7 +279,15 @@ function LoolibColorSwatchMixin:OpenColorPicker()
         end
     end
 
-    ColorPickerFrame:SetupColorPickerAndShow(info)
+    -- FIX(TP-04): Prefer modern WoW 10.0+ API, fall back to classic OpenColorPicker
+    if ColorPickerFrame.SetupColorPickerAndShow then
+        ColorPickerFrame:SetupColorPickerAndShow(info)
+    elseif type(OpenColorPicker) == "function" then
+        ---@diagnostic disable-next-line: undefined-global
+        OpenColorPicker(info)
+    else
+        Loolib:Error("LoolibColorSwatch: OpenColorPicker: No color picker API available")
+    end
 end
 
 --[[--------------------------------------------------------------------
@@ -480,19 +512,19 @@ end
 function LoolibColorSwatchWithPresetsMixin:AddToRecentColors(r, g, b)
     -- Check if color already exists in recent
     for i, color in ipairs(self.recentColors) do
-        if math.abs(color.r - r) < 0.01 and math.abs(color.g - g) < 0.01 and math.abs(color.b - b) < 0.01 then
+        if math_abs(color.r - r) < 0.01 and math_abs(color.g - g) < 0.01 and math_abs(color.b - b) < 0.01 then
             -- Move to front
-            table.remove(self.recentColors, i)
+            table_remove(self.recentColors, i)
             break
         end
     end
 
     -- Add to front
-    table.insert(self.recentColors, 1, { r = r, g = g, b = b })
+    table_insert(self.recentColors, 1, { r = r, g = g, b = b })
 
     -- Trim to max
     while #self.recentColors > self.maxRecentColors do
-        table.remove(self.recentColors)
+        table_remove(self.recentColors)
     end
 
     -- Save if we have a key

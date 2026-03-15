@@ -3,11 +3,19 @@
     ThemeDefault - Default Blizzard-style theme
 
     A theme that matches Blizzard's standard UI appearance.
+    This file must load AFTER ThemeManager.lua.
+
+    Dependencies:
+    - Core/Loolib.lua
+    - UI/Theme/ThemeManager.lua
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
 local Theme = Loolib.Theme or Loolib:GetOrCreateModule("Theme")
 local ThemeManager = assert(Loolib.ThemeManager or (Theme.Manager and Theme.Manager.Manager), "Loolib.ThemeManager is required for ThemeDefault")
+
+-- Cache globals at file top
+local pairs = pairs
 
 --[[--------------------------------------------------------------------
     Standard Backdrops

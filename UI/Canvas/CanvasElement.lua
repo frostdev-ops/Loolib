@@ -11,8 +11,7 @@
     maintaining compatibility with MRT's storage format.
 
     Usage:
-        -- Create a canvas element
-        local CanvasElement = Loolib:GetModule("CanvasElement")
+        local CanvasElement = Loolib:GetModule("Canvas.CanvasElement")
         local element = CanvasElement.Create(CanvasElement.TYPES.DOT)
         element:SetPosition(100, 150)
                :SetColor(4)
@@ -31,7 +30,15 @@
 
 local Loolib = LibStub("Loolib")
 
--- Local references for performance (removed unused aliases)
+-- Cached globals
+local type = type
+local error = error
+local math_sqrt = math.sqrt
+local math_max = math.max
+local math_min = math.min
+local math_huge = math.huge
+local ipairs = ipairs
+local pairs = pairs
 
 local CreateCanvasElement  -- forward declaration
 
@@ -40,7 +47,7 @@ local CreateCanvasElement  -- forward declaration
 ----------------------------------------------------------------------]]
 
 --- Canvas element types (compatible with MRT VisNote)
---- @type table<string, number>
+---@type table<string, number>
 local LOOLIB_CANVAS_ELEMENT_TYPES = {
     DOT = 1,        -- Brush stroke dot/pixel
     ICON = 2,       -- Icon/texture
@@ -55,7 +62,7 @@ local LOOLIB_CANVAS_ELEMENT_TYPES = {
 
 --- MRT-compatible color palette (25 colors)
 --- Each color is {r, g, b} with values 0-1
---- @type table<number, table<number>>
+---@type table<number, table<number>>
 local LOOLIB_CANVAS_COLORS = {
     {0, 0, 0},                              -- 1: Black
     {127/255, 127/255, 127/255},            -- 2: Gray
@@ -84,17 +91,20 @@ local LOOLIB_CANVAS_COLORS = {
     {0.20, 0.58, 0.50},                     -- 25: Teal
 }
 
+local NUM_COLORS = #LOOLIB_CANVAS_COLORS
+
 --[[--------------------------------------------------------------------
     LoolibCanvasElementMixin - Base Canvas Element
 ----------------------------------------------------------------------]]
 
 --- Base mixin for all canvas elements
 --- Provides position, color, grouping, locking, and serialization
---- @class LoolibCanvasElementMixin
+---@class LoolibCanvasElementMixin
 local LoolibCanvasElementMixin = {}
 
 --- Initialize element with default values
 --- Called automatically when element is created
+---@return LoolibCanvasElementMixin self
 function LoolibCanvasElementMixin:OnLoad()
     self._elementType = nil
     self._x = 0
@@ -104,6 +114,7 @@ function LoolibCanvasElementMixin:OnLoad()
     self._colorIndex = 4        -- Default red
     self._size = 6              -- Default size
     self._syncId = nil          -- ID for multiplayer sync
+    return self
 end
 
 -- ============================================================
@@ -111,15 +122,18 @@ end
 -- ============================================================
 
 --- Get the element type
---- @return number Element type from LOOLIB_CANVAS_ELEMENT_TYPES
+---@return number elementType Element type from LOOLIB_CANVAS_ELEMENT_TYPES
 function LoolibCanvasElementMixin:GetElementType()
     return self._elementType
 end
 
 --- Set the element type
---- @param elementType number Element type from LOOLIB_CANVAS_ELEMENT_TYPES
---- @return table self for chaining
+---@param elementType number Element type from LOOLIB_CANVAS_ELEMENT_TYPES
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:SetElementType(elementType)
+    if type(elementType) ~= "number" then
+        error("LoolibCanvasElement: SetElementType: elementType must be a number", 2)
+    end
     self._elementType = elementType
     return self
 end
@@ -129,54 +143,72 @@ end
 -- ============================================================
 
 --- Get element position
---- @return number x X coordinate
---- @return number y Y coordinate
+---@return number x X coordinate
+---@return number y Y coordinate
 function LoolibCanvasElementMixin:GetPosition()
     return self._x, self._y
 end
 
---- Set element position
---- @param x number X coordinate
---- @param y number Y coordinate
---- @return table self for chaining
-function LoolibCanvasElementMixin:SetPosition(x, y)
+--- Set element position with optional clamping to canvas bounds
+---@param x number X coordinate
+---@param y number Y coordinate
+---@param canvasWidth number|nil Canvas width for clamping (nil = no clamp)
+---@param canvasHeight number|nil Canvas height for clamping (nil = no clamp)
+---@return LoolibCanvasElementMixin self for chaining
+function LoolibCanvasElementMixin:SetPosition(x, y, canvasWidth, canvasHeight)
+    if type(x) ~= "number" or type(y) ~= "number" then
+        error("LoolibCanvasElement: SetPosition: x and y must be numbers", 2)
+    end
+    -- CV-08: Clamp to canvas bounds when dimensions provided
+    if canvasWidth then
+        x = math_max(0, math_min(canvasWidth, x))
+    end
+    if canvasHeight then
+        y = math_max(0, math_min(canvasHeight, y))
+    end
     self._x = x
     self._y = y
     return self
 end
 
 --- Get X coordinate
---- @return number X coordinate
+---@return number x X coordinate
 function LoolibCanvasElementMixin:GetX()
     return self._x
 end
 
 --- Set X coordinate
---- @param x number X coordinate
---- @return table self for chaining
+---@param x number X coordinate
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:SetX(x)
+    if type(x) ~= "number" then
+        error("LoolibCanvasElement: SetX: x must be a number", 2)
+    end
     self._x = x
     return self
 end
 
 --- Get Y coordinate
---- @return number Y coordinate
+---@return number y Y coordinate
 function LoolibCanvasElementMixin:GetY()
     return self._y
 end
 
 --- Set Y coordinate
---- @param y number Y coordinate
---- @return table self for chaining
+---@param y number Y coordinate
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:SetY(y)
+    if type(y) ~= "number" then
+        error("LoolibCanvasElement: SetY: y must be a number", 2)
+    end
     self._y = y
     return self
 end
 
 --- Offset element position by delta
---- @param dx number X offset
---- @param dy number Y offset
---- @return table self for chaining
+---@param dx number X offset
+---@param dy number Y offset
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:Offset(dx, dy)
     self._x = self._x + dx
     self._y = self._y + dy
@@ -188,28 +220,28 @@ end
 -- ============================================================
 
 --- Get group ID
---- @return number Group ID (0 = no group)
+---@return number groupId Group ID (0 = no group)
 function LoolibCanvasElementMixin:GetGroup()
     return self._groupId
 end
 
 --- Set group ID
---- @param groupId number|nil Group ID (0 or nil = no group)
---- @return table self for chaining
+---@param groupId number|nil Group ID (0 or nil = no group)
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:SetGroup(groupId)
     self._groupId = groupId or 0
     return self
 end
 
 --- Check if element belongs to a group
---- @return boolean True if element is in a group
+---@return boolean inGroup True if element is in a group
 function LoolibCanvasElementMixin:IsInGroup()
     return self._groupId > 0
 end
 
 --- Check if element belongs to a specific group
---- @param groupId number Group ID to check
---- @return boolean True if element is in the specified group
+---@param groupId number Group ID to check
+---@return boolean inGroup True if element is in the specified group
 function LoolibCanvasElementMixin:IsInGroupId(groupId)
     return self._groupId == groupId
 end
@@ -219,28 +251,28 @@ end
 -- ============================================================
 
 --- Check if element is locked
---- @return boolean True if locked
+---@return boolean locked True if locked
 function LoolibCanvasElementMixin:IsLocked()
     return self._isLocked
 end
 
 --- Set locked state
---- @param locked boolean True to lock, false to unlock
---- @return table self for chaining
+---@param locked boolean True to lock, false to unlock
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:SetLocked(locked)
     self._isLocked = locked
     return self
 end
 
 --- Lock the element
---- @return table self for chaining
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:Lock()
     self._isLocked = true
     return self
 end
 
 --- Unlock the element
---- @return table self for chaining
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:Unlock()
     self._isLocked = false
     return self
@@ -251,23 +283,27 @@ end
 -- ============================================================
 
 --- Get color index
---- @return number Color index (1-25)
+---@return number colorIndex Color index (1-25)
 function LoolibCanvasElementMixin:GetColor()
     return self._colorIndex
 end
 
 --- Set color by index
---- @param colorIndex number Color index (1-25)
---- @return table self for chaining
+--- CV-22: Validates color index range
+---@param colorIndex number Color index (1-25)
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:SetColor(colorIndex)
-    self._colorIndex = colorIndex
+    if type(colorIndex) ~= "number" then
+        error("LoolibCanvasElement: SetColor: colorIndex must be a number", 2)
+    end
+    self._colorIndex = math_max(1, math_min(NUM_COLORS, colorIndex))
     return self
 end
 
 --- Get RGB color values
---- @return number r Red component (0-1)
---- @return number g Green component (0-1)
---- @return number b Blue component (0-1)
+---@return number r Red component (0-1)
+---@return number g Green component (0-1)
+---@return number b Blue component (0-1)
 function LoolibCanvasElementMixin:GetColorRGB()
     local color = LOOLIB_CANVAS_COLORS[self._colorIndex]
     if color then
@@ -277,11 +313,11 @@ function LoolibCanvasElementMixin:GetColorRGB()
 end
 
 --- Get RGBA color values with optional alpha
---- @param alpha number|nil Alpha value (default 1.0)
---- @return number r Red component (0-1)
---- @return number g Green component (0-1)
---- @return number b Blue component (0-1)
---- @return number a Alpha component (0-1)
+---@param alpha number|nil Alpha value (default 1.0)
+---@return number r Red component (0-1)
+---@return number g Green component (0-1)
+---@return number b Blue component (0-1)
+---@return number a Alpha component (0-1)
 function LoolibCanvasElementMixin:GetColorRGBA(alpha)
     local r, g, b = self:GetColorRGB()
     return r, g, b, alpha or 1.0
@@ -292,15 +328,18 @@ end
 -- ============================================================
 
 --- Get element size
---- @return number Size value
+---@return number size Size value
 function LoolibCanvasElementMixin:GetSize()
     return self._size
 end
 
 --- Set element size
---- @param size number Size value
---- @return table self for chaining
+---@param size number Size value
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:SetSize(size)
+    if type(size) ~= "number" then
+        error("LoolibCanvasElement: SetSize: size must be a number", 2)
+    end
     self._size = size
     return self
 end
@@ -310,21 +349,21 @@ end
 -- ============================================================
 
 --- Get sync ID (for multiplayer synchronization)
---- @return string|nil Sync ID
+---@return string|nil syncId Sync ID
 function LoolibCanvasElementMixin:GetSyncId()
     return self._syncId
 end
 
 --- Set sync ID (for multiplayer synchronization)
---- @param id string|nil Sync ID
---- @return table self for chaining
+---@param id string|nil Sync ID
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:SetSyncId(id)
     self._syncId = id
     return self
 end
 
 --- Check if element has a sync ID
---- @return boolean True if element has a sync ID
+---@return boolean hasSyncId True if element has a sync ID
 function LoolibCanvasElementMixin:HasSyncId()
     return self._syncId ~= nil
 end
@@ -335,7 +374,7 @@ end
 
 --- Serialize element to table for storage or sync
 --- Subclasses should extend this to include type-specific data
---- @return table Serialized element data
+---@return table data Serialized element data
 function LoolibCanvasElementMixin:Serialize()
     return {
         t = self._elementType,      -- Type
@@ -349,8 +388,8 @@ end
 
 --- Deserialize element from table
 --- Subclasses should extend this to restore type-specific data
---- @param data table Serialized element data
---- @return table self for chaining
+---@param data table Serialized element data
+---@return LoolibCanvasElementMixin self for chaining
 function LoolibCanvasElementMixin:Deserialize(data)
     if not data then
         return self
@@ -367,7 +406,7 @@ function LoolibCanvasElementMixin:Deserialize(data)
 end
 
 --- Clone element (deep copy)
---- @return table New element with same properties
+---@return LoolibCanvasElementMixin clone New element with same properties
 function LoolibCanvasElementMixin:Clone()
     local clone = CreateCanvasElement(self._elementType)
     local data = self:Serialize()
@@ -382,10 +421,10 @@ end
 
 --- Get bounding box for selection/hit testing
 --- Subclasses should override this for accurate bounds
---- @return number minX Minimum X coordinate
---- @return number minY Minimum Y coordinate
---- @return number maxX Maximum X coordinate
---- @return number maxY Maximum Y coordinate
+---@return number minX Minimum X coordinate
+---@return number minY Minimum Y coordinate
+---@return number maxX Maximum X coordinate
+---@return number maxY Maximum Y coordinate
 function LoolibCanvasElementMixin:GetBounds()
     local halfSize = self._size / 2
     return self._x - halfSize, self._y - halfSize,
@@ -394,22 +433,22 @@ end
 
 --- Test if a point is inside the element
 --- Subclasses should override this for accurate hit testing
---- @param x number X coordinate to test
---- @param y number Y coordinate to test
---- @return boolean True if point is inside element
+---@param x number X coordinate to test
+---@param y number Y coordinate to test
+---@return boolean hit True if point is inside element
 function LoolibCanvasElementMixin:HitTest(x, y)
     local minX, minY, maxX, maxY = self:GetBounds()
     return x >= minX and x <= maxX and y >= minY and y <= maxY
 end
 
 --- Get distance from point to element center
---- @param x number X coordinate
---- @param y number Y coordinate
---- @return number Distance in pixels
+---@param x number X coordinate
+---@param y number Y coordinate
+---@return number distance Distance in pixels
 function LoolibCanvasElementMixin:GetDistanceFrom(x, y)
     local dx = x - self._x
     local dy = y - self._y
-    return math.sqrt(dx * dx + dy * dy)
+    return math_sqrt(dx * dx + dy * dy)
 end
 
 --[[--------------------------------------------------------------------
@@ -417,10 +456,11 @@ end
 ----------------------------------------------------------------------]]
 
 --- Get RGB color from palette index
---- @param colorIndex number Color index (1-25)
---- @return number r Red component (0-1)
---- @return number g Green component (0-1)
---- @return number b Blue component (0-1)
+--- INTERNAL
+---@param colorIndex number Color index (1-25)
+---@return number r Red component (0-1)
+---@return number g Green component (0-1)
+---@return number b Blue component (0-1)
 local function LoolibGetCanvasColor(colorIndex)
     local color = LOOLIB_CANVAS_COLORS[colorIndex]
     if color then
@@ -430,24 +470,26 @@ local function LoolibGetCanvasColor(colorIndex)
 end
 
 --- Get RGBA color from palette index with alpha
---- @param colorIndex number Color index (1-25)
---- @param alpha number|nil Alpha value (default 1.0)
---- @return number r Red component (0-1)
---- @return number g Green component (0-1)
---- @return number b Blue component (0-1)
---- @return number a Alpha component (0-1)
+--- INTERNAL
+---@param colorIndex number Color index (1-25)
+---@param alpha number|nil Alpha value (default 1.0)
+---@return number r Red component (0-1)
+---@return number g Green component (0-1)
+---@return number b Blue component (0-1)
+---@return number a Alpha component (0-1)
 local function LoolibGetCanvasColorRGBA(colorIndex, alpha)
     local r, g, b = LoolibGetCanvasColor(colorIndex)
     return r, g, b, alpha or 1.0
 end
 
 --- Find closest color index for RGB values
---- @param r number Red component (0-1)
---- @param g number Green component (0-1)
---- @param b number Blue component (0-1)
---- @return number Closest color index
+--- INTERNAL
+---@param r number Red component (0-1)
+---@param g number Green component (0-1)
+---@param b number Blue component (0-1)
+---@return number closestIndex Closest color index
 local function LoolibFindClosestCanvasColor(r, g, b)
-    local minDist = math.huge
+    local minDist = math_huge
     local closestIndex = 4  -- Default red
 
     for i, color in ipairs(LOOLIB_CANVAS_COLORS) do
@@ -470,8 +512,9 @@ end
 ----------------------------------------------------------------------]]
 
 --- Create a new canvas element with mixin applied
---- @param elementType number Element type from LOOLIB_CANVAS_ELEMENT_TYPES
---- @return table New canvas element
+--- INTERNAL
+---@param elementType number Element type from LOOLIB_CANVAS_ELEMENT_TYPES
+---@return LoolibCanvasElementMixin element New canvas element
 CreateCanvasElement = function(elementType)
     local element = {}
     Loolib.Mixin(element, LoolibCanvasElementMixin)
@@ -484,8 +527,8 @@ end
     GLOBAL EXPORTS & MODULE REGISTRATION
 ----------------------------------------------------------------------]]
 
--- Register with Loolib module system
-Loolib:RegisterModule("CanvasElement", {
+-- Register with Loolib module system (R4: fully qualified name)
+Loolib:RegisterModule("Canvas.CanvasElement", {
     -- Mixin
     Mixin = LoolibCanvasElementMixin,
 
@@ -497,6 +540,17 @@ Loolib:RegisterModule("CanvasElement", {
     Create = CreateCanvasElement,
 
     -- Utilities
+    GetColor = LoolibGetCanvasColor,
+    GetColorRGBA = LoolibGetCanvasColorRGBA,
+    FindClosestColor = LoolibFindClosestCanvasColor,
+})
+
+-- Backward-compat alias (bare leaf name)
+Loolib:RegisterModule("CanvasElement", {
+    Mixin = LoolibCanvasElementMixin,
+    TYPES = LOOLIB_CANVAS_ELEMENT_TYPES,
+    COLORS = LOOLIB_CANVAS_COLORS,
+    Create = CreateCanvasElement,
     GetColor = LoolibGetCanvasColor,
     GetColorRGBA = LoolibGetCanvasColorRGBA,
     FindClosestColor = LoolibFindClosestCanvasColor,

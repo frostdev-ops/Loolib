@@ -287,6 +287,9 @@ function LoolibEnhancedDropdownMixin:OpenMenu()
     self._menuFrame:ClearAllPoints()
     self._menuFrame:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, -2)
 
+    -- Clamp to screen edges so the menu never renders off-screen
+    self._menuFrame:SetClampedToScreen(true)
+
     self._menuFrame:Show()
     self._isOpen = true
 

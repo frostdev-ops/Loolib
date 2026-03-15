@@ -23,6 +23,7 @@ assert(Loolib.CreateFromMixins, "Loolib/Core/Mixin.lua must be loaded before Cal
 assert(FunctionUtil and FunctionUtil.GenerateClosure, "Loolib/Core/FunctionUtil.lua must be loaded before CallbackRegistry")
 
 local CreateFromMixins = Loolib.CreateFromMixins
+local error = error
 local format = string.format
 local ipairs = ipairs
 local next = next
@@ -40,9 +41,10 @@ local CallbackType = {
     Function = 2,  -- Simple function callbacks
 }
 
--- Counter for generating unique owner IDs when none provided
+-- INTERNAL: Counter for generating unique owner IDs when none provided
 local ownerIDCounter = 0
 
+-- INTERNAL: Generate a numeric owner ID for registrations with no explicit owner
 local function GenerateOwnerID()
     ownerIDCounter = ownerIDCounter + 1
     return ownerIDCounter
@@ -72,6 +74,10 @@ end
 --- Define the events this registry can fire
 -- @param events table - Array of event name strings
 function CallbackRegistryMixin:GenerateCallbackEvents(events)
+    if type(events) ~= "table" then
+        error("LoolibCallbackRegistry: GenerateCallbackEvents 'events' must be a table", 2)
+    end
+
     self.Event = self.Event or {}
     for _, eventName in ipairs(events) do
         self.Event[eventName] = eventName
@@ -88,11 +94,13 @@ end
     Internal Helpers
 ----------------------------------------------------------------------]]
 
+-- INTERNAL: Get callback table for a given type and event
 function CallbackRegistryMixin:GetCallbacksByEvent(callbackType, event)
     local callbackTable = self.callbackTables[callbackType]
     return callbackTable and callbackTable[event]
 end
 
+-- INTERNAL: Get or create callback table for a given type and event
 function CallbackRegistryMixin:GetOrCreateCallbacksByEvent(callbackType, event)
     local callbackTable = self.callbackTables[callbackType]
     if not callbackTable[event] then
@@ -101,6 +109,7 @@ function CallbackRegistryMixin:GetOrCreateCallbacksByEvent(callbackType, event)
     return callbackTable[event]
 end
 
+-- INTERNAL: Get mutable callback table, deferring writes during event dispatch
 function CallbackRegistryMixin:GetMutableCallbacksByEvent(callbackType, event)
     -- If we're currently executing this event, use deferred callbacks
     -- to avoid modifying the table we're iterating
@@ -139,17 +148,17 @@ end
 -- @return any - The owner (for later unregistration)
 function CallbackRegistryMixin:RegisterCallback(event, func, owner, ...)
     if type(event) ~= "string" then
-        error("CallbackRegistryMixin:RegisterCallback 'event' requires string type.")
+        error("LoolibCallbackRegistry: RegisterCallback 'event' must be a string", 2)
     end
     if type(func) ~= "function" then
-        error("CallbackRegistryMixin:RegisterCallback 'func' requires function type.")
+        error("LoolibCallbackRegistry: RegisterCallback 'func' must be a function", 2)
     end
 
     -- Generate owner ID if not provided
     if owner == nil then
         owner = GenerateOwnerID()
     elseif type(owner) == "number" then
-        error("CallbackRegistryMixin:RegisterCallback 'owner' as number is reserved internally.")
+        error("LoolibCallbackRegistry: RegisterCallback 'owner' as number is reserved for internal use", 2)
     end
 
     -- Ensure we don't have duplicate registrations for same owner/event
@@ -189,6 +198,13 @@ end
 -- @param owner any - The owner that registered the callback
 -- @return boolean - True if a callback was removed
 function CallbackRegistryMixin:UnregisterCallback(event, owner)
+    if type(event) ~= "string" then
+        error("LoolibCallbackRegistry: UnregisterCallback 'event' must be a string", 2)
+    end
+    if owner == nil then
+        error("LoolibCallbackRegistry: UnregisterCallback 'owner' must not be nil", 2)
+    end
+
     local removed = false
 
     for _, callbackTable in pairs(self.callbackTables) do
@@ -216,6 +232,10 @@ end
 --- Unregister all callbacks for an owner across all events
 -- @param owner any - The owner
 function CallbackRegistryMixin:UnregisterAllCallbacks(owner)
+    if owner == nil then
+        error("LoolibCallbackRegistry: UnregisterAllCallbacks 'owner' must not be nil", 2)
+    end
+
     for _, callbackTable in pairs(self.callbackTables) do
         for _, callbacks in pairs(callbackTable) do
             callbacks[owner] = nil
@@ -238,12 +258,12 @@ end
 -- @param ... - Arguments to pass to callbacks
 function CallbackRegistryMixin:TriggerEvent(event, ...)
     if type(event) ~= "string" then
-        error("CallbackRegistryMixin:TriggerEvent 'event' requires string type.")
+        error("LoolibCallbackRegistry: TriggerEvent 'event' must be a string", 2)
     end
 
     -- Validate event is defined (unless undefined events are allowed)
     if not self.isUndefinedEventAllowed and self.Event and not self.Event[event] then
-        error(format("CallbackRegistryMixin:TriggerEvent event '%s' doesn't exist.", event))
+        error(format("LoolibCallbackRegistry: TriggerEvent event '%s' is not defined", event), 2)
     end
 
     -- Track nesting for reentrant calls
@@ -282,7 +302,7 @@ function CallbackRegistryMixin:TriggerEvent(event, ...)
     end
 end
 
---- Merge deferred callbacks into main callback tables
+--- INTERNAL: Merge deferred callbacks into main callback tables
 -- @param event string - The event name
 function CallbackRegistryMixin:ReconcileDeferredCallbacks(event)
     local deferred = self.deferredCallbacks[event]
@@ -326,6 +346,10 @@ end
 -- @param event string - The event name
 -- @return number
 function CallbackRegistryMixin:GetCallbackCount(event)
+    if type(event) ~= "string" then
+        error("LoolibCallbackRegistry: GetCallbackCount 'event' must be a string", 2)
+    end
+
     local count = 0
 
     for _, callbackTable in pairs(self.callbackTables) do

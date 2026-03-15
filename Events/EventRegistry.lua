@@ -23,8 +23,10 @@ assert(CallbackRegistryModule and CallbackRegistryModule.Mixin, "Loolib/Events/C
 local CallbackRegistryMixin = Events.CallbackRegistryMixin or CallbackRegistryModule.Mixin
 local CreateFromMixins = Loolib.CreateFromMixins
 local CreateFrame = CreateFrame
+local error = error
 local ipairs = ipairs
 local pairs = pairs
+local type = type
 ---@diagnostic disable-next-line: undefined-field
 local unpack = unpack or table.unpack
 
@@ -74,6 +76,13 @@ end
 -- @param ... - Optional captured arguments
 -- @return any - The owner
 function EventRegistryMixin:RegisterEventCallback(event, callback, owner, ...)
+    if type(event) ~= "string" then
+        error("LoolibEventRegistry: RegisterEventCallback 'event' must be a string", 2)
+    end
+    if type(callback) ~= "function" then
+        error("LoolibEventRegistry: RegisterEventCallback 'callback' must be a function", 2)
+    end
+
     -- FIX(Area5-1): RegisterCallback internally calls UnregisterCallback first for the
     -- same (event, owner). Only increment the ref count when this is a genuinely new
     -- registration, not a replacement, to prevent count inflation that leaks WoW events.
@@ -106,6 +115,13 @@ end
 -- @param owner any - The owner that registered the callback
 -- @return boolean - True if a callback was removed
 function EventRegistryMixin:UnregisterEventCallback(event, owner)
+    if type(event) ~= "string" then
+        error("LoolibEventRegistry: UnregisterEventCallback 'event' must be a string", 2)
+    end
+    if owner == nil then
+        error("LoolibEventRegistry: UnregisterEventCallback 'owner' must not be nil", 2)
+    end
+
     local removed = self:UnregisterCallback(event, owner)
 
     if removed then
@@ -141,6 +157,10 @@ end
 --- Unregister all event callbacks for an owner
 -- @param owner any - The owner
 function EventRegistryMixin:UnregisterAllEventsForOwner(owner)
+    if owner == nil then
+        error("LoolibEventRegistry: UnregisterAllEventsForOwner 'owner' must not be nil", 2)
+    end
+
     local eventsToCheck = {}
     for event in pairs(self.registeredEvents) do
         eventsToCheck[#eventsToCheck + 1] = event
@@ -190,6 +210,13 @@ end
 -- @param ... - Optional captured arguments
 -- @return any - The owner
 function EventRegistryMixin:RegisterOneShotEvent(event, callback, owner, ...)
+    if type(event) ~= "string" then
+        error("LoolibEventRegistry: RegisterOneShotEvent 'event' must be a string", 2)
+    end
+    if type(callback) ~= "function" then
+        error("LoolibEventRegistry: RegisterOneShotEvent 'callback' must be a function", 2)
+    end
+
     local registry = self
     local capturedArgs = {...}
 
@@ -217,6 +244,16 @@ end
 -- @param owner any - The owner
 -- @return any - The owner
 function EventRegistryMixin:RegisterFilteredEvent(event, filter, callback, owner)
+    if type(event) ~= "string" then
+        error("LoolibEventRegistry: RegisterFilteredEvent 'event' must be a string", 2)
+    end
+    if type(filter) ~= "function" then
+        error("LoolibEventRegistry: RegisterFilteredEvent 'filter' must be a function", 2)
+    end
+    if type(callback) ~= "function" then
+        error("LoolibEventRegistry: RegisterFilteredEvent 'callback' must be a function", 2)
+    end
+
     local wrapper = function(actualOwner, ...)
         if filter(actualOwner, ...) then
             callback(actualOwner, ...)

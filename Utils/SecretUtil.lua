@@ -20,6 +20,19 @@
 
 local Loolib = LibStub("Loolib")
 
+local error = error
+local select = select
+local tostring = tostring
+local type = type
+local unpack = unpack
+
+local issecretvalue = issecretvalue
+local GetPlayerInfoByGUID = GetPlayerInfoByGUID
+local GetRaidRosterInfo = GetRaidRosterInfo
+local GetUnitName = GetUnitName
+local UnitClass = UnitClass
+local UnitName = UnitName
+
 local SecretUtil = {}
 
 --[[--------------------------------------------------------------------
@@ -90,6 +103,10 @@ end
 -- @return string|nil name
 -- @return string|nil realm
 function SecretUtil.SafeUnitName(unit, showServerName)
+    if type(unit) ~= "string" then
+        error("LoolibSecretUtil: SafeUnitName requires a string unit ID", 2)
+    end
+
     local name, realm
     if showServerName then
         name = GetUnitName(unit, true)
@@ -110,6 +127,10 @@ end
 -- @return string|nil englishClass
 -- @return number|nil classID
 function SecretUtil.SafeUnitClass(unit)
+    if type(unit) ~= "string" then
+        error("LoolibSecretUtil: SafeUnitClass requires a string unit ID", 2)
+    end
+
     ---@type string?, string?, number?
     local localizedClass, englishClass, classID = UnitClass(unit)
 
@@ -121,10 +142,19 @@ function SecretUtil.SafeUnitClass(unit)
 end
 
 --- Safe wrapper for GetRaidRosterInfo
--- If the name return is secret, the entire result returns nil.
--- @param index number - Raid roster index
--- @return string|nil name, ... (all 14 returns from GetRaidRosterInfo)
+-- If the name return is secret, the entire result returns bare nil
+-- (not 12 nils). Callers that destructure into multiple locals will
+-- receive nil for all positions — this matches existing consumer code.
+-- @param index number - Raid roster index (1-based)
+-- @return string|nil name, number|nil rank, number|nil subgroup,
+--         number|nil level, string|nil class, string|nil fileName,
+--         string|nil zone, boolean|nil online, boolean|nil isDead,
+--         string|nil role, boolean|nil isML, string|nil combatRole
 function SecretUtil.SafeGetRaidRosterInfo(index)
+    if type(index) ~= "number" then
+        error("LoolibSecretUtil: SafeGetRaidRosterInfo requires a number index", 2)
+    end
+
     ---@type string?, number?, number?, number?, string?, string?, string?, boolean?, boolean?, string?, boolean?, string?
     local name, rank, subgroup, level, class, fileName, zone,
           online, isDead, role, isML, combatRole = GetRaidRosterInfo(index)
@@ -147,13 +177,16 @@ function SecretUtil.SafeGetRaidRosterInfo(index)
 end
 
 --- Safe wrapper for GetPlayerInfoByGUID
--- If the name return is secret, the entire result returns nil.
+-- If the name return is secret, the entire result returns bare nil.
 -- Does NOT strip null bytes — that is the consumer's concern.
 -- @param guid string - Player GUID
 -- @return string|nil localizedClass, string|nil englishClass,
---         number|nil localizedRace, string|nil englishRace,
+--         string|nil localizedRace, string|nil englishRace,
 --         number|nil sex, string|nil name, string|nil realmName
 function SecretUtil.SafeGetPlayerInfoByGUID(guid)
+    if type(guid) ~= "string" then
+        error("LoolibSecretUtil: SafeGetPlayerInfoByGUID requires a string GUID", 2)
+    end
     if not GetPlayerInfoByGUID then return nil end
 
     ---@type string?, string?, string?, string?, number?, string?, string?

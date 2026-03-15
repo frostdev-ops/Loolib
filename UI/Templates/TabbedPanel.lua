@@ -18,6 +18,18 @@ local LoolibTemplates = assert(Loolib.Templates or (Loolib.UI and Loolib.UI.Temp
 local CreateLoolibObjectPool = assert(Loolib.CreateObjectPool, "Loolib.CreateObjectPool is required for TabbedPanel")
 local LoolibGetResetterForFrameType = assert(Loolib.GetResetterForFrameType, "Loolib.GetResetterForFrameType is required for TabbedPanel")
 
+-- Cache globals
+local error = error
+local ipairs = ipairs
+local math_max = math.max
+local pairs = pairs
+local table_remove = table.remove
+local tostring = tostring
+local type = type
+
+-- Cache WoW globals
+local CreateFrame = CreateFrame
+
 --[[--------------------------------------------------------------------
     LoolibTabbedPanelMixin
 ----------------------------------------------------------------------]]
@@ -60,12 +72,30 @@ end
 ----------------------------------------------------------------------]]
 
 --- Add a tab
+-- NOTE(TP-06): Each tab creates a new Button frame from the pool. Tab buttons
+-- are recycled through an ObjectPool on RefreshTabButtons, but content frames
+-- produced by lazy initializers are NOT pooled (accepted design trade-off;
+-- panels rarely have more than ~10 tabs). If pooling is needed in the future,
+-- wrap the content factory with a FramePool externally.
 -- @param id string - Unique tab identifier
 -- @param text string - Tab button text
 -- @param content Frame|function - Content frame or lazy initializer function
 -- @param options table - Optional: { enabled, badge, icon }
 -- @return table - The tab data
 function LoolibTabbedPanelMixin:AddTab(id, text, content, options)
+    if type(id) ~= "string" then
+        error("LoolibTabbedPanel: AddTab: 'id' must be a string", 2)
+    end
+    if type(text) ~= "string" then
+        error("LoolibTabbedPanel: AddTab: 'text' must be a string", 2)
+    end
+    if content == nil then
+        error("LoolibTabbedPanel: AddTab: 'content' must be a frame or function", 2)
+    end
+    -- Reject duplicate tab IDs
+    if self:GetTab(id) then
+        error("LoolibTabbedPanel: AddTab: tab with id '" .. id .. "' already exists", 2)
+    end
     options = options or {}
 
     local tab = {
@@ -102,7 +132,7 @@ function LoolibTabbedPanelMixin:RemoveTab(id)
                 tab.contentFrame:Hide()
             end
 
-            table.remove(self.tabs, i)
+            table_remove(self.tabs, i)
             self:RefreshTabButtons()
             self:TriggerEvent("OnTabRemoved", tab)
 
@@ -275,7 +305,7 @@ function LoolibTabbedPanelMixin:RefreshTabButtons()
 
         -- Size based on text
         local textWidth = button.Text and button.Text:GetStringWidth() or 50
-        local buttonWidth = math.max(self.tabMinWidth, textWidth + 20)
+        local buttonWidth = math_max(self.tabMinWidth, textWidth + 20)
         button:SetSize(buttonWidth, self.tabHeight)
 
         -- Position

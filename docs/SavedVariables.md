@@ -1998,7 +1998,34 @@ db:RegisterCallback("OnValueChanged", function(key, newValue, oldValue)
 end, MyAddon)
 ```
 
-### 7. Error Handling
+### 7. Input Validation
+
+All public APIs validate their inputs and throw descriptive errors with the
+`"LoolibSavedVariables:MethodName: message"` format (error level 2 so the
+caller's stack frame is shown).
+
+| Method | Validated Parameters |
+|--------|---------------------|
+| `Init` | `globalName` (non-empty string), `defaults` (table or nil), `defaultProfile` (string or nil) |
+| `Get` / `Set` / `Has` / `Delete` / `ResetKey` | `key` (string) |
+| `GetScope` | `scope` (string) |
+| `SetProfile` | `name` (non-empty string) |
+| `CopyProfile` | `sourceName` (string) |
+| `DeleteProfile` | `name` (string) |
+| `RegisterNamespace` | `name` (non-empty string), `defaults` (table or nil) |
+| `GetNamespace` | `name` (string) |
+| `OnReady` | `callback` (function) |
+| `Import` | `str` (non-empty string) |
+| `GetNestedValue` | `path` (string) |
+| `SetNestedValue` | `tbl` (table), `path` (non-empty string) |
+| Factory: `Create` / `CreateAtPath` | `globalName` (non-empty string) |
+
+**Corrupt data recovery**: `OnAddonLoaded`, `InitProfiles`, and `InitScopes`
+guard against non-table values in saved data. If the global variable or any
+scope/profile sub-table is corrupted (e.g., a boolean instead of a table),
+it is silently replaced with an empty table and an error is logged.
+
+### 8. Error Handling
 
 ```lua
 -- GOOD: Graceful error handling
@@ -2033,7 +2060,7 @@ function MyAddon:DeleteProfile(profileName)
 end
 ```
 
-### 8. TOC Declaration
+### 9. TOC Declaration
 
 ```lua
 -- Always declare SavedVariables in your TOC
@@ -2047,7 +2074,7 @@ end
 ## SavedVariablesPerCharacter: MyAddonChar
 ```
 
-### 9. Version Management
+### 10. Version Management
 
 ```lua
 local defaults = {
@@ -2074,7 +2101,7 @@ function MyAddon:CheckVersion()
 end
 ```
 
-### 10. Testing Profile Functionality
+### 11. Testing Profile Functionality
 
 ```lua
 function MyAddon:TestProfiles()

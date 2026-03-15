@@ -495,6 +495,26 @@ When CanIMogIt is loaded, the module automatically uses it for the following fun
 
 All functions gracefully fall back to native WoW API if CanIMogIt is not available or if API calls fail.
 
+## Input Validation & Error Handling
+
+All public functions validate their inputs:
+
+- **`itemLink` parameters**: Passing `nil` returns the safe default (`false`, `nil`, `0,0` depending on signature). Passing a non-string type raises `error("LoolibTransmog: <FuncName> expected string itemLink, got <type>", 2)`.
+- **`sourceID` parameters** (`GetSourceInfo`, `IsSourceCollected`): Passing `nil` returns the safe default. Passing a non-number type raises `error("LoolibTransmog: <FuncName> expected number sourceID, got <type>", 2)`.
+- **C_TransmogCollection unavailable**: If `C_TransmogCollection` does not exist (e.g., Classic client, very early load), all functions return their safe defaults without error. `CanLearnAppearance` returns `false, "Transmog API unavailable"`.
+
+## API Availability
+
+The module caches `C_TransmogCollection` at file load time. If the namespace does not exist (Classic clients, or if accessed before the WoW API is fully initialized), every function gracefully degrades:
+
+| Return type | Safe default |
+|---|---|
+| `boolean` | `false` |
+| `number\|nil` | `nil` |
+| `table\|nil` | `nil` |
+| `number, number` | `0, 0` |
+| `string\|nil` (status) | `nil` |
+
 ## Performance Notes
 
 1. **Caching**: The module does not cache results. If you need to check the same item multiple times in quick succession, consider caching the results yourself.
@@ -502,6 +522,8 @@ All functions gracefully fall back to native WoW API if CanIMogIt is not availab
 2. **Batch Processing**: When checking multiple items, make separate calls for each item. The WoW API is efficient enough for real-time checks.
 
 3. **CanIMogIt**: When loaded, CanIMogIt provides more accurate results and handles edge cases better. The performance impact is negligible.
+
+4. **Global caching**: Lua globals (`type`, `pcall`, `ipairs`, `error`, `string.format`) and `C_TransmogCollection` are cached as upvalues at file load for faster access in hot paths.
 
 ## See Also
 

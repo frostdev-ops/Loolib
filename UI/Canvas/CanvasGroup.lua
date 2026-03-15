@@ -14,6 +14,14 @@ local LOOLIB_VERSION = 1
 local Loolib = LibStub("Loolib")
 if not Loolib then return end
 
+-- Cached globals
+local type = type
+local error = error
+local pairs = pairs
+local ipairs = ipairs
+local tonumber = tonumber
+local table_insert = table.insert
+
 -- ============================================================================
 -- Canvas Group Mixin
 -- ============================================================================
@@ -486,58 +494,62 @@ end
 -- ============================================================================
 
 --- Merge one group into another
--- Reassigns all elements from source group to target group, then deletes source
--- Does nothing if either group is locked
--- @param sourceGroupId number Source group ID (will be deleted)
--- @param targetGroupId number Target group ID (will receive all elements)
--- @return self for chaining
+--- CV-03 FIX: Now operates directly on the parallel arrays of each manager
+--- instead of on copies returned by GetDot/GetShape/etc. The old code called
+--- GetDot() which returns a NEW table (copy), then set .group on the copy,
+--- leaving the original parallel array unchanged (a complete no-op).
+--- Now we directly access the _GROUP parallel arrays.
+---@param sourceGroupId number Source group ID (will be deleted)
+---@param targetGroupId number Target group ID (will receive all elements)
+---@return LoolibCanvasGroupMixin self for chaining
 function LoolibCanvasGroupMixin:MergeGroups(sourceGroupId, targetGroupId)
+    if type(sourceGroupId) ~= "number" or type(targetGroupId) ~= "number" then
+        error("LoolibCanvasGroup: MergeGroups: sourceGroupId and targetGroupId must be numbers", 2)
+    end
+    if sourceGroupId == targetGroupId then return self end
     if self:IsGroupLocked(sourceGroupId) or self:IsGroupLocked(targetGroupId) then
         return self
     end
 
-    -- Reassign all elements from source to target
+    -- CV-03 FIX: Operate directly on the underlying parallel arrays
+    -- to actually reassign group IDs. GetDot/GetShape/etc. return copies,
+    -- so mutating those copies was a no-op.
     if self._brushManager then
         for i = 1, self._brushManager:GetDotCount() do
-            local dot = self._brushManager:GetDot(i)
-            if dot and dot.group == sourceGroupId then
-                dot.group = targetGroupId
+            if self._brushManager._dots_GROUP[i] == sourceGroupId then
+                self._brushManager._dots_GROUP[i] = targetGroupId
             end
         end
     end
 
     if self._shapeManager then
         for i = 1, self._shapeManager:GetShapeCount() do
-            local shape = self._shapeManager:GetShape(i)
-            if shape and shape.group == sourceGroupId then
-                shape.group = targetGroupId
+            if self._shapeManager._shape_GROUP[i] == sourceGroupId then
+                self._shapeManager._shape_GROUP[i] = targetGroupId
             end
         end
     end
 
     if self._textManager then
         for i = 1, self._textManager:GetTextCount() do
-            local text = self._textManager:GetText(i)
-            if text and text.group == sourceGroupId then
-                text.group = targetGroupId
+            if self._textManager._text_GROUP[i] == sourceGroupId then
+                self._textManager._text_GROUP[i] = targetGroupId
             end
         end
     end
 
     if self._iconManager then
         for i = 1, self._iconManager:GetIconCount() do
-            local icon = self._iconManager:GetIcon(i)
-            if icon and icon.group == sourceGroupId then
-                icon.group = targetGroupId
+            if self._iconManager._icon_GROUP[i] == sourceGroupId then
+                self._iconManager._icon_GROUP[i] = targetGroupId
             end
         end
     end
 
     if self._imageManager then
         for i = 1, self._imageManager:GetImageCount() do
-            local image = self._imageManager:GetImage(i)
-            if image and image.group == sourceGroupId then
-                image.group = targetGroupId
+            if self._imageManager._image_GROUP[i] == sourceGroupId then
+                self._imageManager._image_GROUP[i] = targetGroupId
             end
         end
     end
@@ -652,6 +664,13 @@ end
 -- Module Registration
 -- ============================================================================
 
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasGroup", {
+    Mixin = LoolibCanvasGroupMixin,
+    Create = LoolibCreateCanvasGroup,
+})
+
+-- Backward-compat alias
 Loolib:RegisterModule("CanvasGroup", {
     Mixin = LoolibCanvasGroupMixin,
     Create = LoolibCreateCanvasGroup,

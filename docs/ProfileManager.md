@@ -26,10 +26,16 @@
 The ProfileManager module provides high-level UI helper utilities for managing SavedVariables profiles. It sits on top of the SavedVariables module and offers:
 
 - **Profile List Generation**: Create dropdown/list entries with metadata
-- **Validation**: Profile name validation and operation safety checks
+- **Validation**: Centralized profile name validation and operation safety checks
 - **Helper Functions**: Convenient wrappers for common profile operations
-- **Error Handling**: Robust error messages for UI display
+- **Input Validation**: All public APIs validate argument types and return `false, errorMessage` for recoverable failures
+- **Error Handling**: Robust error messages prefixed with `LoolibProfileManager:` for internal errors
 - **Character Tracking**: Find which characters use which profiles
+- **Safe Profile Switching**: `ResetProfile` and `ResetProfileToDefaults` always restore the original active profile, even on failure
+
+### Internal vs Public APIs
+
+Methods marked `-- INTERNAL` (`Base64Encode`, `Base64Decode`) are implementation details used by the export/import system. They are stable for now but may change without notice. Prefer the public API methods listed below.
 
 ### Why Use ProfileManager?
 

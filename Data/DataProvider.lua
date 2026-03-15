@@ -7,26 +7,31 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+
+-- Cache globals at file top
 local error = error
 local ipairs = ipairs
 local max = math.max
 local min = math.min
+local select = select
+local type = type
 local sort = table.sort
 local insert = table.insert
 local remove = table.remove
 local wipe = wipe
 
+-- INTERNAL: Resolve a required Loolib module or throw
 local function GetRequiredModule(name)
     local module = Loolib:GetModule(name)
     if not module then
-        error("Loolib module '" .. name .. "' is required", 2)
+        error("LoolibDataProvider: required module '" .. name .. "' not found", 2)
     end
     return module
 end
 
 local CallbackRegistryMixin = GetRequiredModule("CallbackRegistry").Mixin
 -- FIX(critical-01): Use Loolib.CreateFromMixins directly instead of unstable "Mixin" module lookup
-local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "LoolibDataProvider: Loolib.CreateFromMixins is required")
 
 local Data = Loolib.Data or Loolib:GetOrCreateModule("Data")
 Loolib.Data = Data
@@ -54,7 +59,7 @@ local DATA_PROVIDER_EVENTS = {
 }
 
 --- Initialize the data provider
--- @param initialData table - Optional initial data array
+-- @param initialData table|nil - Optional initial data array
 function DataProviderMixin:Init(initialData)
     CallbackRegistryMixin.OnLoad(self)
     self:GenerateCallbackEvents(DATA_PROVIDER_EVENTS)
@@ -67,6 +72,9 @@ function DataProviderMixin:Init(initialData)
     self.pendingFilter = false
 
     if initialData then
+        if type(initialData) ~= "table" then
+            error("LoolibDataProvider:Init: initialData must be a table", 2)
+        end
         self:InsertTable(initialData)
     end
 end
@@ -77,9 +85,13 @@ end
 
 --- Insert a single element
 -- @param elementData any - The data to insert
--- @param insertIndex number - Optional index to insert at
+-- @param insertIndex number|nil - Optional index to insert at
 -- @return number - The index where the element was inserted
 function DataProviderMixin:Insert(elementData, insertIndex)
+    if insertIndex ~= nil and type(insertIndex) ~= "number" then
+        error("LoolibDataProvider:Insert: insertIndex must be a number or nil", 2)
+    end
+
     if insertIndex then
         insertIndex = max(1, min(insertIndex, #self.data + 1))
         insert(self.data, insertIndex, elementData)
@@ -110,6 +122,10 @@ end
 --- Insert multiple elements from a table
 -- @param tbl table - Array of elements to insert
 function DataProviderMixin:InsertTable(tbl)
+    if type(tbl) ~= "table" then
+        error("LoolibDataProvider:InsertTable: tbl must be a table", 2)
+    end
+
     for _, elementData in ipairs(tbl) do
         self.data[#self.data + 1] = elementData
     end
@@ -149,6 +165,9 @@ end
 -- @param index number - The index to remove
 -- @return any - The removed element or nil
 function DataProviderMixin:RemoveIndex(index)
+    if type(index) ~= "number" then
+        error("LoolibDataProvider:RemoveIndex: index must be a number", 2)
+    end
     if index < 1 or index > #self.data then
         return nil
     end
@@ -166,6 +185,10 @@ end
 -- @param predicate function - Function(elementData) returns true to remove
 -- @return number - Number of elements removed
 function DataProviderMixin:RemoveByPredicate(predicate)
+    if type(predicate) ~= "function" then
+        error("LoolibDataProvider:RemoveByPredicate: predicate must be a function", 2)
+    end
+
     local removed = 0
 
     for i = #self.data, 1, -1 do
@@ -203,6 +226,9 @@ end
 -- @param index number - The index
 -- @return any - The element or nil
 function DataProviderMixin:Find(index)
+    if type(index) ~= "number" then
+        error("LoolibDataProvider:Find: index must be a number", 2)
+    end
     if self.filterFunc and self.filteredData then
         return self.filteredData[index]
     end
@@ -224,21 +250,27 @@ end
 
 --- Find an element by predicate
 -- @param predicate function - Function(elementData) returns true for match
--- @return any, number - Element and index, or nil
+-- @return any, number|nil - Element and index, or nil
 function DataProviderMixin:FindByPredicate(predicate)
+    if type(predicate) ~= "function" then
+        error("LoolibDataProvider:FindByPredicate: predicate must be a function", 2)
+    end
     local dataToSearch = self.filteredData or self.data
     for i, data in ipairs(dataToSearch) do
         if predicate(data) then
             return data, i
         end
     end
-    return nil
+    return nil, nil
 end
 
 --- Find all elements matching a predicate
 -- @param predicate function - Function(elementData) returns true for match
 -- @return table - Array of matching elements
 function DataProviderMixin:FindAllByPredicate(predicate)
+    if type(predicate) ~= "function" then
+        error("LoolibDataProvider:FindAllByPredicate: predicate must be a function", 2)
+    end
     local results = {}
     local dataToSearch = self.filteredData or self.data
     for _, data in ipairs(dataToSearch) do
@@ -299,8 +331,16 @@ end
 -- @param endIndex number - End index (inclusive)
 -- @return table - Array of elements in range
 function DataProviderMixin:GetRange(startIndex, endIndex)
+    if type(startIndex) ~= "number" then
+        error("LoolibDataProvider:GetRange: startIndex must be a number", 2)
+    end
+    if type(endIndex) ~= "number" then
+        error("LoolibDataProvider:GetRange: endIndex must be a number", 2)
+    end
+
     local result = {}
     local dataToSearch = self.filteredData or self.data
+    startIndex = max(1, startIndex)
     local maxIndex = min(endIndex, #dataToSearch)
 
     for i = startIndex, maxIndex do
@@ -317,6 +357,9 @@ end
 --- Set the sort comparator
 -- @param sortFunc function - Comparison function(a, b) returns true if a < b
 function DataProviderMixin:SetSortComparator(sortFunc)
+    if type(sortFunc) ~= "function" then
+        error("LoolibDataProvider:SetSortComparator: sortFunc must be a function", 2)
+    end
     self.sortFunc = sortFunc
     self.pendingSort = true
 end
@@ -356,6 +399,9 @@ end
 --- Set the filter function
 -- @param filterFunc function - Function(elementData) returns true to include
 function DataProviderMixin:SetFilter(filterFunc)
+    if type(filterFunc) ~= "function" then
+        error("LoolibDataProvider:SetFilter: filterFunc must be a function", 2)
+    end
     self.filterFunc = filterFunc
     self:InvalidateFiltered()
 end
@@ -367,7 +413,7 @@ function DataProviderMixin:ClearFilter()
     self:TriggerEvent("OnSizeChanged", #self.data)
 end
 
---- Invalidate the filtered cache
+--- Invalidate the filtered cache -- INTERNAL
 function DataProviderMixin:InvalidateFiltered()
     if self.filterFunc then
         self.filteredData = nil
@@ -423,6 +469,9 @@ end
 -- @param index number - The index to update
 -- @param newData any - The new data (or nil to keep existing and just trigger update)
 function DataProviderMixin:UpdateIndex(index, newData)
+    if type(index) ~= "number" then
+        error("LoolibDataProvider:UpdateIndex: index must be a number", 2)
+    end
     if index >= 1 and index <= #self.data then
         if newData ~= nil then
             self.data[index] = newData
@@ -435,6 +484,9 @@ end
 --- Replace all data
 -- @param newData table - New data array
 function DataProviderMixin:ReplaceAll(newData)
+    if type(newData) ~= "table" then
+        error("LoolibDataProvider:ReplaceAll: newData must be a table", 2)
+    end
     wipe(self.data)
     for _, elementData in ipairs(newData) do
         self.data[#self.data + 1] = elementData
@@ -452,6 +504,9 @@ end
 -- @param mapFunc function - Function(elementData, index) returns new value
 -- @return table - Array of mapped values
 function DataProviderMixin:Map(mapFunc)
+    if type(mapFunc) ~= "function" then
+        error("LoolibDataProvider:Map: mapFunc must be a function", 2)
+    end
     local result = {}
     local dataToMap = self.filteredData or self.data
     for i, data in ipairs(dataToMap) do
@@ -465,6 +520,9 @@ end
 -- @param initialValue any - Initial accumulator value
 -- @return any - Final accumulated value
 function DataProviderMixin:Reduce(reduceFunc, initialValue)
+    if type(reduceFunc) ~= "function" then
+        error("LoolibDataProvider:Reduce: reduceFunc must be a function", 2)
+    end
     local result = initialValue
     local dataToReduce = self.filteredData or self.data
     for i, data in ipairs(dataToReduce) do
@@ -484,9 +542,12 @@ end
 ----------------------------------------------------------------------]]
 
 --- Create a new data provider
--- @param initialData table - Optional initial data
+-- @param initialData table|nil - Optional initial data
 -- @return table - A new DataProvider instance
 local function CreateDataProvider(initialData)
+    if initialData ~= nil and type(initialData) ~= "table" then
+        error("LoolibDataProvider.Create: initialData must be a table or nil", 2)
+    end
     local provider = CreateFromMixins(DataProviderMixin)
     provider:Init(initialData)
     return provider

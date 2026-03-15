@@ -7,6 +7,11 @@
     - Automatic wrapping
     - Row/column alignment
     - Flexible or fixed sizing
+    - Oversized children placed on their own line (LY-03)
+
+    NOTE: Layout calls child:ClearAllPoints() on every managed child.
+    External anchors on managed children are destroyed. See LayoutBase
+    header comment for details.
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
@@ -17,6 +22,13 @@ local LayoutBaseMixin = assert(
     "Loolib.Layout.LayoutBase.Mixin is required for FlowLayout"
 )
 local FlowLayoutModule = Layout.FlowLayout or Loolib:GetModule("Layout.FlowLayout") or {}
+
+-- Cache globals at file top
+local type = type
+local ipairs = ipairs
+local tostring = tostring
+local error = error
+local math_max = math.max
 
 --[[--------------------------------------------------------------------
     LoolibFlowLayoutMixin
@@ -41,9 +53,16 @@ end
     Configuration Setters
 ----------------------------------------------------------------------]]
 
+-- INTERNAL: valid configuration values
+local VALID_DIRECTION = { HORIZONTAL = true, VERTICAL = true }
+local VALID_ALIGN = { START = true, CENTER = true, END = true }
+
 --- Set flow direction
 -- @param direction string - HORIZONTAL or VERTICAL
 function FlowLayoutMixin:SetDirection(direction)
+    if not VALID_DIRECTION[direction] then
+        error("LoolibFlowLayout: SetDirection: invalid direction '" .. tostring(direction) .. "', expected HORIZONTAL|VERTICAL", 2)
+    end
     self.config.direction = direction
     self:MarkDirty()
 end
@@ -51,6 +70,9 @@ end
 --- Set spacing between wrapped rows/columns
 -- @param spacing number
 function FlowLayoutMixin:SetWrapSpacing(spacing)
+    if type(spacing) ~= "number" then
+        error("LoolibFlowLayout: SetWrapSpacing: spacing must be a number", 2)
+    end
     self.config.wrapSpacing = spacing
     self:MarkDirty()
 end
@@ -58,6 +80,9 @@ end
 --- Set content alignment (rows/columns)
 -- @param align string - START, CENTER, END
 function FlowLayoutMixin:SetAlignContent(align)
+    if not VALID_ALIGN[align] then
+        error("LoolibFlowLayout: SetAlignContent: invalid align '" .. tostring(align) .. "', expected START|CENTER|END", 2)
+    end
     self.config.alignContent = align
     self:MarkDirty()
 end
@@ -65,6 +90,9 @@ end
 --- Set item alignment within row/column
 -- @param align string - START, CENTER, END
 function FlowLayoutMixin:SetAlignItems(align)
+    if not VALID_ALIGN[align] then
+        error("LoolibFlowLayout: SetAlignItems: invalid align '" .. tostring(align) .. "', expected START|CENTER|END", 2)
+    end
     self.config.alignItems = align
     self:MarkDirty()
 end
@@ -73,6 +101,7 @@ end
     Layout Calculation - Horizontal Flow
 ----------------------------------------------------------------------]]
 
+-- INTERNAL: Horizontal flow layout calculation
 function FlowLayoutMixin:LayoutHorizontal()
     local children = self:GetVisibleChildren()
     local numChildren = #children
@@ -82,7 +111,7 @@ function FlowLayoutMixin:LayoutHorizontal()
         return
     end
 
-    local availWidth, _ = self:GetAvailableSpace()
+    local availWidth = self:GetAvailableSpace()
     local config = self.config
 
     -- Build rows
@@ -92,19 +121,31 @@ function FlowLayoutMixin:LayoutHorizontal()
     for _, child in ipairs(children) do
         local childWidth, childHeight = self:GetChildSize(child)
 
-        -- Check if child fits in current row
-        local neededWidth = currentRow.width > 0 and (currentRow.width + config.spacing + childWidth) or childWidth
+        -- LY-03: Handle children wider than available space
+        -- An oversized child is placed on its own line regardless
+        if childWidth > availWidth and availWidth > 0 then
+            -- Flush current row if non-empty
+            if #currentRow.children > 0 then
+                rows[#rows + 1] = currentRow
+                currentRow = { children = {}, width = 0, height = 0 }
+            end
+            -- Place oversized child on its own row
+            rows[#rows + 1] = { children = { child }, width = childWidth, height = childHeight }
+        else
+            -- Check if child fits in current row
+            local neededWidth = currentRow.width > 0 and (currentRow.width + config.spacing + childWidth) or childWidth
 
-        if neededWidth > availWidth and currentRow.width > 0 then
-            -- Start new row
-            rows[#rows + 1] = currentRow
-            currentRow = { children = {}, width = 0, height = 0 }
+            if neededWidth > availWidth and currentRow.width > 0 then
+                -- Start new row
+                rows[#rows + 1] = currentRow
+                currentRow = { children = {}, width = 0, height = 0 }
+            end
+
+            -- Add to current row
+            currentRow.children[#currentRow.children + 1] = child
+            currentRow.width = currentRow.width + (currentRow.width > 0 and config.spacing or 0) + childWidth
+            currentRow.height = math_max(currentRow.height, childHeight)
         end
-
-        -- Add to current row
-        currentRow.children[#currentRow.children + 1] = child
-        currentRow.width = currentRow.width + (currentRow.width > 0 and config.spacing or 0) + childWidth
-        currentRow.height = math.max(currentRow.height, childHeight)
     end
 
     -- Don't forget the last row
@@ -115,11 +156,11 @@ function FlowLayoutMixin:LayoutHorizontal()
     -- Calculate total height
     local totalHeight = 0
     local maxRowWidth = 0
-    for i, row in ipairs(rows) do
+    for _, row in ipairs(rows) do
         totalHeight = totalHeight + row.height
-        maxRowWidth = math.max(maxRowWidth, row.width)
+        maxRowWidth = math_max(maxRowWidth, row.width)
     end
-    totalHeight = totalHeight + (config.wrapSpacing * (#rows - 1))
+    totalHeight = totalHeight + (config.wrapSpacing * math_max(0, #rows - 1))
 
     -- Position rows
     local currentY = -config.paddingTop
@@ -146,6 +187,7 @@ function FlowLayoutMixin:LayoutHorizontal()
                 offsetY = -(row.height - childHeight)
             end
 
+            -- NOTE: ClearAllPoints destroys external anchors (LY-01)
             child:ClearAllPoints()
             child:SetPoint("TOPLEFT", self.container, "TOPLEFT", currentX, currentY + offsetY)
 
@@ -162,6 +204,7 @@ end
     Layout Calculation - Vertical Flow
 ----------------------------------------------------------------------]]
 
+-- INTERNAL: Vertical flow layout calculation
 function FlowLayoutMixin:LayoutVertical()
     local children = self:GetVisibleChildren()
     local numChildren = #children
@@ -181,19 +224,31 @@ function FlowLayoutMixin:LayoutVertical()
     for _, child in ipairs(children) do
         local childWidth, childHeight = self:GetChildSize(child)
 
-        -- Check if child fits in current column
-        local neededHeight = currentColumn.height > 0 and (currentColumn.height + config.spacing + childHeight) or childHeight
+        -- LY-03: Handle children taller than available space
+        -- An oversized child is placed in its own column regardless
+        if childHeight > availHeight and availHeight > 0 then
+            -- Flush current column if non-empty
+            if #currentColumn.children > 0 then
+                columns[#columns + 1] = currentColumn
+                currentColumn = { children = {}, width = 0, height = 0 }
+            end
+            -- Place oversized child in its own column
+            columns[#columns + 1] = { children = { child }, width = childWidth, height = childHeight }
+        else
+            -- Check if child fits in current column
+            local neededHeight = currentColumn.height > 0 and (currentColumn.height + config.spacing + childHeight) or childHeight
 
-        if neededHeight > availHeight and currentColumn.height > 0 then
-            -- Start new column
-            columns[#columns + 1] = currentColumn
-            currentColumn = { children = {}, width = 0, height = 0 }
+            if neededHeight > availHeight and currentColumn.height > 0 then
+                -- Start new column
+                columns[#columns + 1] = currentColumn
+                currentColumn = { children = {}, width = 0, height = 0 }
+            end
+
+            -- Add to current column
+            currentColumn.children[#currentColumn.children + 1] = child
+            currentColumn.height = currentColumn.height + (currentColumn.height > 0 and config.spacing or 0) + childHeight
+            currentColumn.width = math_max(currentColumn.width, childWidth)
         end
-
-        -- Add to current column
-        currentColumn.children[#currentColumn.children + 1] = child
-        currentColumn.height = currentColumn.height + (currentColumn.height > 0 and config.spacing or 0) + childHeight
-        currentColumn.width = math.max(currentColumn.width, childWidth)
     end
 
     -- Don't forget the last column
@@ -204,11 +259,11 @@ function FlowLayoutMixin:LayoutVertical()
     -- Calculate total width
     local totalWidth = 0
     local maxColumnHeight = 0
-    for i, col in ipairs(columns) do
+    for _, col in ipairs(columns) do
         totalWidth = totalWidth + col.width
-        maxColumnHeight = math.max(maxColumnHeight, col.height)
+        maxColumnHeight = math_max(maxColumnHeight, col.height)
     end
-    totalWidth = totalWidth + (config.wrapSpacing * (#columns - 1))
+    totalWidth = totalWidth + (config.wrapSpacing * math_max(0, #columns - 1))
 
     -- Position columns
     local currentX = config.paddingLeft
@@ -235,6 +290,7 @@ function FlowLayoutMixin:LayoutVertical()
                 offsetX = col.width - childWidth
             end
 
+            -- NOTE: ClearAllPoints destroys external anchors (LY-01)
             child:ClearAllPoints()
             child:SetPoint("TOPLEFT", self.container, "TOPLEFT", currentX + offsetX, currentY)
 
@@ -252,9 +308,11 @@ end
 ----------------------------------------------------------------------]]
 
 function FlowLayoutMixin:Layout()
-    if not self.dirty then
-        return
+    if not self.dirty or self.layoutInProgress then
+        return  -- LY-04: reentrancy guard
     end
+
+    self.layoutInProgress = true  -- INTERNAL: prevent reentrant layout
 
     if self.config.direction == "VERTICAL" then
         self:LayoutVertical()
@@ -263,6 +321,7 @@ function FlowLayoutMixin:Layout()
     end
 
     self:MarkClean()
+    self.layoutInProgress = false
 end
 
 --[[--------------------------------------------------------------------
@@ -271,9 +330,12 @@ end
 
 --- Create a flow layout
 -- @param container Frame - Container frame
--- @param config table - Configuration
+-- @param config table - Optional configuration
 -- @return table - Layout instance
 local function CreateFlowLayout(container, config)
+    if not container then
+        error("LoolibFlowLayout: CreateFlowLayout: container is required", 2)
+    end
     local layout = CreateFromMixins(FlowLayoutMixin)
     layout:Init(container, config)
     return layout

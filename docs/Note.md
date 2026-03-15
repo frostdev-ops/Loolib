@@ -1177,3 +1177,23 @@ The renderer generates WoW formatting codes:
 "|TInterface\\Icons\\Spell_Nature_Lightning:16|t"  -- Lightning icon, 16px
 "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:0|t"  -- Star, font height
 ```
+
+### Safety and Hardening
+
+- **Parser depth limit**: Nested conditionals deeper than 20 levels are truncated with an error marker. This prevents stack overflows from deeply nested or malicious note text.
+- **Parser error recovery**: Unmatched closing tags are emitted as literal text instead of aborting the parse.
+- **Whitespace normalisation**: Leading/trailing whitespace is trimmed by the parser.
+- **Pattern injection protection**: User text passed to `string.gsub` patterns is escaped to prevent Lua pattern errors.
+- **WoW escape handling**: Literal pipes (`||`) and standard WoW text escapes are handled during markup processing.
+- **Timer drift prevention**: Remaining time is always calculated from `GetTime() - startTime` rather than accumulated decrements.
+- **Timer pause on hide**: The timer update loop is paused when the NoteFrame is hidden and resumes on show.
+- **Auto-size support**: `NoteFrame:SetAutoSize(true)` lets the frame height track content size dynamically.
+- **Word wrap**: Long lines are word-wrapped and non-space-wrapped to prevent text overflow.
+
+## Per-Module Documentation
+
+| Module | Doc |
+|--------|-----|
+| NoteParser | [NoteParser.md](NoteParser.md) |
+| NoteMarkup | [NoteMarkup.md](NoteMarkup.md) |
+| NoteFrame | [NoteFrame.md](NoteFrame.md) |

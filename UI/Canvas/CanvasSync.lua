@@ -30,6 +30,25 @@ local LoolibCallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib
 -- Verify dependencies are loaded
 assert(Loolib.Mixin, "Loolib/Core/Mixin.lua must be loaded before CanvasSync")
 
+-- Cached globals
+local type = type
+local error = error
+local pairs = pairs
+local ipairs = ipairs
+local next = next
+local table_insert = table.insert
+local math_max = math.max
+
+-- INTERNAL: Shallow-copy a serialized element table so sync metadata can be
+-- attached without mutating the captured baseline state.
+local function CopyElement(element)
+    local copy = {}
+    for key, value in pairs(element) do
+        copy[key] = value
+    end
+    return copy
+end
+
 --[[--------------------------------------------------------------------
     Event Names
 ----------------------------------------------------------------------]]
@@ -163,7 +182,7 @@ end
 -- @param seconds number - Minimum seconds between syncs (default 0.5)
 -- @return self - For method chaining
 function LoolibCanvasSyncMixin:SetSyncThrottle(seconds)
-    self._syncThrottle = math.max(0.1, seconds)
+    self._syncThrottle = math_max(0.1, seconds)
     return self
 end
 
@@ -223,9 +242,14 @@ function LoolibCanvasSyncMixin:GenerateDelta()
 end
 
 --- Compute delta between two states
--- @param oldState table - Previous state
--- @param newState table - Current state
--- @return table - Delta with version, added, removed, modified
+--- CV-04 FIX: Uses index-based comparison instead of syncId reference equality.
+--- The serialized element data from Serialize*() methods does NOT include syncId,
+--- so the old syncId-based map approach produced empty maps and every element
+--- appeared as "added" on every sync cycle. Now we compare by array index
+--- and use deep field comparison to detect changes.
+---@param oldState table Previous state
+---@param newState table Current state
+---@return table delta Delta with version, added, removed, modified
 function LoolibCanvasSyncMixin:_ComputeDelta(oldState, newState)
     local delta = {
         added = {},
@@ -239,47 +263,32 @@ function LoolibCanvasSyncMixin:_ComputeDelta(oldState, newState)
     for _, elementType in ipairs(elementTypes) do
         local oldElements = oldState[elementType] or {}
         local newElements = newState[elementType] or {}
+        local oldCount = #oldElements
+        local newCount = #newElements
 
-        -- Build lookup maps by sync ID
-        local oldMap = {}
-        local newMap = {}
-
-        if type(oldElements) == "table" then
-            for _, elem in ipairs(oldElements) do
-                if elem.syncId then
-                    oldMap[elem.syncId] = elem
-                end
-            end
-        end
-
-        if type(newElements) == "table" then
-            for _, elem in ipairs(newElements) do
-                if elem.syncId then
-                    newMap[elem.syncId] = elem
-                end
-            end
-        end
-
-        -- Find added and modified
         delta.added[elementType] = {}
         delta.modified[elementType] = {}
+        delta.removed[elementType] = {}
 
-        for syncId, newElem in pairs(newMap) do
-            if not oldMap[syncId] then
-                -- New element
-                table.insert(delta.added[elementType], newElem)
-            elseif self:_ElementChanged(oldMap[syncId], newElem) then
-                -- Modified element
-                table.insert(delta.modified[elementType], newElem)
+        -- CV-04 FIX: Compare by index position, not by syncId reference
+        -- Check elements that exist in both old and new (potential modifications)
+        local minCount = oldCount < newCount and oldCount or newCount
+        for i = 1, minCount do
+            if self:_ElementChanged(oldElements[i], newElements[i]) then
+                local elem = CopyElement(newElements[i])
+                elem._idx = i  -- Tag with index for apply without mutating baseline state
+                table_insert(delta.modified[elementType], elem)
             end
         end
 
-        -- Find removed
-        delta.removed[elementType] = {}
-        for syncId in pairs(oldMap) do
-            if not newMap[syncId] then
-                table.insert(delta.removed[elementType], syncId)
-            end
+        -- Elements beyond old count are newly added
+        for i = oldCount + 1, newCount do
+            table_insert(delta.added[elementType], newElements[i])
+        end
+
+        -- Elements beyond new count were removed (store indices)
+        for i = newCount + 1, oldCount do
+            table_insert(delta.removed[elementType], i)
         end
 
         -- Clean up empty tables
@@ -354,6 +363,10 @@ function LoolibCanvasSyncMixin:ApplyDelta(delta, sender)
         changeCount = self:_ApplyIncrementalDelta(delta)
         self:TriggerEvent("OnDeltaReceived", sender, changeCount)
     end
+
+    -- Keep the local sync baseline aligned with the newly applied remote
+    -- state so subsequent local broadcasts do not immediately echo it back.
+    self._lastSyncState = self:_CaptureState()
 
     self:TriggerEvent("OnSyncReceived", sender, delta.version)
 
@@ -473,27 +486,29 @@ function LoolibCanvasSyncMixin:_ApplyAdded(added)
 end
 
 --- Apply removed elements
--- @param removed table - Removed elements by type (array of syncIds)
+--- CV-05 FIX: _ComputeDelta sends array indices (not syncIds) in the removed
+--- arrays. Build a set of those indices and filter out matching positions.
+-- @param removed table - Removed elements by type (array of indices)
 -- @return number - Number of elements removed
 function LoolibCanvasSyncMixin:_ApplyRemoved(removed)
     local count = 0
 
-    -- Build a set of removed sync IDs for each type
+    -- Build a set of removed indices for each type
     local removedSets = {}
-    for elementType, syncIds in pairs(removed) do
+    for elementType, indices in pairs(removed) do
         removedSets[elementType] = {}
-        for _, syncId in ipairs(syncIds) do
-            removedSets[elementType][syncId] = true
+        for _, idx in ipairs(indices) do
+            removedSets[elementType][idx] = true
         end
     end
 
-    -- Filter out removed elements
+    -- Filter out removed elements by index position
     if removedSets.dots and self._brushManager then
         local existing = self._brushManager:SerializeDots() or {}
         local filtered = {}
-        for _, dot in ipairs(existing) do
-            if not removedSets.dots[dot.syncId] then
-                table.insert(filtered, dot)
+        for i, dot in ipairs(existing) do
+            if not removedSets.dots[i] then
+                table_insert(filtered, dot)
             else
                 count = count + 1
             end
@@ -504,9 +519,9 @@ function LoolibCanvasSyncMixin:_ApplyRemoved(removed)
     if removedSets.shapes and self._shapeManager then
         local existing = self._shapeManager:SerializeShapes() or {}
         local filtered = {}
-        for _, shape in ipairs(existing) do
-            if not removedSets.shapes[shape.syncId] then
-                table.insert(filtered, shape)
+        for i, shape in ipairs(existing) do
+            if not removedSets.shapes[i] then
+                table_insert(filtered, shape)
             else
                 count = count + 1
             end
@@ -517,9 +532,9 @@ function LoolibCanvasSyncMixin:_ApplyRemoved(removed)
     if removedSets.texts and self._textManager then
         local existing = self._textManager:SerializeTexts() or {}
         local filtered = {}
-        for _, text in ipairs(existing) do
-            if not removedSets.texts[text.syncId] then
-                table.insert(filtered, text)
+        for i, text in ipairs(existing) do
+            if not removedSets.texts[i] then
+                table_insert(filtered, text)
             else
                 count = count + 1
             end
@@ -530,9 +545,9 @@ function LoolibCanvasSyncMixin:_ApplyRemoved(removed)
     if removedSets.icons and self._iconManager then
         local existing = self._iconManager:SerializeIcons() or {}
         local filtered = {}
-        for _, icon in ipairs(existing) do
-            if not removedSets.icons[icon.syncId] then
-                table.insert(filtered, icon)
+        for i, icon in ipairs(existing) do
+            if not removedSets.icons[i] then
+                table_insert(filtered, icon)
             else
                 count = count + 1
             end
@@ -543,9 +558,9 @@ function LoolibCanvasSyncMixin:_ApplyRemoved(removed)
     if removedSets.images and self._imageManager then
         local existing = self._imageManager:SerializeImages() or {}
         local filtered = {}
-        for _, image in ipairs(existing) do
-            if not removedSets.images[image.syncId] then
-                table.insert(filtered, image)
+        for i, image in ipairs(existing) do
+            if not removedSets.images[i] then
+                table_insert(filtered, image)
             else
                 count = count + 1
             end
@@ -557,72 +572,75 @@ function LoolibCanvasSyncMixin:_ApplyRemoved(removed)
 end
 
 --- Apply modified elements
+--- CV-05 FIX: Uses index-based lookup via _idx tag (set by _ComputeDelta)
+--- instead of syncId, which serialized data does not include.
 -- @param modified table - Modified elements by type
 -- @return number - Number of elements modified
 function LoolibCanvasSyncMixin:_ApplyModified(modified)
     local count = 0
 
-    -- Build lookup maps for modified elements
+    -- Build index-based lookup maps for modified elements
+    -- _ComputeDelta tags each modified element with _idx = array position
     local modifiedMaps = {}
     for elementType, elements in pairs(modified) do
         modifiedMaps[elementType] = {}
         for _, elem in ipairs(elements) do
-            if elem.syncId then
-                modifiedMaps[elementType][elem.syncId] = elem
+            if elem._idx then
+                modifiedMaps[elementType][elem._idx] = elem
             end
         end
     end
 
-    -- Update modified elements
-    if modifiedMaps.dots and self._brushManager then
+    -- Update modified elements by index
+    if modifiedMaps.dots and next(modifiedMaps.dots) and self._brushManager then
         local existing = self._brushManager:SerializeDots() or {}
-        for i, dot in ipairs(existing) do
-            if modifiedMaps.dots[dot.syncId] then
-                existing[i] = modifiedMaps.dots[dot.syncId]
+        for idx, elem in pairs(modifiedMaps.dots) do
+            if existing[idx] then
+                existing[idx] = elem
                 count = count + 1
             end
         end
         self._brushManager:DeserializeDots(existing)
     end
 
-    if modifiedMaps.shapes and self._shapeManager then
+    if modifiedMaps.shapes and next(modifiedMaps.shapes) and self._shapeManager then
         local existing = self._shapeManager:SerializeShapes() or {}
-        for i, shape in ipairs(existing) do
-            if modifiedMaps.shapes[shape.syncId] then
-                existing[i] = modifiedMaps.shapes[shape.syncId]
+        for idx, elem in pairs(modifiedMaps.shapes) do
+            if existing[idx] then
+                existing[idx] = elem
                 count = count + 1
             end
         end
         self._shapeManager:DeserializeShapes(existing)
     end
 
-    if modifiedMaps.texts and self._textManager then
+    if modifiedMaps.texts and next(modifiedMaps.texts) and self._textManager then
         local existing = self._textManager:SerializeTexts() or {}
-        for i, text in ipairs(existing) do
-            if modifiedMaps.texts[text.syncId] then
-                existing[i] = modifiedMaps.texts[text.syncId]
+        for idx, elem in pairs(modifiedMaps.texts) do
+            if existing[idx] then
+                existing[idx] = elem
                 count = count + 1
             end
         end
         self._textManager:DeserializeTexts(existing)
     end
 
-    if modifiedMaps.icons and self._iconManager then
+    if modifiedMaps.icons and next(modifiedMaps.icons) and self._iconManager then
         local existing = self._iconManager:SerializeIcons() or {}
-        for i, icon in ipairs(existing) do
-            if modifiedMaps.icons[icon.syncId] then
-                existing[i] = modifiedMaps.icons[icon.syncId]
+        for idx, elem in pairs(modifiedMaps.icons) do
+            if existing[idx] then
+                existing[idx] = elem
                 count = count + 1
             end
         end
         self._iconManager:DeserializeIcons(existing)
     end
 
-    if modifiedMaps.images and self._imageManager then
+    if modifiedMaps.images and next(modifiedMaps.images) and self._imageManager then
         local existing = self._imageManager:SerializeImages() or {}
-        for i, image in ipairs(existing) do
-            if modifiedMaps.images[image.syncId] then
-                existing[i] = modifiedMaps.images[image.syncId]
+        for idx, elem in pairs(modifiedMaps.images) do
+            if existing[idx] then
+                existing[idx] = elem
                 count = count + 1
             end
         end
@@ -895,8 +913,8 @@ local CanvasSyncModule = {
     MSG_REQUEST_FULL = MSG_REQUEST_FULL,
 }
 
-Loolib:RegisterModule("CanvasSync", CanvasSyncModule)
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasSync", CanvasSyncModule)
 
--- Also register in UI module namespace
-local UI = Loolib:GetOrCreateModule("UI")
-UI.CanvasSync = CanvasSyncModule
+-- Backward-compat alias
+Loolib:RegisterModule("CanvasSync", CanvasSyncModule)

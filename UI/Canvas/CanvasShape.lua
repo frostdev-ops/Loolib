@@ -11,11 +11,22 @@
 
 local Loolib = LibStub("Loolib")
 
+-- Cached globals
+local type = type
+local error = error
+local pairs = pairs
+local ipairs = ipairs
+local math_max = math.max
+local math_min = math.min
+local table_insert = table.insert
+local table_sort = table.sort
+
 --[[--------------------------------------------------------------------
     Shape Type Constants
 ----------------------------------------------------------------------]]
 
 --- Global shape type enumeration
+---@type table<string, number>
 local LOOLIB_SHAPE_TYPES = {
     CIRCLE = 1,           -- Outline circle
     CIRCLE_FILLED = 2,    -- Filled circle
@@ -34,6 +45,7 @@ local LOOLIB_SHAPE_TYPES = {
     plus rendering properties.
 ----------------------------------------------------------------------]]
 
+---@class LoolibCanvasShapeMixin
 local LoolibCanvasShapeMixin = {}
 
 --[[--------------------------------------------------------------------
@@ -41,7 +53,8 @@ local LoolibCanvasShapeMixin = {}
 ----------------------------------------------------------------------]]
 
 --- Initialize the shape management system
--- Sets up parallel arrays and default settings
+--- Sets up parallel arrays and default settings
+---@return LoolibCanvasShapeMixin self
 function LoolibCanvasShapeMixin:OnLoad()
     -- Current drawing settings
     self._shapeType = LOOLIB_SHAPE_TYPES.LINE
@@ -74,6 +87,7 @@ function LoolibCanvasShapeMixin:OnLoad()
 
     -- Sync ID counter
     self._nextSyncId = 1
+    return self
 end
 
 --[[--------------------------------------------------------------------
@@ -83,71 +97,85 @@ end
 ----------------------------------------------------------------------]]
 
 --- Set the current shape type for new shapes
--- @param shapeType number - One of LOOLIB_SHAPE_TYPES
--- @return self - For method chaining
+---@param shapeType number One of LOOLIB_SHAPE_TYPES
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:SetShapeType(shapeType)
+    if type(shapeType) ~= "number" then
+        error("LoolibCanvasShape: SetShapeType: shapeType must be a number", 2)
+    end
     self._shapeType = shapeType
     return self
 end
 
 --- Get the current shape type
--- @return number - Current LOOLIB_SHAPE_TYPES value
+---@return number shapeType Current LOOLIB_SHAPE_TYPES value
 function LoolibCanvasShapeMixin:GetShapeType()
     return self._shapeType
 end
 
 --- Set the current color index for new shapes
--- @param colorIndex number - Color palette index (1-based)
--- @return self - For method chaining
+--- CV-22: Validates color range
+---@param colorIndex number Color palette index (1-based)
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:SetShapeColor(colorIndex)
-    self._shapeColor = colorIndex
+    if type(colorIndex) ~= "number" then
+        error("LoolibCanvasShape: SetShapeColor: colorIndex must be a number", 2)
+    end
+    -- CV-22: Clamp to valid color range (1-25)
+    self._shapeColor = math_max(1, math_min(25, colorIndex))
     return self
 end
 
 --- Get the current color index
--- @return number - Current color palette index
+---@return number colorIndex Current color palette index
 function LoolibCanvasShapeMixin:GetShapeColor()
     return self._shapeColor
 end
 
 --- Set the current size/thickness for new shapes
--- @param size number - Size value (1-10, clamped)
--- @return self - For method chaining
+---@param size number Size value (1-10, clamped)
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:SetShapeSize(size)
-    self._shapeSize = math.max(1, math.min(10, size))
+    if type(size) ~= "number" then
+        error("LoolibCanvasShape: SetShapeSize: size must be a number", 2)
+    end
+    self._shapeSize = math_max(1, math_min(10, size))
     return self
 end
 
 --- Get the current shape size
--- @return number - Current size value
+---@return number size Current size value
 function LoolibCanvasShapeMixin:GetShapeSize()
     return self._shapeSize
 end
 
 --- Set the current alpha transparency for new shapes
--- @param alpha number - Alpha value (0-1, clamped)
--- @return self - For method chaining
+---@param alpha number Alpha value (0-1, clamped)
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:SetShapeAlpha(alpha)
-    self._shapeAlpha = math.max(0, math.min(1, alpha))
+    if type(alpha) ~= "number" then
+        error("LoolibCanvasShape: SetShapeAlpha: alpha must be a number", 2)
+    end
+    self._shapeAlpha = math_max(0, math_min(1, alpha))
     return self
 end
 
 --- Get the current alpha transparency
--- @return number - Current alpha value
+---@return number alpha Current alpha value
 function LoolibCanvasShapeMixin:GetShapeAlpha()
     return self._shapeAlpha
 end
 
 --- Set the current group ID for new shapes
--- @param groupId number - Group ID (0 = ungrouped)
--- @return self - For method chaining
+---@param groupId number|nil Group ID (0 = ungrouped)
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:SetCurrentGroup(groupId)
     self._currentGroup = groupId or 0
     return self
 end
 
 --- Get the current group ID
--- @return number - Current group ID
+---@return number groupId Current group ID
 function LoolibCanvasShapeMixin:GetCurrentGroup()
     return self._currentGroup
 end
@@ -160,11 +188,14 @@ end
 ----------------------------------------------------------------------]]
 
 --- Begin drawing a new shape at the given point
--- Enters preview mode for interactive shape creation
--- @param x number - Starting X coordinate
--- @param y number - Starting Y coordinate
--- @return self - For method chaining
+--- Enters preview mode for interactive shape creation
+---@param x number Starting X coordinate
+---@param y number Starting Y coordinate
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:StartShape(x, y)
+    if type(x) ~= "number" or type(y) ~= "number" then
+        error("LoolibCanvasShape: StartShape: x and y must be numbers", 2)
+    end
     self._isDrawingShape = true
     self._previewX1 = x
     self._previewY1 = y
@@ -179,9 +210,9 @@ function LoolibCanvasShapeMixin:StartShape(x, y)
 end
 
 --- Update the preview endpoint as the mouse moves
--- @param x number - Current X coordinate
--- @param y number - Current Y coordinate
--- @return self - For method chaining
+---@param x number Current X coordinate
+---@param y number Current Y coordinate
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:UpdateShapePreview(x, y)
     if not self._isDrawingShape then return self end
 
@@ -196,10 +227,10 @@ function LoolibCanvasShapeMixin:UpdateShapePreview(x, y)
 end
 
 --- Finalize the shape at the current endpoint
--- Creates the actual shape and exits preview mode
--- @param x number - Final X coordinate
--- @param y number - Final Y coordinate
--- @return number|nil - Index of created shape, or nil if invalid
+--- Creates the actual shape and exits preview mode
+---@param x number Final X coordinate
+---@param y number Final Y coordinate
+---@return number|nil index Index of created shape, or nil if invalid
 function LoolibCanvasShapeMixin:FinishShape(x, y)
     if not self._isDrawingShape then return nil end
 
@@ -237,8 +268,8 @@ function LoolibCanvasShapeMixin:FinishShape(x, y)
 end
 
 --- Cancel the current shape preview
--- Exits preview mode without creating a shape
--- @return self - For method chaining
+--- Exits preview mode without creating a shape
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:CancelShape()
     self._isDrawingShape = false
     self._previewX1 = nil
@@ -249,14 +280,13 @@ function LoolibCanvasShapeMixin:CancelShape()
 end
 
 --- Check if currently in preview mode
--- @return boolean - True if drawing a shape
+---@return boolean drawing True if drawing a shape
 function LoolibCanvasShapeMixin:IsDrawingShape()
     return self._isDrawingShape
 end
 
 --- Get the current preview shape data
--- @return table|nil - Preview shape info, or nil if not drawing
---   Fields: x1, y1, x2, y2, shapeType, color, size, alpha
+---@return table|nil preview Preview shape info, or nil if not drawing
 function LoolibCanvasShapeMixin:GetPreviewShape()
     if not self._isDrawingShape then return nil end
     return {
@@ -275,17 +305,17 @@ end
     Shape Creation and Management
 ----------------------------------------------------------------------]]
 
---- Internal: Add a shape to the parallel arrays
--- @param x1 number - Start X
--- @param y1 number - Start Y
--- @param x2 number - End X
--- @param y2 number - End Y
--- @param shapeType number - LOOLIB_SHAPE_TYPES value
--- @param color number - Color index
--- @param size number - Size/thickness
--- @param alpha number - Alpha transparency
--- @param group number - Group ID
--- @return number - Index of added shape
+--- INTERNAL: Add a shape to the parallel arrays
+---@param x1 number Start X
+---@param y1 number Start Y
+---@param x2 number End X
+---@param y2 number End Y
+---@param shapeType number LOOLIB_SHAPE_TYPES value
+---@param color number Color index
+---@param size number Size/thickness
+---@param alpha number Alpha transparency
+---@param group number Group ID
+---@return number index Index of added shape
 function LoolibCanvasShapeMixin:_AddShape(x1, y1, x2, y2, shapeType, color, size, alpha, group)
     local index = #self._shape_X1 + 1
 
@@ -309,17 +339,20 @@ function LoolibCanvasShapeMixin:_AddShape(x1, y1, x2, y2, shapeType, color, size
 end
 
 --- Add a shape directly with all parameters
--- @param x1 number - Start X
--- @param y1 number - Start Y
--- @param x2 number - End X
--- @param y2 number - End Y
--- @param shapeType number|nil - LOOLIB_SHAPE_TYPES value (default: current)
--- @param color number|nil - Color index (default: current)
--- @param size number|nil - Size/thickness (default: current)
--- @param alpha number|nil - Alpha transparency (default: current)
--- @param group number|nil - Group ID (default: current)
--- @return number - Index of created shape
+---@param x1 number Start X
+---@param y1 number Start Y
+---@param x2 number End X
+---@param y2 number End Y
+---@param shapeType number|nil LOOLIB_SHAPE_TYPES value (default: current)
+---@param color number|nil Color index (default: current)
+---@param size number|nil Size/thickness (default: current)
+---@param alpha number|nil Alpha transparency (default: current)
+---@param group number|nil Group ID (default: current)
+---@return number index Index of created shape
 function LoolibCanvasShapeMixin:AddShape(x1, y1, x2, y2, shapeType, color, size, alpha, group)
+    if type(x1) ~= "number" or type(y1) ~= "number" or type(x2) ~= "number" or type(y2) ~= "number" then
+        error("LoolibCanvasShape: AddShape: coordinates must be numbers", 2)
+    end
     return self:_AddShape(
         x1, y1, x2, y2,
         shapeType or self._shapeType,
@@ -331,9 +364,8 @@ function LoolibCanvasShapeMixin:AddShape(x1, y1, x2, y2, shapeType, color, size,
 end
 
 --- Get a shape's data by index
--- @param index number - Shape index (1-based)
--- @return table|nil - Shape data, or nil if not found
---   Fields: x1, y1, x2, y2, shapeType, color, size, alpha, group, syncId
+---@param index number Shape index (1-based)
+---@return table|nil shape Shape data, or nil if not found
 function LoolibCanvasShapeMixin:GetShape(index)
     if not self._shape_X1[index] then return nil end
     return {
@@ -351,7 +383,7 @@ function LoolibCanvasShapeMixin:GetShape(index)
 end
 
 --- Get all shapes as an array
--- @return table - Array of shape data tables (indexed 1-N)
+---@return table shapes Array of shape data tables (indexed 1-N)
 function LoolibCanvasShapeMixin:GetAllShapes()
     local result = {}
     for i = 1, #self._shape_X1 do
@@ -361,14 +393,14 @@ function LoolibCanvasShapeMixin:GetAllShapes()
 end
 
 --- Get the total number of shapes
--- @return number - Shape count
+---@return number count Shape count
 function LoolibCanvasShapeMixin:GetShapeCount()
     return #self._shape_X1
 end
 
 --- Clear all shapes
--- Removes all shape data and resets sync counter
--- @return self - For method chaining
+--- Removes all shape data and resets sync counter
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:ClearShapes()
     self._shape_X1 = {}
     self._shape_Y1 = {}
@@ -395,9 +427,9 @@ end
 ----------------------------------------------------------------------]]
 
 --- Delete all shapes in a specific group
--- Rebuilds parallel arrays without the matching group
--- @param groupId number - Group ID to delete
--- @return self - For method chaining
+--- Rebuilds parallel arrays without the matching group
+---@param groupId number Group ID to delete
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:DeleteShapesByGroup(groupId)
     -- Rebuild arrays without matching group
     local newX1, newY1, newX2, newY2 = {}, {}, {}, {}
@@ -433,10 +465,10 @@ function LoolibCanvasShapeMixin:DeleteShapesByGroup(groupId)
 end
 
 --- Move all shapes in a group by a delta offset
--- @param groupId number - Group ID to move
--- @param deltaX number - X offset to apply
--- @param deltaY number - Y offset to apply
--- @return self - For method chaining
+---@param groupId number Group ID to move
+---@param deltaX number X offset to apply
+---@param deltaY number Y offset to apply
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:MoveShapesByGroup(groupId, deltaX, deltaY)
     for i = 1, #self._shape_X1 do
         if self._shape_GROUP[i] == groupId then
@@ -455,8 +487,8 @@ function LoolibCanvasShapeMixin:MoveShapesByGroup(groupId, deltaX, deltaY)
 end
 
 --- Delete a single shape by index
--- @param index number - Shape index to delete
--- @return self - For method chaining
+---@param index number Shape index to delete
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:DeleteShape(index)
     if not self._shape_X1[index] then return self end
 
@@ -494,7 +526,7 @@ function LoolibCanvasShapeMixin:DeleteShape(index)
 end
 
 --- Get all groups present in the shape list
--- @return table - Array of unique group IDs
+---@return table groups Array of unique group IDs
 function LoolibCanvasShapeMixin:GetGroups()
     local groups = {}
     local seen = {}
@@ -503,17 +535,17 @@ function LoolibCanvasShapeMixin:GetGroups()
         local groupId = self._shape_GROUP[i]
         if not seen[groupId] then
             seen[groupId] = true
-            table.insert(groups, groupId)
+            table_insert(groups, groupId)
         end
     end
 
-    table.sort(groups)
+    table_sort(groups)
     return groups
 end
 
 --- Get shape count for a specific group
--- @param groupId number - Group ID to count
--- @return number - Number of shapes in group
+---@param groupId number Group ID to count
+---@return number count Number of shapes in group
 function LoolibCanvasShapeMixin:GetGroupShapeCount(groupId)
     local count = 0
     for i = 1, #self._shape_GROUP do
@@ -531,7 +563,7 @@ end
 ----------------------------------------------------------------------]]
 
 --- Serialize all shapes to a compact table format
--- @return table - Array of shape data (abbreviated field names)
+---@return table data Array of shape data (abbreviated field names)
 function LoolibCanvasShapeMixin:SerializeShapes()
     local data = {}
     for i = 1, #self._shape_X1 do
@@ -551,9 +583,9 @@ function LoolibCanvasShapeMixin:SerializeShapes()
 end
 
 --- Deserialize shapes from a table format
--- Clears existing shapes and loads the provided data
--- @param data table|nil - Array of shape data (or nil to clear)
--- @return self - For method chaining
+--- Clears existing shapes and loads the provided data
+---@param data table|nil Array of shape data (or nil to clear)
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:DeserializeShapes(data)
     self:ClearShapes()
     if not data then return self end
@@ -584,8 +616,8 @@ end
 ----------------------------------------------------------------------]]
 
 --- Get the human-readable name of a shape type
--- @param shapeType number - LOOLIB_SHAPE_TYPES value
--- @return string - Type name (e.g., "CIRCLE") or "UNKNOWN"
+---@param shapeType number LOOLIB_SHAPE_TYPES value
+---@return string name Type name (e.g., "CIRCLE") or "UNKNOWN"
 function LoolibCanvasShapeMixin:GetShapeTypeName(shapeType)
     for name, value in pairs(LOOLIB_SHAPE_TYPES) do
         if value == shapeType then return name end
@@ -594,11 +626,14 @@ function LoolibCanvasShapeMixin:GetShapeTypeName(shapeType)
 end
 
 --- Update a shape's properties
--- @param index number - Shape index
--- @param updates table - Table of properties to update (x1, y1, x2, y2, etc.)
--- @return self - For method chaining
+---@param index number Shape index
+---@param updates table Table of properties to update (x1, y1, x2, y2, etc.)
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:UpdateShape(index, updates)
     if not self._shape_X1[index] then return self end
+    if type(updates) ~= "table" then
+        error("LoolibCanvasShape: UpdateShape: updates must be a table", 2)
+    end
 
     if updates.x1 then self._shape_X1[index] = updates.x1 end
     if updates.y1 then self._shape_Y1[index] = updates.y1 end
@@ -618,10 +653,10 @@ function LoolibCanvasShapeMixin:UpdateShape(index, updates)
 end
 
 --- Move a single shape by offset
--- @param index number - Shape index
--- @param deltaX number - X offset
--- @param deltaY number - Y offset
--- @return self - For method chaining
+---@param index number Shape index
+---@param deltaX number X offset
+---@param deltaY number Y offset
+---@return LoolibCanvasShapeMixin self For method chaining
 function LoolibCanvasShapeMixin:MoveShape(index, deltaX, deltaY)
     if not self._shape_X1[index] then return self end
 
@@ -637,12 +672,24 @@ function LoolibCanvasShapeMixin:MoveShape(index, deltaX, deltaY)
     return self
 end
 
+--- Set the group ID for a shape at the specified index
+--- Used by MergeGroups and group reassignment operations
+---@param index number Shape index
+---@param groupId number New group ID
+---@return LoolibCanvasShapeMixin self For method chaining
+function LoolibCanvasShapeMixin:SetShapeGroup(index, groupId)
+    if not self._shape_X1[index] then return self end
+    self._shape_GROUP[index] = groupId or 0
+    return self
+end
+
 --[[--------------------------------------------------------------------
     Factory Function
 ----------------------------------------------------------------------]]
 
 --- Create a new shape manager instance
--- @return table - A new shape manager object
+--- INTERNAL
+---@return LoolibCanvasShapeMixin shape A new shape manager object
 local function LoolibCreateCanvasShape()
     local shape = {}
     Loolib.Mixin(shape, LoolibCanvasShapeMixin)
@@ -654,6 +701,14 @@ end
     Module Registration
 ----------------------------------------------------------------------]]
 
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasShape", {
+    Mixin = LoolibCanvasShapeMixin,
+    TYPES = LOOLIB_SHAPE_TYPES,
+    Create = LoolibCreateCanvasShape,
+})
+
+-- Backward-compat alias
 Loolib:RegisterModule("CanvasShape", {
     Mixin = LoolibCanvasShapeMixin,
     TYPES = LOOLIB_SHAPE_TYPES,

@@ -9,6 +9,16 @@
 
 local Loolib = LibStub("Loolib")
 
+-- Cached globals
+local type = type
+local error = error
+local pairs = pairs
+local ipairs = ipairs
+local math_abs = math.abs
+local math_max = math.max
+local math_min = math.min
+local table_insert = table.insert
+
 --[[--------------------------------------------------------------------
     Icon Type Constants
 
@@ -225,9 +235,13 @@ end
 ----------------------------------------------------------------------]]
 
 --- Set the default icon type for new icons
--- @param iconType number - Icon type constant (1-25)
--- @return self - For method chaining
+--- CV-23: Validates icon ID type
+---@param iconType number Icon type constant (1-25)
+---@return LoolibCanvasIconMixin self For method chaining
 function LoolibCanvasIconMixin:SetIconType(iconType)
+    if type(iconType) ~= "number" then
+        error("LoolibCanvasIcon: SetIconType: iconType must be a number", 2)
+    end
     self._iconType = iconType
     return self
 end
@@ -634,15 +648,18 @@ local function LoolibCreateCanvasIcon()
     return iconManager
 end
 
--- Register with Loolib module system
-local CanvasIcon = Loolib:RegisterModule("CanvasIcon", {
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasIcon", {
     Mixin = LoolibCanvasIconMixin,
     TYPES = LOOLIB_ICON_TYPES,
     TEXTURES = LOOLIB_ICON_TEXTURES,
     Create = LoolibCreateCanvasIcon,
 })
 
--- Also register in UI.Canvas namespace
-local UI = Loolib:GetOrCreateModule("UI")
-UI.Canvas = UI.Canvas or {}
-UI.Canvas.Icon = CanvasIcon
+-- Backward-compat alias
+Loolib:RegisterModule("CanvasIcon", {
+    Mixin = LoolibCanvasIconMixin,
+    TYPES = LOOLIB_ICON_TYPES,
+    TEXTURES = LOOLIB_ICON_TEXTURES,
+    Create = LoolibCreateCanvasIcon,
+})

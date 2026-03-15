@@ -183,8 +183,7 @@ end
 ---Show menu at cursor position
 function LoolibPopupMenuMixin:ShowAtCursor()
     local x, y = GetCursorPosition()
-    local scale = UIParent:GetEffectiveScale()
-    self:_ShowAt(x / scale, y / scale)
+    self:_ShowAt(x, y)
 end
 
 ---Show menu anchored to a frame
@@ -218,8 +217,16 @@ function LoolibPopupMenuMixin:Close()
     end
 end
 
+-- INTERNAL: Show at absolute pixel coordinates.  Applies UIParent effective-
+-- scale compensation so callers (e.g. ShowAtCursor) can pass raw GetCursorPosition()
+-- values without pre-dividing.
 function LoolibPopupMenuMixin:_ShowAt(x, y)
     self:ClearAllPoints()
+
+    -- Compensate for UIParent effective scale
+    local scale = UIParent:GetEffectiveScale()
+    x = x / scale
+    y = y / scale
 
     -- Build menu to get dimensions
     self:_Build()

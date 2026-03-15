@@ -10,6 +10,9 @@ local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
     LibStub guards Lua from double-loading; XML has no such guard.
 ----------------------------------------------------------------------]]
 
+-- Cache WoW globals
+local CreateFrame = CreateFrame
+
 -- Version guard: if a newer or equal version already loaded, bail out
 if Loolib.templatesVersion and Loolib.templatesVersion >= 1 then
     return
@@ -17,6 +20,18 @@ end
 Loolib.templatesVersion = 1
 
 local LoolibTemplates = {}
+
+-- INTERNAL: Guard for SetBackdrop — verifies the frame inherits BackdropTemplate
+-- or otherwise has the SetBackdrop method.  Falls back to a no-op with a debug
+-- warning instead of crashing. (TP-08)
+local function SafeSetBackdrop(frame, backdrop)
+    if frame.SetBackdrop then
+        frame:SetBackdrop(backdrop)
+        return true
+    end
+    Loolib:Debug("Templates: frame missing SetBackdrop (BackdropTemplate not inherited)")
+    return false
+end
 
 --[[--------------------------------------------------------------------
     LoolibPanelTemplate
@@ -28,10 +43,11 @@ function LoolibTemplates.InitPanel(frame)
     frame.Title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     frame.Title:SetJustifyH("CENTER")
     frame.Title:SetPoint("TOP", 0, -10)
-    -- Backdrop
-    frame:SetBackdrop(BACKDROP_DIALOG_32_32)
-    frame:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
-    frame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    -- Backdrop (TP-08: capability check)
+    if SafeSetBackdrop(frame, BACKDROP_DIALOG_32_32) then
+        frame:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+        frame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    end
 end
 
 --[[--------------------------------------------------------------------
@@ -98,10 +114,11 @@ function LoolibTemplates.InitScrollableList(frame)
     content:SetPoint("TOPLEFT")
     scrollFrame.Content = content
     scrollFrame:SetScrollChild(content)
-    -- Backdrop
-    frame:SetBackdrop(BACKDROP_DIALOG_32_32)
-    frame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
-    frame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    -- Backdrop (TP-08: capability check)
+    if SafeSetBackdrop(frame, BACKDROP_DIALOG_32_32) then
+        frame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+        frame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    end
 end
 
 --[[--------------------------------------------------------------------
@@ -163,9 +180,11 @@ function LoolibTemplates.InitTabbedPanel(frame)
     local contentFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     contentFrame:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT")
     contentFrame:SetPoint("BOTTOMRIGHT")
-    contentFrame:SetBackdrop(BACKDROP_DIALOG_32_32)
-    contentFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
-    contentFrame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    -- (TP-08: capability check)
+    if SafeSetBackdrop(contentFrame, BACKDROP_DIALOG_32_32) then
+        contentFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
+        contentFrame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    end
     frame.ContentFrame = contentFrame
 end
 
@@ -186,11 +205,12 @@ function LoolibTemplates.InitTooltip(frame)
     frame.Text:SetJustifyV("TOP")
     frame.Text:SetPoint("TOPLEFT", frame.Title, "BOTTOMLEFT", 0, -4)
     frame.Text:SetPoint("RIGHT", -10, 0)
-    -- Backdrop
+    -- Backdrop (TP-08: capability check)
     ---@diagnostic disable-next-line: undefined-global
-    frame:SetBackdrop(BACKDROP_TOOLTIP_16_16_5555)
-    frame:SetBackdropColor(0, 0, 0, 0.9)
-    frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    if SafeSetBackdrop(frame, BACKDROP_TOOLTIP_16_16_5555) then
+        frame:SetBackdropColor(0, 0, 0, 0.9)
+        frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    end
 end
 
 --[[--------------------------------------------------------------------
@@ -218,10 +238,11 @@ function LoolibTemplates.InitDialog(frame)
     frame.ButtonContainer:SetSize(1, 30)
     frame.ButtonContainer:SetPoint("BOTTOMLEFT", 20, 15)
     frame.ButtonContainer:SetPoint("BOTTOMRIGHT", -20, 15)
-    -- Backdrop
-    frame:SetBackdrop(BACKDROP_DIALOG_32_32)
-    frame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
-    frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    -- Backdrop (TP-08: capability check)
+    if SafeSetBackdrop(frame, BACKDROP_DIALOG_32_32) then
+        frame:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+        frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    end
 end
 
 --[[--------------------------------------------------------------------
@@ -255,14 +276,16 @@ function LoolibTemplates.InitDropdown(frame)
     frame.Text:SetJustifyH("LEFT")
     frame.Text:SetPoint("LEFT", 8, 0)
     frame.Text:SetPoint("RIGHT", button, "LEFT", -4, 0)
-    -- Backdrop
-    frame:SetBackdrop({
+    -- Backdrop (TP-08: capability check)
+    local dropdownBD = {
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
-    })
-    frame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
-    frame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    }
+    if SafeSetBackdrop(frame, dropdownBD) then
+        frame:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+        frame:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    end
 end
 
 --[[--------------------------------------------------------------------
@@ -283,14 +306,16 @@ function LoolibTemplates.InitDropdownMenu(frame)
     content:SetPoint("TOPLEFT")
     scrollFrame.Content = content
     scrollFrame:SetScrollChild(content)
-    -- Backdrop
-    frame:SetBackdrop({
+    -- Backdrop (TP-08: capability check)
+    local menuBD = {
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
-    })
-    frame:SetBackdropColor(0.12, 0.12, 0.12, 0.95)
-    frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    }
+    if SafeSetBackdrop(frame, menuBD) then
+        frame:SetBackdropColor(0.12, 0.12, 0.12, 0.95)
+        frame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    end
 end
 
 --[[--------------------------------------------------------------------

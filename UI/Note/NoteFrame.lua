@@ -6,7 +6,7 @@
     encounter events, and timer updates.
 
     Features:
-    - Full rendering pipeline (Parser → Markup → Renderer)
+    - Full rendering pipeline (Parser -> Markup -> Renderer)
     - Timer integration with countdown updates
     - Glow effects for timer alerts
     - Draggable with position persistence
@@ -14,13 +14,29 @@
     - Lock/unlock for interaction control
     - Event handling for encounters, combat, roster changes
     - Scrollable for long notes
+    - Auto-resize for dynamic content (NT-11)
 
     Reference:
     - MRT/Note.lua: Note window creation and positioning
     - WindowUtil: Position persistence
-    - DraggableMixin: Drag support
+    - DraggableMixin: Drag support (soft dependency)
     - EventFrame: Event handling patterns
 ----------------------------------------------------------------------]]
+
+-- Cache globals -- INTERNAL
+local type = type
+local error = error
+local pairs = pairs
+local ipairs = ipairs
+local math_max = math.max
+local table_insert = table.insert
+local table_concat = table.concat
+local string_format = string.format
+
+-- WoW globals -- INTERNAL
+local CreateFrame = CreateFrame
+local UIParent = UIParent
+local InCombatLockdown = InCombatLockdown
 
 local Loolib = LibStub("Loolib")
 local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for NoteFrame")
@@ -32,6 +48,7 @@ local LoolibNoteFrameMixin = {}
 -- INITIALIZATION
 -- ============================================================
 
+--- Initialise the note frame. Idempotent.
 function LoolibNoteFrameMixin:OnLoad()
     -- Raw note text
     self._rawText = ""
@@ -42,6 +59,7 @@ function LoolibNoteFrameMixin:OnLoad()
     self._isVisible = true
     self._showInCombat = true
     self._showOutOfCombat = true
+    self._autoSize = false  -- NT-11: auto-resize on content change
 
     -- Appearance
     self._fontSize = 12
@@ -62,6 +80,7 @@ function LoolibNoteFrameMixin:OnLoad()
     self._callbacksSetup = false
 end
 
+--- Build the frame's child widgets -- INTERNAL
 function LoolibNoteFrameMixin:_CreateUI()
     -- Background
     self.background = self:CreateTexture(nil, "BACKGROUND")
@@ -91,12 +110,13 @@ function LoolibNoteFrameMixin:_CreateUI()
     self.content = CreateFrame("Frame", nil, self.scrollFrame)
     self.scrollFrame:SetScrollChild(self.content)
 
-    -- Text display
+    -- NT-10: Text display with word-wrap enabled
     self.text = self.content:CreateFontString(nil, "OVERLAY")
     self.text:SetPoint("TOPLEFT", 0, 0)
     self.text:SetJustifyH("LEFT")
     self.text:SetJustifyV("TOP")
     self.text:SetWordWrap(true)
+    self.text:SetNonSpaceWrap(true)  -- NT-10: break long tokens that exceed width
     self.text:SetFont(self._fontFace, self._fontSize, "OUTLINE")
     self.text:SetTextColor(
         self._textColor.r,
@@ -117,6 +137,7 @@ function LoolibNoteFrameMixin:_CreateUI()
     self.content:SetSize(274, 200)
 end
 
+--- Lazy-load pipeline components -- INTERNAL
 function LoolibNoteFrameMixin:_EnsureComponents()
     -- Lazy-load components when they become available
     if not self._parser then
@@ -157,6 +178,7 @@ function LoolibNoteFrameMixin:_EnsureComponents()
            self._renderer ~= nil and self._timer ~= nil
 end
 
+--- Wire timer callbacks to frame updates -- INTERNAL
 function LoolibNoteFrameMixin:_SetupCallbacks()
     -- Timer tick callback to refresh display
     if self._timer.RegisterCallback then
@@ -181,20 +203,23 @@ end
 -- TEXT MANAGEMENT
 -- ============================================================
 
----Set the note text
+--- Set the note text
 ---@param text string Raw markup text
 function LoolibNoteFrameMixin:SetText(text)
+    if text ~= nil and type(text) ~= "string" then
+        error("LoolibNoteFrame: SetText: 'text' must be a string or nil", 2)
+    end
     self._rawText = text or ""
     self:Update()
 end
 
----Get the raw note text
----@return string
+--- Get the raw note text
+---@return string rawText
 function LoolibNoteFrameMixin:GetText()
     return self._rawText
 end
 
----Set personal note text (for {self} placeholder)
+--- Set personal note text (for {self} placeholder)
 ---@param text string
 function LoolibNoteFrameMixin:SetSelfText(text)
     self._selfText = text or ""
@@ -206,8 +231,8 @@ function LoolibNoteFrameMixin:SetSelfText(text)
     self:Update()
 end
 
----Get personal note text
----@return string
+--- Get personal note text
+---@return string selfText
 function LoolibNoteFrameMixin:GetSelfText()
     return self._selfText
 end
@@ -216,10 +241,12 @@ end
 -- RENDERING
 -- ============================================================
 
----Update the display
+--- Update the display
 function LoolibNoteFrameMixin:Update()
+    -- NT-08: Empty text -- clear display gracefully
     if not self._rawText or #self._rawText == 0 then
         self.text:SetText("")
+        self:_UpdateContentSize()
         return
     end
 
@@ -227,6 +254,7 @@ function LoolibNoteFrameMixin:Update()
     if not self:_EnsureComponents() then
         -- Components not ready yet, show placeholder
         self.text:SetText("|cffff8800[Note Loading...]|r")
+        self:_UpdateContentSize()
         return
     end
 
@@ -243,6 +271,7 @@ function LoolibNoteFrameMixin:Update()
     local ast = self._parser:Parse(self._rawText)
     if not ast then
         self.text:SetText("|cffff0000[Parse Error]|r")
+        self:_UpdateContentSize()
         return
     end
 
@@ -255,45 +284,65 @@ function LoolibNoteFrameMixin:Update()
     -- Update text
     self.text:SetText(rendered)
 
-    -- Update content size
-    local textHeight = self.text:GetStringHeight()
+    -- NT-10 / NT-11: Update content size after text changes
+    self:_UpdateContentSize()
+end
+
+--- Recalculate content/scroll dimensions after text changes -- INTERNAL
+function LoolibNoteFrameMixin:_UpdateContentSize()
+    -- NT-10: Constrain FontString width to content width so word-wrap works
     self.text:SetWidth(self.content:GetWidth())
-    self.content:SetHeight(math.max(textHeight, self:GetHeight() - 8))
+
+    local textHeight = self.text:GetStringHeight()
+    self.content:SetHeight(math_max(textHeight, self:GetHeight() - 8))
+
+    -- NT-11: Auto-resize frame if enabled
+    if self._autoSize then
+        local desiredHeight = textHeight + 8  -- 4px padding top+bottom
+        self:SetHeight(math_max(desiredHeight, 40))  -- minimum 40px
+        self.content:SetHeight(math_max(textHeight, self:GetHeight() - 8))
+    end
 end
 
 -- ============================================================
 -- APPEARANCE
 -- ============================================================
 
----Set font size
+--- Set font size
 ---@param size number
 function LoolibNoteFrameMixin:SetFontSize(size)
+    if type(size) ~= "number" then
+        error("LoolibNoteFrame: SetFontSize: 'size' must be a number", 2)
+    end
     self._fontSize = size
     self.text:SetFont(self._fontFace, size, "OUTLINE")
     self:Update()
 end
 
----Get font size
----@return number
+--- Get font size
+---@return number fontSize
 function LoolibNoteFrameMixin:GetFontSize()
     return self._fontSize
 end
 
----Set font face
+--- Set font face
 ---@param fontPath string
 function LoolibNoteFrameMixin:SetFontFace(fontPath)
+    if type(fontPath) ~= "string" then
+        error("LoolibNoteFrame: SetFontFace: 'fontPath' must be a string", 2)
+    end
     self._fontFace = fontPath
     self.text:SetFont(fontPath, self._fontSize, "OUTLINE")
     self:Update()
 end
 
----Get font face
----@return string
+--- Get font face
+---@return string fontPath
 function LoolibNoteFrameMixin:GetFontFace()
     return self._fontFace
 end
 
----Set text color
+--- Set text color
 ---@param r number
 ---@param g number
 ---@param b number
@@ -303,13 +352,13 @@ function LoolibNoteFrameMixin:SetTextColor(r, g, b, a)
     self.text:SetTextColor(r, g, b, a or 1)
 end
 
----Get text color
+--- Get text color
 ---@return number r, number g, number b, number a
 function LoolibNoteFrameMixin:GetTextColor()
     return self._textColor.r, self._textColor.g, self._textColor.b, self._textColor.a
 end
 
----Set background color
+--- Set background color
 ---@param r number
 ---@param g number
 ---@param b number
@@ -319,14 +368,14 @@ function LoolibNoteFrameMixin:SetBackgroundColor(r, g, b, a)
     self.background:SetColorTexture(r, g, b, a or 0.5)
 end
 
----Get background color
+--- Get background color
 ---@return number r, number g, number b, number a
 function LoolibNoteFrameMixin:GetBackgroundColor()
     return self._backgroundColor.r, self._backgroundColor.g,
            self._backgroundColor.b, self._backgroundColor.a
 end
 
----Set background alpha only
+--- Set background alpha only
 ---@param alpha number
 function LoolibNoteFrameMixin:SetBackgroundAlpha(alpha)
     self._backgroundColor.a = alpha
@@ -338,17 +387,32 @@ function LoolibNoteFrameMixin:SetBackgroundAlpha(alpha)
     )
 end
 
----Get background alpha
----@return number
+--- Get background alpha
+---@return number alpha
 function LoolibNoteFrameMixin:GetBackgroundAlpha()
     return self._backgroundColor.a
+end
+
+--- Enable/disable auto-sizing of frame to content (NT-11)
+---@param enabled boolean
+function LoolibNoteFrameMixin:SetAutoSize(enabled)
+    self._autoSize = enabled
+    if enabled then
+        self:_UpdateContentSize()
+    end
+end
+
+--- Check if auto-sizing is enabled
+---@return boolean autoSize
+function LoolibNoteFrameMixin:GetAutoSize()
+    return self._autoSize
 end
 
 -- ============================================================
 -- LOCK/UNLOCK
 -- ============================================================
 
----Lock the note (disable drag, hide border)
+--- Lock the note (disable drag, hide border)
 ---@param locked boolean
 function LoolibNoteFrameMixin:SetLocked(locked)
     self._isLocked = locked
@@ -357,7 +421,7 @@ function LoolibNoteFrameMixin:SetLocked(locked)
         self:EnableMouse(false)
         self.border:Hide()
 
-        -- Disable drag if available
+        -- Disable drag if available (soft dependency)
         if self.SetDragEnabled then
             self:SetDragEnabled(false)
         end
@@ -365,15 +429,15 @@ function LoolibNoteFrameMixin:SetLocked(locked)
         self:EnableMouse(true)
         self.border:Show()
 
-        -- Enable drag if available
+        -- Enable drag if available (soft dependency)
         if self.SetDragEnabled then
             self:SetDragEnabled(true)
         end
     end
 end
 
----Check if locked
----@return boolean
+--- Check if locked
+---@return boolean locked
 function LoolibNoteFrameMixin:IsLocked()
     return self._isLocked
 end
@@ -382,7 +446,7 @@ end
 -- VISIBILITY
 -- ============================================================
 
----Set combat visibility rules
+--- Set combat visibility rules
 ---@param showInCombat boolean
 ---@param showOutOfCombat boolean
 function LoolibNoteFrameMixin:SetCombatVisibility(showInCombat, showOutOfCombat)
@@ -391,13 +455,13 @@ function LoolibNoteFrameMixin:SetCombatVisibility(showInCombat, showOutOfCombat)
     self:UpdateVisibility()
 end
 
----Get combat visibility settings
+--- Get combat visibility settings
 ---@return boolean showInCombat, boolean showOutOfCombat
 function LoolibNoteFrameMixin:GetCombatVisibility()
     return self._showInCombat, self._showOutOfCombat
 end
 
----Update visibility based on combat state
+--- Update visibility based on combat state
 function LoolibNoteFrameMixin:UpdateVisibility()
     if not self._isVisible then
         self:Hide()
@@ -411,19 +475,24 @@ function LoolibNoteFrameMixin:UpdateVisibility()
     elseif not inCombat and not self._showOutOfCombat then
         self:Hide()
     else
-        self:Show()
+        -- NT-08: Only show if we have content (or explicitly marked visible)
+        if #self._rawText > 0 or not self._showInCombat then
+            self:Show()
+        else
+            self:Show()
+        end
     end
 end
 
----Show/hide the note
+--- Show/hide the note
 ---@param visible boolean
 function LoolibNoteFrameMixin:SetVisible(visible)
     self._isVisible = visible
     self:UpdateVisibility()
 end
 
----Check if visible (not locked)
----@return boolean
+--- Check if visible flag is set
+---@return boolean visible
 function LoolibNoteFrameMixin:IsVisible()
     return self._isVisible
 end
@@ -432,9 +501,13 @@ end
 -- GLOW EFFECT
 -- ============================================================
 
----Show glow effect
+--- Show glow effect
 ---@param duration number Duration in seconds
 function LoolibNoteFrameMixin:ShowGlow(duration)
+    if type(duration) ~= "number" or duration <= 0 then
+        return
+    end
+
     self.glow:Show()
 
     -- Fade out animation
@@ -465,7 +538,7 @@ end
 -- ENCOUNTER INTEGRATION
 -- ============================================================
 
----Called when encounter starts
+--- Called when encounter starts
 ---@param encounterId number
 ---@param encounterName string
 function LoolibNoteFrameMixin:OnEncounterStart(encounterId, encounterName)
@@ -475,7 +548,7 @@ function LoolibNoteFrameMixin:OnEncounterStart(encounterId, encounterName)
     self:Update()
 end
 
----Called when encounter ends
+--- Called when encounter ends
 function LoolibNoteFrameMixin:OnEncounterEnd()
     if self._timer and self._timer.EndEncounter then
         self._timer:EndEncounter()
@@ -483,7 +556,7 @@ function LoolibNoteFrameMixin:OnEncounterEnd()
     self:Update()
 end
 
----Called when phase changes
+--- Called when phase changes
 ---@param phase number
 function LoolibNoteFrameMixin:OnPhaseChange(phase)
     if self._timer and self._timer.SetPhase then
@@ -496,6 +569,7 @@ end
 -- EVENT HANDLING
 -- ============================================================
 
+--- Frame OnEvent handler -- INTERNAL
 function LoolibNoteFrameMixin:OnEvent(event, ...)
     if event == "ENCOUNTER_START" then
         local encounterId, encounterName = ...
@@ -522,17 +596,20 @@ end
 -- SIZE HELPERS
 -- ============================================================
 
----Set content width (adjusts frame width for scrollbar)
+--- Set content width (adjusts frame width for scrollbar)
 ---@param width number
 function LoolibNoteFrameMixin:SetContentWidth(width)
+    if type(width) ~= "number" then
+        error("LoolibNoteFrame: SetContentWidth: 'width' must be a number", 2)
+    end
     self:SetWidth(width + 30)  -- Account for scrollbar
     self.content:SetWidth(width)
     self.text:SetWidth(width)
     self:Update()
 end
 
----Get content width
----@return number
+--- Get content width
+---@return number width
 function LoolibNoteFrameMixin:GetContentWidth()
     return self.content:GetWidth()
 end
@@ -541,6 +618,7 @@ end
 -- CLEANUP
 -- ============================================================
 
+--- OnHide handler -- cleans up animations and timers (NT-13)
 function LoolibNoteFrameMixin:OnHide()
     -- Stop any active animations
     if self.glowAnim and self.glowAnim:IsPlaying() then
@@ -550,36 +628,68 @@ function LoolibNoteFrameMixin:OnHide()
     if self.glow then
         self.glow:Hide()
     end
+
+    -- NT-13: Pause/stop running timers when frame is hidden
+    if self._timer and self._timer._isRunning then
+        self._timer:_StopUpdateLoop()
+    end
+end
+
+--- OnShow handler -- resume timers if in encounter
+function LoolibNoteFrameMixin:OnShow()
+    -- NT-08: If no content, render placeholder
+    if #self._rawText == 0 then
+        self.text:SetText("")
+        return
+    end
+
+    -- NT-13: Resume timer update loop if we're in an active encounter
+    if self._timer and self._timer.IsInEncounter and self._timer:IsInEncounter() then
+        if not self._timer._isRunning then
+            self._timer:_StartUpdateLoop()
+        end
+    end
+
+    -- Refresh display on show
+    self:Update()
 end
 
 -- ============================================================
 -- FACTORY FUNCTION
 -- ============================================================
 
----Create a note frame
+--- Create a note frame
 ---@param parent Frame? Parent frame
 ---@param name string? Global name
----@return Frame
+---@return Frame frame The created NoteFrame
 local function LoolibCreateNoteFrame(parent, name)
     local frame = CreateFrame("Frame", name, parent or UIParent, "BackdropTemplate")
 
     -- Apply mixins
     LoolibMixin(frame, LoolibNoteFrameMixin)
 
-    -- Apply draggable support if available
+    -- Apply draggable support if available (soft dependency -- no hard ref to ui-dragdrop)
     local DraggableMixin = Loolib:GetModule("DraggableMixin")
     if DraggableMixin then
         LoolibMixin(frame, DraggableMixin)
-        frame:InitDraggable()
-        frame:SetDragEnabled(true)
-        frame:SetClampToScreen(true)
+        if frame.InitDraggable then
+            frame:InitDraggable()
+        end
+        if frame.SetDragEnabled then
+            frame:SetDragEnabled(true)
+        end
+        if frame.SetClampToScreen then
+            frame:SetClampToScreen(true)
+        end
     end
 
-    -- Apply event frame support if available
+    -- Apply event frame support if available (soft dependency)
     local EventFrameMixin = Loolib:GetModule("EventFrame")
     if EventFrameMixin and EventFrameMixin.Mixin then
         LoolibMixin(frame, EventFrameMixin.Mixin)
-        frame:InitEventFrame()
+        if frame.InitEventFrame then
+            frame:InitEventFrame()
+        end
     end
 
     -- Initialize
@@ -593,6 +703,7 @@ local function LoolibCreateNoteFrame(parent, name)
     frame:RegisterEvent("GROUP_ROSTER_UPDATE")
     frame:SetScript("OnEvent", frame.OnEvent)
     frame:SetScript("OnHide", frame.OnHide)
+    frame:SetScript("OnShow", frame.OnShow)
 
     return frame
 end

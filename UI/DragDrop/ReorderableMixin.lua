@@ -33,6 +33,15 @@ local Loolib = LibStub("Loolib")
 local _LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for ReorderableMixin") ---@diagnostic disable-line: unused-local
 local _LoolibScrollableListMixin = assert(Loolib.ScrollableListMixin, "Loolib.ScrollableListMixin is required for ReorderableMixin") ---@diagnostic disable-line: unused-local
 
+-- Local references to globals
+local type = type
+local error = error
+local pairs = pairs
+local ipairs = ipairs
+local unpack = unpack
+local select = select
+local table_insert = table.insert
+
 --[[--------------------------------------------------------------------
     LoolibReorderableMixin
 
@@ -40,14 +49,25 @@ local _LoolibScrollableListMixin = assert(Loolib.ScrollableListMixin, "Loolib.Sc
     Apply this to your scrollable list frame.
 ----------------------------------------------------------------------]]
 
+---@class LoolibReorderableMixin : Frame
+---@field reorderEnabled boolean
+---@field reorderButton string
+---@field reorderModifier string?
+---@field dataReorderCallback function?
+---@field _draggedItem Frame?
+---@field _draggedIndex number?
+---@field _dropIndex number?
+---@field _dropIndicator Frame?
+---@field _updateFrame Frame?
 local LoolibReorderableMixin = {}
 
 --[[--------------------------------------------------------------------
     Initialization
 ----------------------------------------------------------------------]]
 
---- Initialize the reorderable system
--- Must be called after OnLoad, typically in your list's Init method
+--- Initialize the reorderable system.
+--- Idempotent: safe to call multiple times. Must be called after OnLoad.
+---@return nil
 function LoolibReorderableMixin:InitReorderable()
     self.reorderEnabled = false
     self.reorderButton = "LeftButton"
@@ -76,9 +96,13 @@ end
 ----------------------------------------------------------------------]]
 
 --- Enable or disable reordering
--- @param enabled boolean - True to enable, false to disable
--- @return self
+---@param enabled boolean True to enable, false to disable
+---@return LoolibReorderableMixin self
 function LoolibReorderableMixin:SetReorderEnabled(enabled)
+    if type(enabled) ~= "boolean" then
+        error("LoolibReorderableMixin: SetReorderEnabled: 'enabled' must be a boolean", 2)
+    end
+
     self.reorderEnabled = enabled
 
     -- Apply to existing visible items
@@ -91,28 +115,37 @@ function LoolibReorderableMixin:SetReorderEnabled(enabled)
 end
 
 --- Set the mouse button required for drag
--- @param button string - "LeftButton", "RightButton", etc.
--- @return self
+---@param button string "LeftButton", "RightButton", etc.
+---@return LoolibReorderableMixin self
 function LoolibReorderableMixin:SetReorderButton(button)
+    if type(button) ~= "string" then
+        error("LoolibReorderableMixin: SetReorderButton: 'button' must be a string", 2)
+    end
     self.reorderButton = button
     return self
 end
 
 --- Require a modifier key to be held during drag
--- @param modifier string|nil - "shift", "ctrl", "alt", or nil for no requirement
--- @return self
+---@param modifier string? "shift", "ctrl", "alt", or nil for no requirement
+---@return LoolibReorderableMixin self
 function LoolibReorderableMixin:SetReorderModifier(modifier)
+    if modifier ~= nil and type(modifier) ~= "string" then
+        error("LoolibReorderableMixin: SetReorderModifier: 'modifier' must be a string or nil", 2)
+    end
     self.reorderModifier = modifier
     return self
 end
 
 --- Set callback for reordering backing data
--- The callback receives (fromIndex, toIndex) and should reorder the data array.
--- If toIndex > fromIndex, the item moves down in the list.
--- The callback is responsible for removing from fromIndex and inserting at toIndex.
--- @param callback function(fromIndex, toIndex) - Function to reorder external data
--- @return self
+--- The callback receives (fromIndex, toIndex) and should reorder the data array.
+--- If toIndex > fromIndex, the item moves down in the list.
+--- The callback is responsible for removing from fromIndex and inserting at toIndex.
+---@param callback function function(fromIndex, toIndex) to reorder external data
+---@return LoolibReorderableMixin self
 function LoolibReorderableMixin:SetDataReorderCallback(callback)
+    if callback ~= nil and type(callback) ~= "function" then
+        error("LoolibReorderableMixin: SetDataReorderCallback: 'callback' must be a function or nil", 2)
+    end
     self.dataReorderCallback = callback
     return self
 end
@@ -121,6 +154,8 @@ end
     Drop Indicator
 ----------------------------------------------------------------------]]
 
+--- Get or create the drop indicator frame -- INTERNAL
+---@return Frame indicator
 function LoolibReorderableMixin:_GetDropIndicator()
     if self._dropIndicator then
         return self._dropIndicator
@@ -147,6 +182,9 @@ function LoolibReorderableMixin:_GetDropIndicator()
     return indicator
 end
 
+--- Show the drop indicator at the insertion point -- INTERNAL
+---@param targetItem Frame The item frame to show indicator near
+---@param insertAfter boolean If true, show below targetItem
 function LoolibReorderableMixin:_ShowDropIndicator(targetItem, insertAfter)
     local indicator = self:_GetDropIndicator()
 
@@ -164,6 +202,7 @@ function LoolibReorderableMixin:_ShowDropIndicator(targetItem, insertAfter)
     indicator:Show()
 end
 
+--- Hide the drop indicator -- INTERNAL
 function LoolibReorderableMixin:_HideDropIndicator()
     if self._dropIndicator then
         self._dropIndicator:Hide()
@@ -174,10 +213,10 @@ end
     Item Setup
 ----------------------------------------------------------------------]]
 
---- Set up drag handlers on a list item frame
--- Called internally when creating/acquiring list items
--- @param item Frame - The list item frame
--- @param enabled boolean - Whether drag should be enabled
+--- Set up drag handlers on a list item frame -- INTERNAL
+--- Called internally when creating/acquiring list items.
+---@param item Frame The list item frame
+---@param enabled boolean Whether drag should be enabled
 function LoolibReorderableMixin:_SetupItemDrag(item, enabled)
     if enabled then
         item:EnableMouse(true)
@@ -204,10 +243,15 @@ function LoolibReorderableMixin:_SetupItemDrag(item, enabled)
 end
 
 --- Set up a list item for reordering
--- Call this when creating/acquiring list items in your refresh logic
--- @param item Frame - The list item frame
--- @param index number - The item's position in the list
+--- Call this when creating/acquiring list items in your refresh logic.
+---@param item Frame The list item frame
+---@param index number The item's position in the list
+---@return nil
 function LoolibReorderableMixin:SetupReorderableItem(item, index)
+    if type(index) ~= "number" or index < 1 then
+        error("LoolibReorderableMixin: SetupReorderableItem: 'index' must be a positive number", 2)
+    end
+
     item._listIndex = index
     item._parentList = self
 
@@ -220,6 +264,8 @@ end
     Drag Handlers
 ----------------------------------------------------------------------]]
 
+--- Handle item drag start -- INTERNAL
+---@param item Frame The item frame being dragged
 function LoolibReorderableMixin:_OnItemDragStart(item)
     -- Check modifier requirement
     if self.reorderModifier then
@@ -273,6 +319,8 @@ function LoolibReorderableMixin:_OnItemDragStart(item)
     end
 end
 
+--- Handle item drag stop -- INTERNAL
+---@param item Frame The item frame being dropped
 function LoolibReorderableMixin:_OnItemDragStop(item)
     if self._draggedItem ~= item then
         return
@@ -325,6 +373,9 @@ end
     Drop Target Detection
 ----------------------------------------------------------------------]]
 
+--- Find the list item under the mouse cursor -- INTERNAL
+---@return Frame? targetItem The item frame under cursor
+---@return boolean? insertAfter Whether to insert after the target
 function LoolibReorderableMixin:_GetDropTarget()
     if not self._draggedItem then
         return nil, nil
@@ -351,16 +402,16 @@ function LoolibReorderableMixin:_GetDropTarget()
     return nil, nil
 end
 
---- Get all visible list items
--- Tries multiple patterns: ScrollableList API, _items table, or MRT List pattern
--- @return table - Array of visible item frames
+--- Get all visible list items -- INTERNAL
+--- Tries multiple patterns: ScrollableList API, _items table, or MRT List pattern.
+---@return table items Array of visible item frames
 function LoolibReorderableMixin:_GetVisibleItems()
     -- Try ScrollableList pattern
     if self.visibleItems then
         local items = {}
         for _, frame in pairs(self.visibleItems) do
             if frame:IsVisible() then
-                table.insert(items, frame)
+                table_insert(items, frame)
             end
         end
         return items
@@ -371,7 +422,7 @@ function LoolibReorderableMixin:_GetVisibleItems()
         local items = {}
         for _, frame in ipairs(self.List) do
             if frame:IsShown() then
-                table.insert(items, frame)
+                table_insert(items, frame)
             end
         end
         return items
@@ -382,7 +433,7 @@ function LoolibReorderableMixin:_GetVisibleItems()
         local items = {}
         for _, frame in pairs(self._items) do
             if frame:IsVisible() then
-                table.insert(items, frame)
+                table_insert(items, frame)
             end
         end
         return items
@@ -395,6 +446,7 @@ end
     Update Loop (during drag)
 ----------------------------------------------------------------------]]
 
+--- Start the drag tracking update loop -- INTERNAL
 function LoolibReorderableMixin:_StartDragUpdate()
     if not self._updateFrame then
         self._updateFrame = CreateFrame("Frame")
@@ -416,6 +468,7 @@ function LoolibReorderableMixin:_StartDragUpdate()
     end)
 end
 
+--- Stop the drag tracking update loop -- INTERNAL
 function LoolibReorderableMixin:_StopDragUpdate()
     if self._updateFrame then
         self._updateFrame:SetScript("OnUpdate", nil)
@@ -426,6 +479,9 @@ end
     Reorder Execution
 ----------------------------------------------------------------------]]
 
+--- Perform the reorder operation -- INTERNAL
+---@param fromIndex number Source index
+---@param toIndex number Target index
 function LoolibReorderableMixin:_PerformReorder(fromIndex, toIndex)
     -- Adjust toIndex if moving down (account for removal)
     -- When removing item at fromIndex, all items after it shift down
@@ -451,10 +507,60 @@ function LoolibReorderableMixin:_PerformReorder(fromIndex, toIndex)
     end
 end
 
---- Manually reorder two items (for external control)
--- @param index1 number - First item index
--- @param index2 number - Second item index
+--- Move an item from one index to another.
+--- DD-05: Validates both indices against data length.
+---@param fromIndex number Source item index (1-based)
+---@param toIndex number Target item index (1-based)
+---@return nil
+function LoolibReorderableMixin:MoveItem(fromIndex, toIndex)
+    if type(fromIndex) ~= "number" then
+        error("LoolibReorderableMixin: MoveItem: 'fromIndex' must be a number", 2)
+    end
+    if type(toIndex) ~= "number" then
+        error("LoolibReorderableMixin: MoveItem: 'toIndex' must be a number", 2)
+    end
+
+    -- DD-05: Validate index bounds
+    local itemCount = self:_GetItemCount()
+    if fromIndex < 1 or fromIndex > itemCount then
+        error("LoolibReorderableMixin: MoveItem: 'fromIndex' out of bounds (got "
+            .. fromIndex .. ", count is " .. itemCount .. ")", 2)
+    end
+    if toIndex < 1 or toIndex > itemCount then
+        error("LoolibReorderableMixin: MoveItem: 'toIndex' out of bounds (got "
+            .. toIndex .. ", count is " .. itemCount .. ")", 2)
+    end
+
+    if fromIndex == toIndex then
+        return
+    end
+
+    self:_PerformReorder(fromIndex, toIndex)
+end
+
+--- Swap two items by index.
+---@param index1 number First item index (1-based)
+---@param index2 number Second item index (1-based)
+---@return nil
 function LoolibReorderableMixin:SwapItems(index1, index2)
+    if type(index1) ~= "number" then
+        error("LoolibReorderableMixin: SwapItems: 'index1' must be a number", 2)
+    end
+    if type(index2) ~= "number" then
+        error("LoolibReorderableMixin: SwapItems: 'index2' must be a number", 2)
+    end
+
+    -- DD-05: Validate index bounds
+    local itemCount = self:_GetItemCount()
+    if index1 < 1 or index1 > itemCount then
+        error("LoolibReorderableMixin: SwapItems: 'index1' out of bounds (got "
+            .. index1 .. ", count is " .. itemCount .. ")", 2)
+    end
+    if index2 < 1 or index2 > itemCount then
+        error("LoolibReorderableMixin: SwapItems: 'index2' out of bounds (got "
+            .. index2 .. ", count is " .. itemCount .. ")", 2)
+    end
+
     if self.dataReorderCallback then
         -- Move index1 to index2's position
         local toIndex = index2
@@ -465,6 +571,13 @@ function LoolibReorderableMixin:SwapItems(index1, index2)
     end
 end
 
+--- Get the total item count for bounds checking -- INTERNAL
+---@return number count
+function LoolibReorderableMixin:_GetItemCount()
+    local items = self:_GetVisibleItems()
+    return #items
+end
+
 --[[--------------------------------------------------------------------
     LoolibReorderableItemMixin
 
@@ -472,9 +585,15 @@ end
     Use this if your list items need additional reorder-related functionality.
 ----------------------------------------------------------------------]]
 
+---@class LoolibReorderableItemMixin : Frame
+---@field _listIndex number?
+---@field _parentList Frame?
+---@field _originalPoints table
 local LoolibReorderableItemMixin = {}
 
---- Initialize a reorderable item
+--- Initialize a reorderable item.
+--- Idempotent: safe to call multiple times.
+---@return nil
 function LoolibReorderableItemMixin:InitReorderableItem()
     self._listIndex = nil
     self._parentList = nil
@@ -482,19 +601,23 @@ function LoolibReorderableItemMixin:InitReorderableItem()
 end
 
 --- Set this item's list index
--- @param index number
+---@param index number
+---@return nil
 function LoolibReorderableItemMixin:SetListIndex(index)
+    if type(index) ~= "number" then
+        error("LoolibReorderableItemMixin: SetListIndex: 'index' must be a number", 2)
+    end
     self._listIndex = index
 end
 
 --- Get this item's list index
--- @return number|nil
+---@return number?
 function LoolibReorderableItemMixin:GetListIndex()
     return self._listIndex
 end
 
 --- Get the parent list
--- @return Frame|nil
+---@return Frame?
 function LoolibReorderableItemMixin:GetParentList()
     return self._parentList
 end

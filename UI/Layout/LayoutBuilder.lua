@@ -35,6 +35,9 @@ local LayoutBuilderMixin = LayoutBuilderModule.Mixin or {}
 --- Initialize the layout builder
 -- @param container Frame - Container frame for the layout
 function LayoutBuilderMixin:Init(container)
+    if not container then
+        error("LoolibLayoutBuilder: Init: container is required", 2)
+    end
     self.container = container
     self.layoutType = "VERTICAL"
     self.config = {}
@@ -232,6 +235,10 @@ end
 --- Build and return the layout
 -- @return table - The layout instance
 function LayoutBuilderMixin:Build()
+    if not self.container then
+        error("LoolibLayoutBuilder: Build: no container set (call Init first)", 2)
+    end
+
     local layout
 
     if self.layoutType == "VERTICAL" then
@@ -243,7 +250,7 @@ function LayoutBuilderMixin:Build()
     elseif self.layoutType == "FLOW" then
         layout = CreateFlowLayout(self.container, self.config)
     else
-        error("LoolibLayoutBuilder: Unknown layout type: " .. tostring(self.layoutType))
+        error("LoolibLayoutBuilder: Build: unknown layout type '" .. tostring(self.layoutType) .. "'", 2)
     end
 
     -- Store layout reference on container
@@ -274,6 +281,9 @@ end
 -- @param container Frame - Container frame
 -- @return LoolibLayoutBuilderMixin
 local function CreateLayoutBuilder(container)
+    if not container then
+        error("LoolibLayoutBuilder: CreateLayoutBuilder: container is required", 2)
+    end
     local builder = CreateFromMixins(LayoutBuilderMixin)
     builder:Init(container)
     return builder
@@ -287,6 +297,9 @@ end
 -- @param container Frame - Container frame
 -- @return LoolibLayoutBuilderMixin
 local function BuildLayout(container)
+    if not container then
+        error("LoolibLayoutBuilder: Layout: container is required", 2)
+    end
     return CreateLayoutBuilder(container)
 end
 

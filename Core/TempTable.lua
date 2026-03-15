@@ -18,6 +18,19 @@
 local Loolib = LibStub("Loolib")
 local Core = Loolib.Core or Loolib:GetOrCreateModule("Core")
 
+-- Local references to globals used in hot paths
+local type = type
+local pairs = pairs
+local wipe = wipe
+local error = error
+local print = print
+local unpack = unpack
+local select = select
+local setmetatable = setmetatable
+local getmetatable = getmetatable
+local tostring = tostring
+local debugstack = debugstack
+
 --[[--------------------------------------------------------------------
     TempTable Module
 ----------------------------------------------------------------------]]
@@ -39,16 +52,22 @@ local acquiredCount = 0
 -- Metatable for released tables (prevents accidental use)
 local releasedMeta = {
     __index = function(_, _)
-        error("Attempted to read from a released TempTable", 2)
+        error("LoolibTempTable: attempted to read from a released TempTable", 2)
     end,
     __newindex = function(_, _, _)
-        error("Attempted to write to a released TempTable", 2)
+        error("LoolibTempTable: attempted to write to a released TempTable", 2)
     end,
     __pairs = function()
-        error("Attempted to iterate a released TempTable", 2)
+        error("LoolibTempTable: attempted to iterate a released TempTable", 2)
     end,
     __ipairs = function()
-        error("Attempted to iterate a released TempTable", 2)
+        error("LoolibTempTable: attempted to iterate a released TempTable", 2)
+    end,
+    __len = function()
+        error("LoolibTempTable: attempted to get length of a released TempTable", 2)
+    end,
+    __tostring = function()
+        return "LoolibTempTable(released)"
     end,
 }
 
@@ -60,6 +79,10 @@ local releasedMeta = {
 -- @param init table|nil - Optional initial values to copy into the table
 -- @return table - A clean table ready for use
 function TempTable:Acquire(init)
+    if init ~= nil and type(init) ~= "table" then
+        error("LoolibTempTable: Acquire() expected table or nil for init, got " .. type(init), 2)
+    end
+
     local t
 
     if poolSize > 0 then
@@ -81,10 +104,8 @@ function TempTable:Acquire(init)
 
     -- Copy initial values if provided
     if init then
-        if type(init) == "table" then
-            for k, v in pairs(init) do
-                t[k] = v
-            end
+        for k, v in pairs(init) do
+            t[k] = v
         end
     end
 
@@ -95,21 +116,25 @@ end
 -- @param t table - The table to release
 function TempTable:Release(t)
     if type(t) ~= "table" then
-        error("TempTable:Release() expected table, got " .. type(t), 2)
+        error("LoolibTempTable: Release() expected table, got " .. type(t), 2)
     end
 
     -- Check if already released (has protection metatable)
     if getmetatable(t) == releasedMeta then
-        error("Attempted to release an already-released TempTable", 2)
+        error("LoolibTempTable: attempted to release an already-released TempTable", 2)
     end
 
     -- Remove from tracking
     if WARN_ON_LEAK then
-        acquired[t] = nil
-        acquiredCount = acquiredCount - 1
+        if acquired[t] then
+            acquired[t] = nil
+            acquiredCount = acquiredCount - 1
+        end
+        -- If not tracked (e.g. leak warnings were toggled), skip decrement
     end
 
-    -- Wipe the table
+    -- Wipe the table (also removes any user-set metatables)
+    setmetatable(t, nil)
     wipe(t)
 
     -- Return to pool if space available
@@ -127,6 +152,14 @@ end
 -- @param t table - The table to unpack and release
 -- @return ... - The unpacked values
 function TempTable:UnpackAndRelease(t)
+    if type(t) ~= "table" then
+        error("LoolibTempTable: UnpackAndRelease() expected table, got " .. type(t), 2)
+    end
+
+    if getmetatable(t) == releasedMeta then
+        error("LoolibTempTable: attempted to unpack an already-released TempTable", 2)
+    end
+
     local n = #t
     if n == 0 then
         self:Release(t)
@@ -174,18 +207,24 @@ end
 
 --- Print leak warnings to chat
 function TempTable:PrintLeaks()
+    if not WARN_ON_LEAK then
+        print("|cffff9900[Loolib TempTable]|r Leak tracking is disabled")
+        return
+    end
+
     if acquiredCount == 0 then
         print("|cff00ff00[Loolib TempTable]|r No leaked tables")
         return
     end
 
-    print("|cffff0000[Loolib TempTable]|r " .. acquiredCount .. " leaked table(s):")
+    print("|cffff0000[Loolib TempTable]|r " .. tostring(acquiredCount) .. " leaked table(s):")
     local count = 0
     for _, stack in pairs(acquired) do
         count = count + 1
         if count <= 5 then
             print("  Leak " .. count .. ":")
-            print("    " .. stack:sub(1, 200))
+            local snippet = stack or "(no stack)"
+            print("    " .. snippet:sub(1, 200))
         end
     end
     if count > 5 then
@@ -193,7 +232,8 @@ function TempTable:PrintLeaks()
     end
 end
 
---- Clear the entire pool (for testing)
+-- INTERNAL
+--- Clear the entire pool (for testing/debugging only)
 function TempTable:ClearPool()
     for i = 1, poolSize do
         pool[i] = nil
@@ -204,6 +244,9 @@ end
 --- Enable/disable leak warnings
 -- @param enabled boolean
 function TempTable:SetLeakWarnings(enabled)
+    if type(enabled) ~= "boolean" then
+        error("LoolibTempTable: SetLeakWarnings() expected boolean, got " .. type(enabled), 2)
+    end
     WARN_ON_LEAK = enabled
     if not enabled then
         wipe(acquired)

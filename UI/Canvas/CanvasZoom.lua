@@ -42,10 +42,15 @@
 
 local Loolib = LibStub("Loolib")
 
--- Local references for performance
-local math = math
+-- Cached globals
+local type = type
+local error = error
+local pairs = pairs
 local ipairs = ipairs
-local select = select
+local math_max = math.max
+local math_min = math.min
+local math_abs = math.abs
+local math_huge = math.huge
 
 --[[--------------------------------------------------------------------
     CONSTANTS
@@ -156,21 +161,24 @@ function LoolibCanvasZoomMixin:GetZoomIndex()
 end
 
 --- Set zoom by level
---- @param level number - Zoom level to set (1-7)
---- @param centerX number|nil - Canvas X coordinate to center zoom on
---- @param centerY number|nil - Canvas Y coordinate to center zoom on
---- @return LoolibCanvasZoomMixin
+---@param level number Zoom level to set (1-7)
+---@param centerX number|nil Canvas X coordinate to center zoom on
+---@param centerY number|nil Canvas Y coordinate to center zoom on
+---@return LoolibCanvasZoomMixin self
 function LoolibCanvasZoomMixin:SetZoom(level, centerX, centerY)
+    if type(level) ~= "number" then
+        error("LoolibCanvasZoom: SetZoom: level must be a number", 2)
+    end
     local oldZoom = self._zoomLevel
 
     -- Clamp to valid range
-    level = math.max(LOOLIB_CANVAS_MIN_ZOOM, math.min(LOOLIB_CANVAS_MAX_ZOOM, level))
+    level = math_max(LOOLIB_CANVAS_MIN_ZOOM, math_min(LOOLIB_CANVAS_MAX_ZOOM, level))
 
     -- Find closest zoom index
     local closestIndex = 1
-    local closestDiff = math.huge
+    local closestDiff = math_huge
     for i, z in ipairs(LOOLIB_CANVAS_ZOOM_LEVELS) do
-        local diff = math.abs(z - level)
+        local diff = math_abs(z - level)
         if diff < closestDiff then
             closestDiff = diff
             closestIndex = i
@@ -197,10 +205,10 @@ function LoolibCanvasZoomMixin:SetZoom(level, centerX, centerY)
 end
 
 --- Set zoom by index
---- @param index number - Index into LOOLIB_CANVAS_ZOOM_LEVELS (1-8)
---- @return LoolibCanvasZoomMixin
+---@param index number Index into LOOLIB_CANVAS_ZOOM_LEVELS (1-8)
+---@return LoolibCanvasZoomMixin self
 function LoolibCanvasZoomMixin:SetZoomIndex(index)
-    index = math.max(1, math.min(#LOOLIB_CANVAS_ZOOM_LEVELS, index))
+    index = math_max(1, math_min(#LOOLIB_CANVAS_ZOOM_LEVELS, index))
     return self:SetZoom(LOOLIB_CANVAS_ZOOM_LEVELS[index])
 end
 
@@ -290,11 +298,11 @@ function LoolibCanvasZoomMixin:ClampPan()
     local scaledHeight = self._canvasHeight * self._zoomLevel
 
     -- Calculate max pan (don't allow panning beyond canvas edges)
-    local maxPanX = math.max(0, (scaledWidth - self._viewportWidth) / 2)
-    local maxPanY = math.max(0, (scaledHeight - self._viewportHeight) / 2)
+    local maxPanX = math_max(0, (scaledWidth - self._viewportWidth) / 2)
+    local maxPanY = math_max(0, (scaledHeight - self._viewportHeight) / 2)
 
-    self._panX = math.max(-maxPanX, math.min(maxPanX, self._panX))
-    self._panY = math.max(-maxPanY, math.min(maxPanY, self._panY))
+    self._panX = math_max(-maxPanX, math_min(maxPanX, self._panX))
+    self._panY = math_max(-maxPanY, math_min(maxPanY, self._panY))
 
     return self
 end
@@ -447,7 +455,7 @@ function LoolibCanvasZoomMixin:FitInView(x1, y1, x2, y2, padding)
 
     local zoomX = self._viewportWidth / contentWidth
     local zoomY = self._viewportHeight / contentHeight
-    local newZoom = math.min(zoomX, zoomY)
+    local newZoom = math_min(zoomX, zoomY)
 
     -- Find closest zoom level that fits
     for i = #LOOLIB_CANVAS_ZOOM_LEVELS, 1, -1 do
@@ -517,6 +525,17 @@ end
     MODULE REGISTRATION
 ----------------------------------------------------------------------]]
 
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasZoom", {
+    Mixin = LoolibCanvasZoomMixin,
+    LEVELS = LOOLIB_CANVAS_ZOOM_LEVELS,
+    DEFAULT_ZOOM = LOOLIB_CANVAS_DEFAULT_ZOOM,
+    MIN_ZOOM = LOOLIB_CANVAS_MIN_ZOOM,
+    MAX_ZOOM = LOOLIB_CANVAS_MAX_ZOOM,
+    Create = LoolibCreateCanvasZoom,
+})
+
+-- Backward-compat alias
 Loolib:RegisterModule("CanvasZoom", {
     Mixin = LoolibCanvasZoomMixin,
     LEVELS = LOOLIB_CANVAS_ZOOM_LEVELS,

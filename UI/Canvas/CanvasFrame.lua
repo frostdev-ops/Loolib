@@ -61,6 +61,16 @@ local Loolib = LibStub("Loolib")
 assert(Loolib.Mixin, "Loolib/Core/Mixin.lua must be loaded before CanvasFrame")
 local GlobalBridge = Loolib:GetModule("Compat.GlobalBridge")
 
+-- Cached globals
+local type = type
+local pairs = pairs
+local ipairs = ipairs
+local unpack = unpack
+local math_abs = math.abs
+local math_max = math.max
+local math_min = math.min
+local math_floor = math.floor
+
 -- CanvasElement module (must be loaded before CanvasFrame)
 local _CanvasElement = Loolib:GetModule("CanvasElement")
 local LoolibGetCanvasColor = _CanvasElement.GetColor
@@ -753,12 +763,12 @@ function LoolibCanvasFrameMixin:_RenderShape(index)
     -- Full implementation would need proper shape rendering
     local frame = self._shapePool:Acquire()
 
-    local width = math.abs(shape.x2 - shape.x1)
-    local height = math.abs(shape.y2 - shape.y1)
-    frame:SetSize(math.max(width, 1), math.max(height, 1))
+    local width = math_abs(shape.x2 - shape.x1)
+    local height = math_abs(shape.y2 - shape.y1)
+    frame:SetSize(math_max(width, 1), math_max(height, 1))
     frame:SetPoint("TOPLEFT", self._content, "TOPLEFT",
-                   math.min(shape.x1, shape.x2),
-                   -math.min(shape.y1, shape.y2))
+                   math_min(shape.x1, shape.x2),
+                   -math_min(shape.y1, shape.y2))
 
     local tex = frame.texture or frame:CreateTexture(nil, "ARTWORK")
     tex:SetAllPoints()
@@ -957,8 +967,23 @@ end
 ----------------------------------------------------------------------]]
 
 --- Clear the entire canvas
+--- CV-16 FIX: Cancel any active drawing/dragging operations before clearing
+--- to prevent stale references and orphaned state.
 -- @return self - For method chaining
 function LoolibCanvasFrameMixin:Clear()
+    -- CV-16: Cancel any active drawing or dragging operations
+    if self._isDrawing then
+        self._isDrawing = false
+        if self._brushManager and self._brushManager.CancelStroke then
+            self._brushManager:CancelStroke()
+        end
+    end
+    if self._isDragging then
+        self._isDragging = false
+        self._dragStartX = nil
+        self._dragStartY = nil
+    end
+
     -- Push to history before clearing
     if self._historyManager and self._historyManager.PushAction then
         self._historyManager:PushAction("clear_all", {
@@ -1147,6 +1172,13 @@ end
     Module Registration
 ----------------------------------------------------------------------]]
 
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasFrame", {
+    Mixin = LoolibCanvasFrameMixin,
+    Create = LoolibCreateCanvasFrame,
+})
+
+-- Backward-compat alias
 Loolib:RegisterModule("CanvasFrame", {
     Mixin = LoolibCanvasFrameMixin,
     Create = LoolibCreateCanvasFrame,

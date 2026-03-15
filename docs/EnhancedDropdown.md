@@ -206,7 +206,9 @@ dropdown:SetEnabled(false)  -- Disable
 ## Menu Control Methods
 
 ### OpenMenu()
-Open the dropdown menu programmatically.
+Open the dropdown menu programmatically. The menu is clamped to screen edges
+so it never renders off-screen, even when the dropdown button is positioned
+near the bottom or right edge of the viewport.
 
 ```lua
 dropdown:OpenMenu()

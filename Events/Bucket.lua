@@ -24,11 +24,12 @@ assert(EventRegistryModule and EventRegistryModule.Registry, "Loolib/Events/Even
 
 local CreateFromMixins = Loolib.CreateFromMixins
 local EventRegistry = Events.Registry or EventRegistryModule.Registry
+local error = error
 local ipairs = ipairs
 local pairs = pairs
 local type = type
 
--- Global handle counter for unique bucket IDs
+-- INTERNAL: Global handle counter for unique bucket IDs
 local bucketHandleCounter = 0
 
 --[[--------------------------------------------------------------------
@@ -44,14 +45,14 @@ local BucketMixin = CreateFromMixins(TimerModule.Mixin)
     Internal Helper Functions
 ----------------------------------------------------------------------]]
 
---- Generate a unique bucket handle
+--- INTERNAL: Generate a unique bucket handle
 -- @return string - Unique bucket handle
 local function GenerateBucketHandle()
     bucketHandleCounter = bucketHandleCounter + 1
     return "LoolibBucket" .. bucketHandleCounter
 end
 
---- Validate callback parameter
+--- INTERNAL: Validate callback parameter
 -- @param callback function|string - The callback to validate
 -- @return boolean - True if valid
 local function ValidateCallback(callback)
@@ -59,14 +60,14 @@ local function ValidateCallback(callback)
     return callbackType == "function" or callbackType == "string"
 end
 
---- Validate interval parameter
+--- INTERNAL: Validate interval parameter
 -- @param interval number - The interval to validate
 -- @return boolean - True if valid
 local function ValidateInterval(interval)
     return type(interval) == "number" and interval > 0
 end
 
---- Normalize events parameter to table
+--- INTERNAL: Normalize events parameter to table
 -- @param events string|table - Event name or table of event names
 -- @return table - Table of event names
 local function NormalizeEvents(events)
@@ -76,14 +77,14 @@ local function NormalizeEvents(events)
         return events
     end
 
-    error("Events must be a string or table of strings", 3)
+    error("LoolibBucket: events must be a string or table of strings", 3)
 end
 
 --[[--------------------------------------------------------------------
     Bucket Storage and Management
 ----------------------------------------------------------------------]]
 
---- Initialize bucket storage for this object
+--- INTERNAL: Initialize bucket storage for this object
 -- @param self table - The object instance
 local function EnsureBucketStorage(self)
     if not self.buckets then
@@ -91,7 +92,7 @@ local function EnsureBucketStorage(self)
     end
 end
 
---- Fire a bucket callback with collected data
+--- INTERNAL: Fire a bucket callback with collected data
 -- @param self table - The object instance
 -- @param bucket table - The bucket info
 local function FireBucket(self, bucket)
@@ -121,7 +122,7 @@ local function FireBucket(self, bucket)
     end
 end
 
---- Handle an event for a bucket
+--- INTERNAL: Handle an event for a bucket
 -- @param self table - The object instance
 -- @param bucket table - The bucket info
 -- @param eventName string - The event name
@@ -149,11 +150,11 @@ end
 -- @return string - Bucket handle for unregistration
 function BucketMixin:RegisterBucketEvent(events, interval, callback)
     if not ValidateInterval(interval) then
-        error("RegisterBucketEvent: interval must be a positive number", 2)
+        error("LoolibBucket: RegisterBucketEvent 'interval' must be a positive number", 2)
     end
 
     if not ValidateCallback(callback) then
-        error("RegisterBucketEvent: callback must be a function or string (method name)", 2)
+        error("LoolibBucket: RegisterBucketEvent 'callback' must be a function or string (method name)", 2)
     end
 
     EnsureBucketStorage(self)
@@ -199,11 +200,11 @@ end
 -- @return string - Bucket handle for unregistration
 function BucketMixin:RegisterBucketMessage(messages, interval, callback)
     if not ValidateInterval(interval) then
-        error("RegisterBucketMessage: interval must be a positive number", 2)
+        error("LoolibBucket: RegisterBucketMessage 'interval' must be a positive number", 2)
     end
 
     if not ValidateCallback(callback) then
-        error("RegisterBucketMessage: callback must be a function or string (method name)", 2)
+        error("LoolibBucket: RegisterBucketMessage 'callback' must be a function or string (method name)", 2)
     end
 
     EnsureBucketStorage(self)

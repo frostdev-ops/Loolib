@@ -22,8 +22,10 @@ assert(EventRegistryModule and EventRegistryModule.Registry, "Loolib/Events/Even
 
 local ApplyMixin = Loolib.Mixin
 local EventRegistry = Events.Registry or EventRegistryModule.Registry
+local error = error
 local pairs = pairs
 local tostring = tostring
+local type = type
 local wipe = wipe
 
 --[[--------------------------------------------------------------------
@@ -53,6 +55,13 @@ end
 -- @param event string - The WoW event name
 -- @param callback function - The callback (receives self, ...)
 function EventFrameMixin:RegisterPermanentEvent(event, callback)
+    if type(event) ~= "string" then
+        error("LoolibEventFrame: RegisterPermanentEvent 'event' must be a string", 2)
+    end
+    if type(callback) ~= "function" then
+        error("LoolibEventFrame: RegisterPermanentEvent 'callback' must be a function", 2)
+    end
+
     if not self.eventCallbacks then
         self:InitEventFrame()
     end
@@ -64,6 +73,10 @@ end
 --- Unregister a permanent event
 -- @param event string - The WoW event name
 function EventFrameMixin:UnregisterPermanentEvent(event)
+    if type(event) ~= "string" then
+        error("LoolibEventFrame: UnregisterPermanentEvent 'event' must be a string", 2)
+    end
+
     if self.eventCallbacks then
         self.eventCallbacks[event] = nil
     end
@@ -81,6 +94,13 @@ end
 -- @param event string - The WoW event name
 -- @param callback function - The callback (receives self, ...)
 function EventFrameMixin:RegisterFrameEvent(event, callback)
+    if type(event) ~= "string" then
+        error("LoolibEventFrame: RegisterFrameEvent 'event' must be a string", 2)
+    end
+    if type(callback) ~= "function" then
+        error("LoolibEventFrame: RegisterFrameEvent 'callback' must be a function", 2)
+    end
+
     if not self.frameEventCallbacks then
         self:InitEventFrame()
     end
@@ -96,6 +116,10 @@ end
 --- Unregister a visibility-based event
 -- @param event string - The WoW event name
 function EventFrameMixin:UnregisterFrameEvent(event)
+    if type(event) ~= "string" then
+        error("LoolibEventFrame: UnregisterFrameEvent 'event' must be a string", 2)
+    end
+
     if self.frameEventCallbacks then
         self.frameEventCallbacks[event] = nil
     end
@@ -118,6 +142,13 @@ end
 -- @param callback function - The callback
 -- @param owner any - Registration owner (defaults to self)
 function EventFrameMixin:RegisterFrameEventAndCallback(event, callback, owner)
+    if type(event) ~= "string" then
+        error("LoolibEventFrame: RegisterFrameEventAndCallback 'event' must be a string", 2)
+    end
+    if type(callback) ~= "function" then
+        error("LoolibEventFrame: RegisterFrameEventAndCallback 'callback' must be a function", 2)
+    end
+
     if not self.globalEventHandles then
         self.globalEventHandles = {}
     end
@@ -148,6 +179,10 @@ end
 -- @param event string - The WoW event name
 -- @param owner any - The owner (defaults to self)
 function EventFrameMixin:UnregisterFrameEventAndCallback(event, owner)
+    if type(event) ~= "string" then
+        error("LoolibEventFrame: UnregisterFrameEventAndCallback 'event' must be a string", 2)
+    end
+
     owner = owner or self
 
     local key = event .. tostring(owner)
@@ -302,6 +337,10 @@ end
 -- @param frame Frame - The frame to enhance
 -- @return Frame - The enhanced frame
 local function ApplyEventFrameMixin(frame)
+    if type(frame) ~= "table" then
+        error("LoolibEventFrame: ApplyEventFrameMixin 'frame' must be a frame/table", 2)
+    end
+
     ApplyMixin(frame, EventFrameMixin)
     frame:InitEventFrame()
 

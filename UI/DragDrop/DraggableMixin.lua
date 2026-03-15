@@ -23,6 +23,13 @@
 
 local Loolib = LibStub("Loolib")
 
+-- Local references to globals
+local type = type
+local error = error
+local ipairs = ipairs
+local unpack = unpack
+local pcall = pcall
+
 ---@class LoolibDraggableMixin : Frame
 ---@field dragEnabled boolean
 ---@field dragData any
@@ -34,12 +41,22 @@ local Loolib = LibStub("Loolib")
 ---@field savePosition boolean
 ---@field positionKey string?
 ---@field savedVarsTable table?
+---@field _isDragging boolean
+---@field _dragStartX number
+---@field _dragStartY number
+---@field _originalPoints table
+---@field _ghostFrame Frame?
+---@field _dragHooksInstalled boolean
+---@field _onHideHooked boolean
 local LoolibDraggableMixin = {}
 
 -- ============================================================
 -- INITIALIZATION
 -- ============================================================
 
+--- Initialize the draggable state.
+--- Idempotent: safe to call multiple times.
+---@return nil
 function LoolibDraggableMixin:InitDraggable()
     self.dragEnabled = false
     self.dragData = nil
@@ -58,16 +75,22 @@ function LoolibDraggableMixin:InitDraggable()
     self._dragStartY = 0
     self._originalPoints = {}
     self._ghostFrame = nil
+    self._dragHooksInstalled = false
+    self._onHideHooked = false
 end
 
 -- ============================================================
 -- CONFIGURATION (Fluent API - all return self)
 -- ============================================================
 
----Enable or disable dragging
+--- Enable or disable dragging
 ---@param enabled boolean
 ---@return LoolibDraggableMixin
 function LoolibDraggableMixin:SetDragEnabled(enabled)
+    if type(enabled) ~= "boolean" then
+        error("LoolibDraggableMixin: SetDragEnabled: 'enabled' must be a boolean", 2)
+    end
+
     self.dragEnabled = enabled
 
     if enabled then
@@ -79,25 +102,37 @@ function LoolibDraggableMixin:SetDragEnabled(enabled)
             self:SetClampedToScreen(true)
         end
 
-        -- Set up drag scripts
-        self:SetScript("OnDragStart", function(frame)
-            frame:_OnDragStart()
-        end)
+        -- R7: Use HookScript with idempotent guard flag instead of SetScript
+        if not self._dragHooksInstalled then
+            self:HookScript("OnDragStart", function(frame)
+                frame:_OnDragStart()
+            end)
+            self:HookScript("OnDragStop", function(frame)
+                frame:_OnDragStop()
+            end)
+            self._dragHooksInstalled = true
+        end
 
-        self:SetScript("OnDragStop", function(frame)
-            frame:_OnDragStop()
-        end)
+        -- DD-06: Hook OnHide to clean up drag state if frame is hidden mid-drag
+        if not self._onHideHooked then
+            self:HookScript("OnHide", function(frame)
+                if frame._isDragging then
+                    frame:_OnDragStop()
+                end
+            end)
+            self._onHideHooked = true
+        end
     else
         self:SetMovable(false)
         self:RegisterForDrag()
-        self:SetScript("OnDragStart", nil)
-        self:SetScript("OnDragStop", nil)
+        -- Note: hooks remain installed but are no-ops when dragEnabled is false
+        -- because _OnDragStart checks self.dragEnabled before proceeding
     end
 
     return self
 end
 
----Set data to transfer when dropped
+--- Set data to transfer when dropped
 ---@param data any
 ---@return LoolibDraggableMixin
 function LoolibDraggableMixin:SetDragData(data)
@@ -105,10 +140,13 @@ function LoolibDraggableMixin:SetDragData(data)
     return self
 end
 
----Set which mouse button initiates drag
+--- Set which mouse button initiates drag
 ---@param button string "LeftButton", "RightButton", etc.
 ---@return LoolibDraggableMixin
 function LoolibDraggableMixin:SetDragButton(button)
+    if type(button) ~= "string" then
+        error("LoolibDraggableMixin: SetDragButton: 'button' must be a string", 2)
+    end
     self.dragButton = button
     if self.dragEnabled then
         self:RegisterForDrag(button)
@@ -116,15 +154,18 @@ function LoolibDraggableMixin:SetDragButton(button)
     return self
 end
 
----Require modifier key for drag
+--- Require modifier key for drag
 ---@param modifier string? "shift", "ctrl", "alt", or nil for none
 ---@return LoolibDraggableMixin
 function LoolibDraggableMixin:SetDragModifier(modifier)
+    if modifier ~= nil and type(modifier) ~= "string" then
+        error("LoolibDraggableMixin: SetDragModifier: 'modifier' must be a string or nil", 2)
+    end
     self.dragModifier = modifier
     return self
 end
 
----Use ghost preview during drag
+--- Use ghost preview during drag
 ---@param useGhost boolean
 ---@param template string? Optional template for ghost frame
 ---@return LoolibDraggableMixin
@@ -134,22 +175,28 @@ function LoolibDraggableMixin:SetUseGhost(useGhost, template)
     return self
 end
 
----Clamp to screen bounds
+--- Clamp to screen bounds
 ---@param clamp boolean
 ---@return LoolibDraggableMixin
 function LoolibDraggableMixin:SetClampToScreen(clamp)
     self.clampToScreen = clamp
-    if self:GetObjectType() then  -- Ensure we're a frame
+    if self.GetObjectType then  -- Ensure we're a frame
         self:SetClampedToScreen(clamp)
     end
     return self
 end
 
----Enable position persistence to SavedVariables
+--- Enable position persistence to SavedVariables
 ---@param savedVarsTable table The SavedVariables table to use
 ---@param key string Key prefix for position data (e.g., "MainWindow")
 ---@return LoolibDraggableMixin
 function LoolibDraggableMixin:SetSavePosition(savedVarsTable, key)
+    if type(savedVarsTable) ~= "table" then
+        error("LoolibDraggableMixin: SetSavePosition: 'savedVarsTable' must be a table", 2)
+    end
+    if type(key) ~= "string" then
+        error("LoolibDraggableMixin: SetSavePosition: 'key' must be a string", 2)
+    end
     self.savePosition = true
     self.savedVarsTable = savedVarsTable
     self.positionKey = key
@@ -160,7 +207,13 @@ end
 -- INTERNAL DRAG HANDLERS
 -- ============================================================
 
+--- Handle drag start -- INTERNAL
 function LoolibDraggableMixin:_OnDragStart()
+    -- DD-01: Reentrancy guard - if already dragging, bail out
+    if self._isDragging then
+        return
+    end
+
     -- Check modifier requirement
     if self.dragModifier then
         local modifierDown = false
@@ -223,6 +276,7 @@ function LoolibDraggableMixin:_OnDragStart()
     GameTooltip:Hide()
 end
 
+--- Handle drag stop -- INTERNAL
 function LoolibDraggableMixin:_OnDragStop()
     if not self._isDragging then
         return
@@ -263,6 +317,8 @@ end
 -- GHOST FRAME
 -- ============================================================
 
+--- Create or reuse the ghost frame -- INTERNAL
+---@return Frame ghost The ghost frame
 function LoolibDraggableMixin:_CreateGhost()
     if self._ghostFrame then
         return self._ghostFrame
@@ -297,6 +353,7 @@ end
 -- POSITION PERSISTENCE
 -- ============================================================
 
+--- Save current frame position -- INTERNAL
 function LoolibDraggableMixin:_SavePosition()
     if not self.savedVarsTable or not self.positionKey then
         return
@@ -312,8 +369,8 @@ function LoolibDraggableMixin:_SavePosition()
     end
 end
 
----Restore saved position
----@return boolean success
+--- Restore saved position
+---@return boolean success True if position was restored
 function LoolibDraggableMixin:RestorePosition()
     if not self.savedVarsTable or not self.positionKey then
         return false
@@ -331,9 +388,10 @@ function LoolibDraggableMixin:RestorePosition()
     return false
 end
 
----Restore original anchor points (before drag started)
----Used for list reordering when drag is cancelled
----Pattern from ExLib.lua:3883-3886
+--- Restore original anchor points (before drag started)
+--- Used for list reordering when drag is cancelled.
+--- Pattern from ExLib.lua:3883-3886
+---@return nil
 function LoolibDraggableMixin:RestoreOriginalPoints()
     if not self._originalPoints or #self._originalPoints == 0 then
         return
@@ -345,7 +403,8 @@ function LoolibDraggableMixin:RestoreOriginalPoints()
     end
 end
 
----Center on screen (default position)
+--- Center on screen (default position)
+---@return nil
 function LoolibDraggableMixin:CenterOnScreen()
     self:ClearAllPoints()
     self:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
@@ -355,10 +414,14 @@ end
 -- QUERY METHODS
 -- ============================================================
 
+--- Check if this frame is currently being dragged
+---@return boolean
 function LoolibDraggableMixin:IsDragging()
     return self._isDragging
 end
 
+--- Get the drag data associated with this frame
+---@return any dragData
 function LoolibDraggableMixin:GetDragData()
     return self.dragData
 end

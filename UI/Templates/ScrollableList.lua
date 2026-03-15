@@ -25,6 +25,26 @@ local CreateLoolibFramePool = assert(Loolib.CreateFramePool, "Loolib.CreateFrame
 local CreateLoolibObjectPool = assert(Loolib.CreateObjectPool, "Loolib.CreateObjectPool is required for ScrollableList")
 local LoolibGetResetterForFrameType = assert(Loolib.GetResetterForFrameType, "Loolib.GetResetterForFrameType is required for ScrollableList")
 
+-- Cache globals
+local error = error
+local ipairs = ipairs
+local math_ceil = math.ceil
+local math_floor = math.floor
+local math_max = math.max
+local math_min = math.min
+local next = next
+local pairs = pairs
+local select = select
+local tostring = tostring
+local type = type
+local wipe = wipe
+
+-- Cache WoW globals
+local C_Timer = C_Timer
+local CreateFrame = CreateFrame
+local IsControlKeyDown = IsControlKeyDown
+local IsShiftKeyDown = IsShiftKeyDown
+
 --[[--------------------------------------------------------------------
     LoolibScrollableListMixin
 ----------------------------------------------------------------------]]
@@ -85,7 +105,7 @@ function LoolibScrollableListMixin:OnLoad()
         local scrollStep = self.itemHeight * 3
         local currentScroll = self.ScrollFrame:GetVerticalScroll()
         local newScroll = currentScroll - (delta * scrollStep)
-        self.ScrollFrame:SetVerticalScroll(math.max(0, newScroll))
+        self.ScrollFrame:SetVerticalScroll(math_max(0, newScroll))
     end)
 end
 
@@ -443,7 +463,7 @@ end
 function LoolibScrollableListMixin:ScrollToBottom()
     local totalHeight = self:GetTotalHeight()
     local viewHeight = self.ScrollFrame:GetHeight()
-    self.ScrollFrame:SetVerticalScroll(math.max(0, totalHeight - viewHeight))
+    self.ScrollFrame:SetVerticalScroll(math_max(0, totalHeight - viewHeight))
 end
 
 --[[--------------------------------------------------------------------
@@ -452,6 +472,8 @@ end
 
 --- Mark the list as needing refresh
 function LoolibScrollableListMixin:MarkDirty()
+    -- Invalidate signature so the next Refresh() always re-renders
+    self._forceRefresh = true
     if not self.pendingRefresh then
         self.pendingRefresh = true
         C_Timer.After(0, function()
@@ -471,6 +493,9 @@ function LoolibScrollableListMixin:GetTotalHeight()
 end
 
 --- Refresh the list display
+-- FIX(TP-05): Early-return when data size, scroll offset, and view height are
+-- unchanged since the previous render.  Full re-render of all visible items is
+-- still O(visible) by design; true virtualisation is a documented limitation.
 function LoolibScrollableListMixin:Refresh()
     if not self.dataProvider or not self.Content then
         return
@@ -494,10 +519,6 @@ function LoolibScrollableListMixin:Refresh()
         end
     end
 
-    -- Release all current items
-    self.itemPool:ReleaseAll()
-    wipe(self.visibleItems)
-
     -- Build filtered data list
     local filteredData = {}
     local totalItems = self.dataProvider:GetSize()
@@ -516,9 +537,21 @@ function LoolibScrollableListMixin:Refresh()
     local viewHeight = self.ScrollFrame:GetHeight()
     local numFilteredItems = #filteredData
 
-    local firstVisible = math.floor(scrollOffset / self.itemHeight) + 1
-    local lastVisible = math.ceil((scrollOffset + viewHeight) / self.itemHeight)
-    lastVisible = math.min(lastVisible, numFilteredItems)
+    local firstVisible = math_floor(scrollOffset / self.itemHeight) + 1
+    local lastVisible = math_ceil((scrollOffset + viewHeight) / self.itemHeight)
+    lastVisible = math_min(lastVisible, numFilteredItems)
+
+    -- Early-return: skip re-render when the visible window and data size haven't changed
+    local sig = numFilteredItems * 100000 + firstVisible * 1000 + lastVisible
+    if sig == self._lastRefreshSignature and not self._forceRefresh then
+        return
+    end
+    self._lastRefreshSignature = sig
+    self._forceRefresh = nil
+
+    -- Release all current items
+    self.itemPool:ReleaseAll()
+    wipe(self.visibleItems)
 
     -- Update content size
     self.Content:SetSize(self.ScrollFrame:GetWidth() - 4, numFilteredItems * self.itemHeight)
@@ -547,16 +580,7 @@ function LoolibScrollableListMixin:Refresh()
             -- Selection state
             self:UpdateItemSelection(frame, elementData)
 
-            -- Set up click handling
-            frame:SetScript("OnClick", function(f, button)
-                self:OnItemClick(f, f.data, button)
-            end)
-
-            frame:SetScript("OnDoubleClick", function(f, button)
-                self:TriggerEvent("OnItemDoubleClicked", f.data, f.index, button)
-            end)
-
-            -- Right-click handler
+            -- Right-click handler + normal click (register both button types)
             frame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
             frame:SetScript("OnClick", function(f, button)
                 if button == "RightButton" then
@@ -567,6 +591,10 @@ function LoolibScrollableListMixin:Refresh()
                 else
                     self:OnItemClick(f, f.data, button)
                 end
+            end)
+
+            frame:SetScript("OnDoubleClick", function(f, button)
+                self:TriggerEvent("OnItemDoubleClicked", f.data, f.index, button)
             end)
 
             -- Row highlighting on hover
@@ -681,8 +709,8 @@ function LoolibScrollableListMixin:OnItemClick(frame, elementData, button)
         local firstSelected = self:GetFirstSelected()
         local firstIndex = self.dataProvider:FindIndex(firstSelected)
         local clickIndex = frame.index
-        local startIdx = math.min(firstIndex, clickIndex)
-        local endIdx = math.max(firstIndex, clickIndex)
+        local startIdx = math_min(firstIndex, clickIndex)
+        local endIdx = math_max(firstIndex, clickIndex)
 
         wipe(self.selection)
         for i = startIdx, endIdx do

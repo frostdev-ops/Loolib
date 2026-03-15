@@ -10,6 +10,8 @@
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+
+-- Cache globals at file top
 local _G = _G
 local CreateFrame = CreateFrame
 local GetRealmName = GetRealmName
@@ -19,15 +21,18 @@ local UnitName = UnitName
 local UnitRace = UnitRace
 local error = error
 local ipairs = ipairs
+local issecretvalue = issecretvalue
 local next = next
 local pairs = pairs
 local select = select
 local setmetatable = setmetatable
 local type = type
 local sort = table.sort
+local format = string.format
 local wipe = wipe
 local gmatch = string.gmatch
 
+-- INTERNAL: Guard against secret values returned by restricted WoW APIs
 local function GuardSecretValue(value, fallback)
     if value == nil then
         return fallback
@@ -38,17 +43,18 @@ local function GuardSecretValue(value, fallback)
     return value
 end
 
+-- INTERNAL: Resolve a required Loolib module or throw
 local function GetRequiredModule(name)
     local module = Loolib:GetModule(name)
     if not module then
-        error("Loolib module '" .. name .. "' is required", 2)
+        error("LoolibSavedVariables: required module '" .. name .. "' not found", 2)
     end
     return module
 end
 
 local CallbackRegistryMixin = GetRequiredModule("CallbackRegistry").Mixin
 -- FIX(critical-01): Use Loolib.CreateFromMixins directly instead of unstable "Mixin" module lookup
-local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required")
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "LoolibSavedVariables: Loolib.CreateFromMixins is required")
 local DeepCopy = (Loolib.TableUtil or GetRequiredModule("TableUtil")).DeepCopy
 
 local Data = Loolib.Data or Loolib:GetOrCreateModule("Data")
@@ -57,7 +63,11 @@ Loolib.Data = Data
 local SavedVariablesModule = Data.SavedVariables or Loolib:GetModule("Data.SavedVariables") or {}
 Loolib.Data.SavedVariables = SavedVariablesModule
 
+-- INTERNAL: Ensure all intermediate tables along a key path exist
 local function EnsureTablePath(root, path)
+    if type(root) ~= "table" then
+        error("LoolibSavedVariables: EnsureTablePath root must be a table", 2)
+    end
     local current = root
     for _, key in ipairs(path or {}) do
         if type(current[key]) ~= "table" then
@@ -68,7 +78,11 @@ local function EnsureTablePath(root, path)
     return current
 end
 
+-- INTERNAL: Traverse a key path and return the leaf value, or nil if any step is missing
 local function GetTablePath(root, path)
+    if type(root) ~= "table" then
+        return nil
+    end
     local current = root
     for _, key in ipairs(path or {}) do
         if type(current) ~= "table" then
@@ -106,9 +120,19 @@ local SAVED_VARS_EVENTS = {
 
 --- Initialize the saved variables manager
 -- @param globalName string - The global variable name (must match TOC)
--- @param defaults table - Default values with scope keys
--- @param defaultProfile string - Default profile name (default: "Default")
+-- @param defaults table|nil - Default values with scope keys
+-- @param defaultProfile string|nil - Default profile name (default: "Default")
 function SavedVariablesMixin:Init(globalName, defaults, defaultProfile)
+    if type(globalName) ~= "string" or globalName == "" then
+        error("LoolibSavedVariables:Init: globalName must be a non-empty string", 2)
+    end
+    if defaults ~= nil and type(defaults) ~= "table" then
+        error("LoolibSavedVariables:Init: defaults must be a table or nil", 2)
+    end
+    if defaultProfile ~= nil and type(defaultProfile) ~= "string" then
+        error("LoolibSavedVariables:Init: defaultProfile must be a string or nil", 2)
+    end
+
     CallbackRegistryMixin.OnLoad(self)
     self:GenerateCallbackEvents(SAVED_VARS_EVENTS)
 
@@ -182,7 +206,7 @@ function SavedVariablesMixin:GetScopeKey(scope)
     return self.scopeKeys[scope]
 end
 
---- Called when the addon loads
+--- Called when the addon loads -- INTERNAL
 function SavedVariablesMixin:OnAddonLoaded()
     if self.initialized then
         return
@@ -193,7 +217,16 @@ function SavedVariablesMixin:OnAddonLoaded()
         _G[self.globalName] = {}
     end
 
-    self.rootData = _G[self.globalName]
+    -- Guard against corrupt (non-table) saved data on disk
+    local globalData = _G[self.globalName]
+    if type(globalData) ~= "table" then
+        Loolib:Error(format("SavedVariables '%s': corrupt data (expected table, got %s), resetting",
+            self.globalName, type(globalData)))
+        _G[self.globalName] = {}
+        globalData = _G[self.globalName]
+    end
+
+    self.rootData = globalData
     if self.dataPath and #self.dataPath > 0 then
         self.data = EnsureTablePath(self.rootData, self.dataPath)
     else
@@ -211,7 +244,7 @@ function SavedVariablesMixin:OnAddonLoaded()
     self:TriggerEvent("OnInitialized")
 end
 
---- Called on player logout (strip defaults to save space)
+--- Called on player logout (strip defaults to save space) -- INTERNAL
 function SavedVariablesMixin:OnPlayerLogout()
     if self.initialized then
         self:RemoveDefaults()
@@ -219,21 +252,31 @@ function SavedVariablesMixin:OnPlayerLogout()
     end
 end
 
---- Initialize the profile system
+--- Initialize the profile system -- INTERNAL
 function SavedVariablesMixin:InitProfiles()
-    -- Ensure profiles table exists
-    self.data.profiles = self.data.profiles or {}
-    self.data.profileKeys = self.data.profileKeys or {}
+    -- Guard against corrupt profiles/profileKeys (non-table) from damaged saved data
+    if type(self.data.profiles) ~= "table" then
+        self.data.profiles = {}
+    end
+    if type(self.data.profileKeys) ~= "table" then
+        self.data.profileKeys = {}
+    end
 
     -- Get character-specific profile key
     local charKey = self:GetScopeKey("char")
 
-    -- Set current profile
-    self.data.profileKeys[charKey] = self.data.profileKeys[charKey] or self.defaultProfile
-    self.currentProfile = self.data.profileKeys[charKey]
+    -- Set current profile (guard against non-string stored key)
+    local storedProfile = self.data.profileKeys[charKey]
+    if type(storedProfile) ~= "string" or storedProfile == "" then
+        storedProfile = self.defaultProfile
+        self.data.profileKeys[charKey] = storedProfile
+    end
+    self.currentProfile = storedProfile
 
-    -- Ensure the profile exists
-    self.data.profiles[self.currentProfile] = self.data.profiles[self.currentProfile] or {}
+    -- Ensure the profile data is a table
+    if type(self.data.profiles[self.currentProfile]) ~= "table" then
+        self.data.profiles[self.currentProfile] = {}
+    end
 
     -- Apply defaults via metatable (for automatic fallback)
     if self.defaults.profile then
@@ -241,13 +284,15 @@ function SavedVariablesMixin:InitProfiles()
     end
 end
 
---- Initialize scope tables with defaults
+--- Initialize scope tables with defaults -- INTERNAL
 function SavedVariablesMixin:InitScopes()
     local scopes = {"char", "realm", "class", "race", "faction", "factionrealm", "global"}
 
     for _, scope in ipairs(scopes) do
-        -- Ensure scope table exists
-        self.data[scope] = self.data[scope] or {}
+        -- Guard against corrupt scope data (non-table) from damaged saved data
+        if type(self.data[scope]) ~= "table" then
+            self.data[scope] = {}
+        end
 
         if scope == "global" then
             -- Global scope has no key
@@ -257,7 +302,9 @@ function SavedVariablesMixin:InitScopes()
         else
             -- Scoped data uses keys
             local scopeKey = self:GetScopeKey(scope)
-            self.data[scope][scopeKey] = self.data[scope][scopeKey] or {}
+            if type(self.data[scope][scopeKey]) ~= "table" then
+                self.data[scope][scopeKey] = {}
+            end
 
             if self.defaults[scope] then
                 self:SetDefaults(self.data[scope][scopeKey], self.defaults[scope])
@@ -266,11 +313,13 @@ function SavedVariablesMixin:InitScopes()
     end
 end
 
---- Apply defaults using metatable for automatic fallback
+--- Apply defaults using metatable for automatic fallback -- INTERNAL
 -- @param target table - Target table
 -- @param defaults table - Default values
 function SavedVariablesMixin:SetDefaults(target, defaults)
     if not defaults then return end
+    if type(target) ~= "table" then return end
+    if type(defaults) ~= "table" then return end
 
     -- Use metatable for automatic fallback to defaults
     setmetatable(target, {
@@ -292,6 +341,9 @@ end
 -- @param target table - Target table
 -- @param defaults table - Default values
 function SavedVariablesMixin:MergeDefaults(target, defaults)
+    if type(target) ~= "table" or type(defaults) ~= "table" then
+        return
+    end
     for key, defaultValue in pairs(defaults) do
         if target[key] == nil then
             if type(defaultValue) == "table" then
@@ -313,21 +365,31 @@ end
 -- @param scope string - The scope name
 -- @return table - The scope table
 function SavedVariablesMixin:GetScope(scope)
+    if type(scope) ~= "string" then
+        error("LoolibSavedVariables:GetScope: scope must be a string", 2)
+    end
+
     if not self.initialized then
         return self.defaults[scope] or {}
     end
 
     if scope == "profile" then
-        return self.data.profiles[self.currentProfile]
+        local profileData = self.data.profiles and self.data.profiles[self.currentProfile]
+        return type(profileData) == "table" and profileData or {}
     elseif scope == "global" then
-        return self.data.global
+        return type(self.data.global) == "table" and self.data.global or {}
     else
         local scopeKey = self:GetScopeKey(scope)
-        return self.data[scope] and self.data[scope][scopeKey] or {}
+        local scopeTable = self.data[scope]
+        if type(scopeTable) ~= "table" then
+            return {}
+        end
+        local scopeData = scopeTable[scopeKey]
+        return type(scopeData) == "table" and scopeData or {}
     end
 end
 
---- Create metatable properties for scope access
+--- Create metatable properties for scope access -- INTERNAL
 -- This allows: db.char, db.realm, db.profile, etc.
 ---@diagnostic disable-next-line: unused-function
 local function _CreateScopeAccessor(db)
@@ -349,16 +411,27 @@ end
 
 --- Register a namespace (isolated data within the database)
 -- @param name string - Namespace name
--- @param defaults table - Default values for this namespace
+-- @param defaults table|nil - Default values for this namespace
 -- @return table - Namespace object (same API as main db)
 function SavedVariablesMixin:RegisterNamespace(name, defaults)
+    if type(name) ~= "string" or name == "" then
+        error("LoolibSavedVariables:RegisterNamespace: name must be a non-empty string", 2)
+    end
+    if defaults ~= nil and type(defaults) ~= "table" then
+        error("LoolibSavedVariables:RegisterNamespace: defaults must be a table or nil", 2)
+    end
+
     if self.namespaces[name] then
         return self.namespaces[name]
     end
 
-    -- Ensure namespace data exists
-    self.data.namespaces = self.data.namespaces or {}
-    self.data.namespaces[name] = self.data.namespaces[name] or {}
+    -- Ensure namespace data exists (guard against corrupt stored data)
+    if type(self.data.namespaces) ~= "table" then
+        self.data.namespaces = {}
+    end
+    if type(self.data.namespaces[name]) ~= "table" then
+        self.data.namespaces[name] = {}
+    end
 
     -- Create namespace object
     local namespace = CreateFromMixins(SavedVariablesMixin)
@@ -385,12 +458,15 @@ end
 
 --- Get an existing namespace
 -- @param name string - Namespace name
--- @param silent boolean - Don't error if not found
--- @return table - Namespace or nil
+-- @param silent boolean|nil - Don't error if not found
+-- @return table|nil - Namespace or nil
 function SavedVariablesMixin:GetNamespace(name, silent)
+    if type(name) ~= "string" then
+        error("LoolibSavedVariables:GetNamespace: name must be a string", 2)
+    end
     local namespace = self.namespaces[name]
     if not namespace and not silent then
-        error("Namespace '" .. name .. "' not found. Use RegisterNamespace first.", 2)
+        error("LoolibSavedVariables: namespace '" .. name .. "' not found. Use RegisterNamespace first.", 2)
     end
     return namespace
 end
@@ -418,6 +494,9 @@ end
 -- @param default any - Default value if not found
 -- @return any
 function SavedVariablesMixin:Get(key, default)
+    if type(key) ~= "string" then
+        error("LoolibSavedVariables:Get: key must be a string", 2)
+    end
     local data = self:GetData()
     return self:GetNestedValue(data, key, default)
 end
@@ -426,7 +505,13 @@ end
 -- @param key string - The key (supports dot notation)
 -- @param value any - The value to set
 function SavedVariablesMixin:Set(key, value)
+    if type(key) ~= "string" then
+        error("LoolibSavedVariables:Set: key must be a string", 2)
+    end
     local data = self:GetData()
+    if type(data) ~= "table" then
+        return
+    end
     local oldValue = self:GetNestedValue(data, key)
 
     self:SetNestedValue(data, key, value)
@@ -442,8 +527,14 @@ end
 -- @param default any - Default if not found
 -- @return any
 function SavedVariablesMixin:GetNestedValue(tbl, path, default)
+    if type(tbl) ~= "table" then
+        return default
+    end
     if not path or path == "" then
         return tbl
+    end
+    if type(path) ~= "string" then
+        error("LoolibSavedVariables:GetNestedValue: path must be a string", 2)
     end
 
     local current = tbl
@@ -465,15 +556,26 @@ end
 -- @param path string - Dot-separated path
 -- @param value any - The value to set
 function SavedVariablesMixin:SetNestedValue(tbl, path, value)
+    if type(tbl) ~= "table" then
+        error("LoolibSavedVariables:SetNestedValue: tbl must be a table", 2)
+    end
+    if type(path) ~= "string" or path == "" then
+        error("LoolibSavedVariables:SetNestedValue: path must be a non-empty string", 2)
+    end
+
     local parts = {}
     for part in gmatch(path, "[^.]+") do
         parts[#parts + 1] = part
     end
 
+    if #parts == 0 then
+        return
+    end
+
     local current = tbl
     for i = 1, #parts - 1 do
         local part = parts[i]
-        if current[part] == nil then
+        if type(current[part]) ~= "table" then
             current[part] = {}
         end
         current = current[part]
@@ -486,6 +588,9 @@ end
 -- @param key string - The key
 -- @return boolean
 function SavedVariablesMixin:Has(key)
+    if type(key) ~= "string" then
+        error("LoolibSavedVariables:Has: key must be a string", 2)
+    end
     local value = self:Get(key)
     return value ~= nil
 end
@@ -493,6 +598,9 @@ end
 --- Delete a key
 -- @param key string - The key to delete
 function SavedVariablesMixin:Delete(key)
+    if type(key) ~= "string" then
+        error("LoolibSavedVariables:Delete: key must be a string", 2)
+    end
     self:Set(key, nil)
 end
 
@@ -522,8 +630,8 @@ end
 --- Switch to a different profile
 -- @param name string - The profile to switch to (creates if doesn't exist)
 function SavedVariablesMixin:SetProfile(name)
-    if not name or name == "" then
-        error("Profile name cannot be empty", 2)
+    if type(name) ~= "string" or name == "" then
+        error("LoolibSavedVariables:SetProfile: name must be a non-empty string", 2)
     end
 
     local isNewProfile = not self.data.profiles[name]
@@ -554,13 +662,17 @@ end
 
 --- Copy data from another profile to current profile
 -- @param sourceName string - Name of profile to copy from
--- @param silent boolean - Suppress errors if source doesn't exist
+-- @param silent boolean|nil - Suppress errors if source doesn't exist
 function SavedVariablesMixin:CopyProfile(sourceName, silent)
+    if type(sourceName) ~= "string" then
+        error("LoolibSavedVariables:CopyProfile: sourceName must be a string", 2)
+    end
+
     local source = self.data.profiles[sourceName]
 
     if not source then
         if not silent then
-            error("Source profile '" .. sourceName .. "' does not exist", 2)
+            error("LoolibSavedVariables:CopyProfile: source profile '" .. sourceName .. "' does not exist", 2)
         end
         return
     end
@@ -587,13 +699,17 @@ end
 
 --- Delete a profile
 -- @param name string - The profile to delete
--- @param silent boolean - Suppress errors
+-- @param silent boolean|nil - Suppress errors
 -- @return boolean - Success
 function SavedVariablesMixin:DeleteProfile(name, silent)
+    if type(name) ~= "string" then
+        error("LoolibSavedVariables:DeleteProfile: name must be a string", 2)
+    end
+
     -- Don't delete default profile
     if name == self.defaultProfile then
         if not silent then
-            error("Cannot delete the default profile", 2)
+            error("LoolibSavedVariables:DeleteProfile: cannot delete the default profile", 2)
         end
         return false
     end
@@ -601,7 +717,7 @@ function SavedVariablesMixin:DeleteProfile(name, silent)
     -- Don't delete current profile
     if self.currentProfile == name then
         if not silent then
-            error("Cannot delete the current profile. Switch profiles first.", 2)
+            error("LoolibSavedVariables:DeleteProfile: cannot delete the current profile. Switch profiles first.", 2)
         end
         return false
     end
@@ -609,7 +725,7 @@ function SavedVariablesMixin:DeleteProfile(name, silent)
     -- Check if profile exists
     if not self.data.profiles[name] then
         if not silent then
-            error("Profile '" .. name .. "' does not exist", 2)
+            error("LoolibSavedVariables:DeleteProfile: profile '" .. name .. "' does not exist", 2)
         end
         return false
     end
@@ -622,7 +738,7 @@ function SavedVariablesMixin:DeleteProfile(name, silent)
 
     if profileCount <= 1 then
         if not silent then
-            error("Cannot delete the last profile", 2)
+            error("LoolibSavedVariables:DeleteProfile: cannot delete the last profile", 2)
         end
         return false
     end
@@ -635,6 +751,10 @@ end
 --- Reset current profile to defaults
 function SavedVariablesMixin:ResetProfile()
     local currentProfileData = self.data.profiles[self.currentProfile]
+    if type(currentProfileData) ~= "table" then
+        currentProfileData = {}
+        self.data.profiles[self.currentProfile] = currentProfileData
+    end
     wipe(currentProfileData)
 
     if self.defaults.profile then
@@ -671,6 +791,9 @@ end
 --- Reset a specific key to its default
 -- @param key string - The key to reset
 function SavedVariablesMixin:ResetKey(key)
+    if type(key) ~= "string" then
+        error("LoolibSavedVariables:ResetKey: key must be a string", 2)
+    end
     local defaultValue = self:GetNestedValue(self.defaults.profile or self.defaults, key)
     if defaultValue ~= nil then
         if type(defaultValue) == "table" then
@@ -687,7 +810,7 @@ end
     Default Stripping (called on PLAYER_LOGOUT to save space)
 ----------------------------------------------------------------------]]
 
---- Deep-compare two values for equality (tables compared recursively)
+--- Deep-compare two values for equality (tables compared recursively) -- INTERNAL
 -- @param a any
 -- @param b any
 -- @return boolean
@@ -703,7 +826,7 @@ local function DeepEqual(a, b)
     return true
 end
 
---- Remove values that match defaults (recursive)
+--- Remove values that match defaults (recursive) -- INTERNAL
 -- Arrays (tables with a numeric key [1]) are compared atomically to prevent
 -- individual element stripping that creates sparse tables on reload.
 -- @param saved table - Saved data table
@@ -795,6 +918,9 @@ end
 -- @param callback function - Callback function
 -- @param owner any - Owner for the callback
 function SavedVariablesMixin:OnReady(callback, owner)
+    if type(callback) ~= "function" then
+        error("LoolibSavedVariables:OnReady: callback must be a function", 2)
+    end
     if self.initialized then
         callback()
     else
@@ -818,6 +944,10 @@ end
 -- @param str string - Serialized data
 -- @return boolean - Success
 function SavedVariablesMixin:Import(str)
+    if type(str) ~= "string" or str == "" then
+        error("LoolibSavedVariables:Import: str must be a non-empty string", 2)
+    end
+
     local serializerModule = Loolib:GetModule("Serializer")
     local serializer = serializerModule and serializerModule.Serializer
     if not serializer then
@@ -827,6 +957,9 @@ function SavedVariablesMixin:Import(str)
     local success, imported = serializer:Deserialize(str)
     if success and type(imported) == "table" then
         local data = self:GetData()
+        if type(data) ~= "table" then
+            return false
+        end
         wipe(data)
         for k, v in pairs(imported) do
             data[k] = v
@@ -843,10 +976,17 @@ end
 
 --- Create a saved variables manager (AceDB-style)
 -- @param globalName string - Global variable name
--- @param defaults table - Default values (with scope keys: profile, global, char, etc.)
--- @param defaultProfile string - Default profile name (default: "Default")
+-- @param defaults table|nil - Default values (with scope keys: profile, global, char, etc.)
+-- @param defaultProfile string|nil - Default profile name (default: "Default")
 -- @return table - SavedVariables instance with scope accessors
 local function CreateSavedVariables(globalName, defaults, defaultProfile)
+    if type(globalName) ~= "string" or globalName == "" then
+        error("LoolibSavedVariables.Create: globalName must be a non-empty string", 2)
+    end
+    if defaults ~= nil and type(defaults) ~= "table" then
+        error("LoolibSavedVariables.Create: defaults must be a table or nil", 2)
+    end
+
     local sv = CreateFromMixins(SavedVariablesMixin)
     sv:Init(globalName, defaults, defaultProfile)
 
@@ -872,6 +1012,13 @@ local function CreateSavedVariables(globalName, defaults, defaultProfile)
 end
 
 local function CreateSavedVariablesAtPath(globalName, dataPath, defaults, defaultProfile)
+    if type(globalName) ~= "string" or globalName == "" then
+        error("LoolibSavedVariables.CreateAtPath: globalName must be a non-empty string", 2)
+    end
+    if dataPath ~= nil and type(dataPath) ~= "table" then
+        error("LoolibSavedVariables.CreateAtPath: dataPath must be a table or nil", 2)
+    end
+
     local sv = CreateFromMixins(SavedVariablesMixin)
     sv.dataPath = dataPath
     sv:Init(globalName, defaults, defaultProfile)
@@ -893,8 +1040,21 @@ local function CreateSavedVariablesAtPath(globalName, dataPath, defaults, defaul
     return accessor
 end
 
+-- INTERNAL: Get or create a global storage table
 local function GetGlobalStorageRoot(globalName, create)
+    if type(globalName) ~= "string" or globalName == "" then
+        error("LoolibSavedVariables.GetRootData: globalName must be a non-empty string", 2)
+    end
     local root = _G[globalName]
+    -- Guard against corrupt (non-table) global data
+    if root ~= nil and type(root) ~= "table" then
+        if create then
+            root = {}
+            _G[globalName] = root
+        else
+            return nil
+        end
+    end
     if root == nil and create then
         root = {}
         _G[globalName] = root
@@ -902,6 +1062,7 @@ local function GetGlobalStorageRoot(globalName, create)
     return root
 end
 
+-- INTERNAL: Get or create an addon-specific data root under LoolibDB
 local function GetAddonDataRoot(addonName, create)
     if type(addonName) ~= "string" or addonName == "" then
         error("Loolib.Data.SavedVariables.GetAddonData: addonName must be a non-empty string", 2)

@@ -4,16 +4,41 @@
 
     Provides common functionality for layout systems including
     dirty flagging, child management, and content size calculation.
+
+    IMPORTANT: All layout types call child:ClearAllPoints() during
+    PerformLayout/Layout. This is standard layout engine behavior --
+    the layout manager owns the positioning of its children. Any
+    external anchors set on managed children will be destroyed during
+    layout. If you need external constraints, wrap the child in a
+    container frame and add the container to the layout instead.
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
 local Layout = Loolib.Layout or Loolib:GetOrCreateModule("Layout")
 local LayoutBaseModule = Layout.LayoutBase or Loolib:GetModule("Layout.LayoutBase") or {}
 
+-- Cache globals at file top
+local type = type
+local ipairs = ipairs
+local pairs = pairs
+local select = select
+local error = error
+local tostring = tostring
+local math_max = math.max
+local tinsert = table.insert
+local tremove = table.remove
+local wipe = wipe
+local C_Timer_After = C_Timer.After
+
 --[[--------------------------------------------------------------------
     LoolibBaseLayoutMixin
 
     Base mixin that all layout types inherit from.
+
+    Child management note (LY-05): RemoveChild uses a linear search
+    O(n) to find the child by reference. This is acceptable for typical
+    UI layouts (< 100 children). For very large child counts, consider
+    using RemoveChildByIndex if the index is known.
 ----------------------------------------------------------------------]]
 
 local LayoutBaseMixin = LayoutBaseModule.Mixin or {}
@@ -22,11 +47,16 @@ local LayoutBaseMixin = LayoutBaseModule.Mixin or {}
 -- @param container Frame - The container frame to manage
 -- @param config table - Configuration options
 function LayoutBaseMixin:Init(container, config)
+    if not container then
+        error("LoolibLayoutBase: Init: container is required", 2)
+    end
+
     self.container = container
     self.children = {}
     self.config = config or {}
     self.dirty = true
     self.layoutPending = false
+    self.layoutInProgress = false  -- INTERNAL: reentrancy guard (LY-04)
 
     -- Default configuration
     self.config.padding = self.config.padding or 0
@@ -52,7 +82,7 @@ end
 -- @return number - The index of the added child
 function LayoutBaseMixin:AddChild(child, index)
     if not child then
-        return nil
+        error("LoolibLayoutBase: AddChild: child is required", 2)
     end
 
     -- Remove from current parent layout if any
@@ -62,7 +92,7 @@ function LayoutBaseMixin:AddChild(child, index)
 
     -- Insert at index or append
     if index and index >= 1 and index <= #self.children + 1 then
-        table.insert(self.children, index, child)
+        tinsert(self.children, index, child)
     else
         self.children[#self.children + 1] = child
         index = #self.children
@@ -84,12 +114,16 @@ function LayoutBaseMixin:AddChildren(...)
 end
 
 --- Remove a child from the layout
+-- NOTE: Uses linear search O(n). Use RemoveChildByIndex if the index is known.
 -- @param child Region - The child to remove
 -- @return boolean - True if removed
 function LayoutBaseMixin:RemoveChild(child)
+    if not child then
+        return false
+    end
     for i, c in ipairs(self.children) do
         if c == child then
-            table.remove(self.children, i)
+            tremove(self.children, i)
             child.parentLayout = nil
             self:MarkDirty()
             return true
@@ -102,8 +136,11 @@ end
 -- @param index number - The index to remove
 -- @return Region|nil - The removed child
 function LayoutBaseMixin:RemoveChildByIndex(index)
+    if type(index) ~= "number" then
+        error("LoolibLayoutBase: RemoveChildByIndex: index must be a number", 2)
+    end
     if index >= 1 and index <= #self.children then
-        local child = table.remove(self.children, index)
+        local child = tremove(self.children, index)
         child.parentLayout = nil
         self:MarkDirty()
         return child
@@ -167,13 +204,19 @@ end
 -- @param child Region - The child to move
 -- @param newIndex number - The new index
 function LayoutBaseMixin:MoveChild(child, newIndex)
+    if not child then
+        error("LoolibLayoutBase: MoveChild: child is required", 2)
+    end
+    if type(newIndex) ~= "number" then
+        error("LoolibLayoutBase: MoveChild: newIndex must be a number", 2)
+    end
     local currentIndex = self:FindChildIndex(child)
     if currentIndex and newIndex ~= currentIndex then
-        table.remove(self.children, currentIndex)
+        tremove(self.children, currentIndex)
         if newIndex > currentIndex then
             newIndex = newIndex - 1
         end
-        table.insert(self.children, newIndex, child)
+        tinsert(self.children, newIndex, child)
         self:MarkDirty()
     end
 end
@@ -189,7 +232,7 @@ function LayoutBaseMixin:MarkDirty()
     -- Schedule deferred layout if not already pending
     if not self.layoutPending and self.container:IsShown() then
         self.layoutPending = true
-        C_Timer.After(0, function()
+        C_Timer_After(0, function()
             self.layoutPending = false
             if self.dirty then
                 self:Layout()
@@ -209,8 +252,11 @@ function LayoutBaseMixin:IsDirty()
     return self.dirty
 end
 
---- Force an immediate layout
+--- Force an immediate layout (bypasses dirty check)
 function LayoutBaseMixin:ForceLayout()
+    if self.layoutInProgress then
+        return  -- INTERNAL: prevent reentrant calls (LY-04)
+    end
     self.dirty = true
     self:Layout()
 end
@@ -220,9 +266,12 @@ end
 ----------------------------------------------------------------------]]
 
 --- Perform layout calculation
--- Subclasses MUST override this method
+-- Subclasses MUST override this method.
+-- All subclass Layout() implementations MUST set self.layoutInProgress = true
+-- at entry and self.layoutInProgress = false at exit to prevent reentrancy
+-- from autoSize -> OnSizeChanged -> MarkDirty -> Layout (LY-04).
 function LayoutBaseMixin:Layout()
-    error("LayoutBaseMixin:Layout must be overridden by subclass")
+    error("LoolibLayoutBase: Layout: must be overridden by subclass", 2)
 end
 
 --[[--------------------------------------------------------------------
@@ -236,6 +285,11 @@ function LayoutBaseMixin:GetContentSize()
 end
 
 --- Set the content size (internal)
+-- INTERNAL: Called by subclass Layout() to update content dimensions.
+-- When autoSize is enabled, this calls container:SetSize() which may trigger
+-- OnSizeChanged. The reentrancy guard (layoutInProgress) on Layout() entry
+-- prevents the cycle: OnSizeChanged -> MarkDirty -> deferred Layout() from
+-- re-entering the layout that is already in progress (LY-04).
 -- @param width number
 -- @param height number
 function LayoutBaseMixin:SetContentSize(width, height)
@@ -256,7 +310,7 @@ end
 function LayoutBaseMixin:GetAvailableSpace()
     local width = self.container:GetWidth() - self.config.paddingLeft - self.config.paddingRight
     local height = self.container:GetHeight() - self.config.paddingTop - self.config.paddingBottom
-    return math.max(0, width), math.max(0, height)
+    return math_max(0, width), math_max(0, height)
 end
 
 --[[--------------------------------------------------------------------
@@ -269,6 +323,9 @@ end
 -- @param top number - Top padding
 -- @param bottom number - Bottom padding
 function LayoutBaseMixin:SetPadding(left, right, top, bottom)
+    if type(left) ~= "number" then
+        error("LoolibLayoutBase: SetPadding: left must be a number", 2)
+    end
     self.config.paddingLeft = left
     self.config.paddingRight = right or left
     self.config.paddingTop = top or left
@@ -279,12 +336,18 @@ end
 --- Set uniform padding
 -- @param padding number - Padding for all sides
 function LayoutBaseMixin:SetUniformPadding(padding)
+    if type(padding) ~= "number" then
+        error("LoolibLayoutBase: SetUniformPadding: padding must be a number", 2)
+    end
     self:SetPadding(padding, padding, padding, padding)
 end
 
 --- Set spacing between children
 -- @param spacing number - Spacing in pixels
 function LayoutBaseMixin:SetSpacing(spacing)
+    if type(spacing) ~= "number" then
+        error("LoolibLayoutBase: SetSpacing: spacing must be a number", 2)
+    end
     self.config.spacing = spacing
     self:MarkDirty()
 end

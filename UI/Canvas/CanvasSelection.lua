@@ -64,6 +64,19 @@ local _LOOLIB_VERSION = 1 ---@diagnostic disable-line: unused-local
 local Loolib = LibStub and LibStub("Loolib", true)
 if not Loolib then return end
 
+-- Cached globals
+local type = type
+local error = error
+local pairs = pairs
+local ipairs = ipairs
+local math_min = math.min
+local math_max = math.max
+local math_abs = math.abs
+local math_huge = math.huge
+local table_insert = table.insert
+local table_remove = table.remove
+local table_sort = table.sort
+
 --[[----------------------------------------------------------------------------
     LoolibCanvasSelectionMixin
 
@@ -145,7 +158,9 @@ end
 ---@param mode string Selection mode: "single", "multi", or "lasso"
 ---@return LoolibCanvasSelectionMixin self For method chaining
 function LoolibCanvasSelectionMixin:SetSelectionMode(mode)
-    assert(mode == "single" or mode == "multi" or mode == "lasso", "Invalid selection mode")
+    if mode ~= "single" and mode ~= "multi" and mode ~= "lasso" then
+        error("LoolibCanvasSelection: SetSelectionMode: mode must be 'single', 'multi', or 'lasso'", 2)
+    end
     self._selectionMode = mode
     return self
 end
@@ -479,16 +494,17 @@ end
     Selection Bounds
 ----------------------------------------------------------------------------]]--
 
----Get the bounding box of all selected elements.
+--- Get the bounding box of all selected elements.
+--- CV-15 FIX: Returns nil for empty selection instead of 0,0,0,0
 ---@return number|nil x Left X coordinate or nil if no selection
 ---@return number|nil y Top Y coordinate or nil if no selection
 ---@return number|nil width Bounding box width or nil if no selection
 ---@return number|nil height Bounding box height or nil if no selection
 function LoolibCanvasSelectionMixin:GetSelectionBounds()
-    if #self._selectedElements == 0 then return nil end
+    if #self._selectedElements == 0 then return nil, nil, nil, nil end
 
-    local minX, minY = math.huge, math.huge
-    local maxX, maxY = -math.huge, -math.huge
+    local minX, minY = math_huge, math_huge
+    local maxX, maxY = -math_huge, -math_huge
 
     for _, sel in ipairs(self._selectedElements) do
         local x, y, w, h = self:GetElementBounds(sel.type, sel.index)
@@ -500,7 +516,7 @@ function LoolibCanvasSelectionMixin:GetSelectionBounds()
         end
     end
 
-    if minX == math.huge then return nil end
+    if minX == math_huge then return nil, nil, nil, nil end
     return minX, minY, maxX - minX, maxY - minY
 end
 
@@ -701,7 +717,13 @@ local function LoolibCreateCanvasSelection()
     return selection
 end
 
--- Register with Loolib
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasSelection", {
+    Mixin = LoolibCanvasSelectionMixin,
+    Create = LoolibCreateCanvasSelection,
+})
+
+-- Backward-compat alias
 Loolib:RegisterModule("CanvasSelection", {
     Mixin = LoolibCanvasSelectionMixin,
     Create = LoolibCreateCanvasSelection,

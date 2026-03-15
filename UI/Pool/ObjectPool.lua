@@ -12,6 +12,19 @@ local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixin
 local Pool = Loolib.Pool or Loolib:GetOrCreateModule("Pool")
 local ObjectPoolModule = Pool.ObjectPool or Loolib:GetModule("Pool.ObjectPool") or {}
 
+-- Cache globals
+local error = error
+local ipairs = ipairs
+local math_huge = math.huge
+local next = next
+local pairs = pairs
+local pcall = pcall
+local print = print
+local string_format = string.format
+local tostring = tostring
+local type = type
+local wipe = wipe
+
 --[[--------------------------------------------------------------------
     LoolibObjectPoolMixin
 
@@ -26,12 +39,18 @@ local ObjectPoolMixin = ObjectPoolModule.Mixin or {}
 -- @param capacity number - Optional maximum pool capacity (default: unlimited)
 function ObjectPoolMixin:Init(createFunc, resetFunc, capacity)
     if type(createFunc) ~= "function" then
-        error("LoolibObjectPoolMixin:Init requires createFunc as first argument")
+        error("LoolibObjectPool: Init requires createFunc as a function", 2)
+    end
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibObjectPool: Init resetFunc must be a function or nil", 2)
+    end
+    if capacity ~= nil and type(capacity) ~= "number" then
+        error("LoolibObjectPool: Init capacity must be a number or nil", 2)
     end
 
     self.createFunc = createFunc
     self.resetFunc = resetFunc or function() end
-    self.capacity = capacity or math.huge
+    self.capacity = capacity or math_huge
 
     self.activeObjects = {}
     self.inactiveObjects = {}
@@ -44,7 +63,8 @@ end
 ----------------------------------------------------------------------]]
 
 --- Acquire an object from the pool
--- Returns an existing inactive object or creates a new one
+-- Returns an existing inactive object or creates a new one.
+-- Returns nil, false if the pool is at capacity.
 -- @return any, boolean - The object and whether it's newly created
 function ObjectPoolMixin:Acquire()
     -- Check capacity
@@ -53,18 +73,24 @@ function ObjectPoolMixin:Acquire()
     end
 
     -- Try to get an inactive object
-    local object = table.remove(self.inactiveObjects)
-    local isNew = object == nil
+    local numInactive = #self.inactiveObjects
+    local object
+    local isNew
 
-    if isNew then
+    if numInactive > 0 then
+        object = self.inactiveObjects[numInactive]
+        self.inactiveObjects[numInactive] = nil
+        isNew = false
+    else
         -- Create a new object
         object = self.createFunc(self)
 
-        if type(object) ~= "table" then
-            error("LoolibObjectPoolMixin: createFunc must return a table")
+        if object == nil then
+            error("LoolibObjectPool: createFunc must return a value", 2)
         end
 
         self.totalCreated = self.totalCreated + 1
+        isNew = true
 
         -- Call reset on new objects
         self:CallReset(object, true)
@@ -77,10 +103,16 @@ function ObjectPoolMixin:Acquire()
     return object, isNew
 end
 
---- Release an object back to the pool
+--- Release an object back to the pool.
+-- Returns false if the object is not active in this pool (including
+-- double-release attempts).
 -- @param object any - The object to release
 -- @return boolean - True if the object was active and released
 function ObjectPoolMixin:Release(object)
+    if object == nil then
+        error("LoolibObjectPool: Release called with nil object", 2)
+    end
+
     if not self:IsActive(object) then
         return false
     end
@@ -107,13 +139,13 @@ function ObjectPoolMixin:ReleaseAll()
     self.activeCount = 0
 end
 
---- Call the reset function on an object
+--- Call the reset function on an object -- INTERNAL
 -- @param object any - The object to reset
 -- @param isNew boolean - True if this is a newly created object
 function ObjectPoolMixin:CallReset(object, isNew)
     local success, err = pcall(self.resetFunc, self, object, isNew)
     if not success then
-        Loolib:Error("Pool reset error:", err)
+        Loolib:Error("LoolibObjectPool: reset error:", err)
     end
 end
 
@@ -128,7 +160,7 @@ function ObjectPoolMixin:IsActive(object)
     return self.activeObjects[object] == true
 end
 
---- Check if an object belongs to this pool
+--- Check if an object belongs to this pool (active or inactive)
 -- @param object any - The object to check
 -- @return boolean
 function ObjectPoolMixin:DoesObjectBelongToPool(object)
@@ -195,6 +227,9 @@ end
 --- Execute a function for each active object
 -- @param func function - Function(object) to call
 function ObjectPoolMixin:ForEachActive(func)
+    if type(func) ~= "function" then
+        error("LoolibObjectPool: ForEachActive requires a function", 2)
+    end
     for object in pairs(self.activeObjects) do
         func(object)
     end
@@ -207,9 +242,13 @@ end
 --- Pre-allocate objects up to a certain count
 -- @param count number - Number of objects to pre-allocate
 function ObjectPoolMixin:Reserve(count)
+    if type(count) ~= "number" then
+        error("LoolibObjectPool: Reserve requires a number", 2)
+    end
+
     local toCreate = count - (self.activeCount + #self.inactiveObjects)
 
-    for i = 1, toCreate do
+    for _ = 1, toCreate do
         local object = self.createFunc(self)
         self:CallReset(object, true)
         self.inactiveObjects[#self.inactiveObjects + 1] = object
@@ -228,22 +267,28 @@ end
 --- Set a new reset function
 -- @param resetFunc function - The new reset function
 function ObjectPoolMixin:SetResetFunc(resetFunc)
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibObjectPool: SetResetFunc requires a function or nil", 2)
+    end
     self.resetFunc = resetFunc or function() end
 end
 
 --- Set the pool capacity
 -- @param capacity number - The new capacity
 function ObjectPoolMixin:SetCapacity(capacity)
-    self.capacity = capacity or math.huge
+    if capacity ~= nil and type(capacity) ~= "number" then
+        error("LoolibObjectPool: SetCapacity requires a number or nil", 2)
+    end
+    self.capacity = capacity or math_huge
 end
 
 --- Debug: Print pool statistics
 function ObjectPoolMixin:Dump()
-    print(string.format("Pool Stats: Active=%d, Inactive=%d, Total=%d, Capacity=%s",
+    print(string_format("Pool Stats: Active=%d, Inactive=%d, Total=%d, Capacity=%s",
         self.activeCount,
         #self.inactiveObjects,
         self.totalCreated,
-        self.capacity == math.huge and "unlimited" or tostring(self.capacity)
+        self.capacity == math_huge and "unlimited" or tostring(self.capacity)
     ))
 end
 

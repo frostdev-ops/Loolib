@@ -8,6 +8,15 @@
     - Cell spacing
     - Row/column gaps
     - Fill direction (row-first or column-first)
+
+    LIMITATION (LY-06): Per-child options.align is not supported.
+    All children are anchored at the TOPLEFT of their cell. To align
+    a child within its cell, wrap it in a container frame with
+    internal anchoring.
+
+    NOTE: Layout calls child:ClearAllPoints() on every managed child.
+    External anchors on managed children are destroyed. See LayoutBase
+    header comment for details.
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
@@ -18,6 +27,16 @@ local LayoutBaseMixin = assert(
     "Loolib.Layout.LayoutBase.Mixin is required for GridLayout"
 )
 local GridLayoutModule = Layout.GridLayout or Loolib:GetModule("Layout.GridLayout") or {}
+
+-- Cache globals at file top
+local type = type
+local ipairs = ipairs
+local tostring = tostring
+local error = error
+local math_max = math.max
+local math_ceil = math.ceil
+local math_floor = math.floor
+local math_sqrt = math.sqrt
 
 --[[--------------------------------------------------------------------
     LoolibGridLayoutMixin
@@ -47,9 +66,15 @@ end
     Configuration Setters
 ----------------------------------------------------------------------]]
 
+-- INTERNAL: valid fill direction values
+local VALID_FILL_DIRECTION = { ROW = true, COLUMN = true }
+
 --- Set the number of columns
 -- @param columns number
 function GridLayoutMixin:SetColumns(columns)
+    if type(columns) ~= "number" or columns < 1 then
+        error("LoolibGridLayout: SetColumns: columns must be a positive number", 2)
+    end
     self.config.columns = columns
     self:MarkDirty()
 end
@@ -57,6 +82,9 @@ end
 --- Set the number of rows (nil for auto)
 -- @param rows number|nil
 function GridLayoutMixin:SetRows(rows)
+    if rows ~= nil and (type(rows) ~= "number" or rows < 1) then
+        error("LoolibGridLayout: SetRows: rows must be a positive number or nil", 2)
+    end
     self.config.rows = rows
     self:MarkDirty()
 end
@@ -65,6 +93,9 @@ end
 -- @param width number - Cell width
 -- @param height number - Cell height (defaults to width)
 function GridLayoutMixin:SetCellSize(width, height)
+    if type(width) ~= "number" or width <= 0 then
+        error("LoolibGridLayout: SetCellSize: width must be a positive number", 2)
+    end
     self.config.cellWidth = width
     self.config.cellHeight = height or width
     self:MarkDirty()
@@ -74,6 +105,9 @@ end
 -- @param columnSpacing number - Horizontal spacing
 -- @param rowSpacing number - Vertical spacing (defaults to columnSpacing)
 function GridLayoutMixin:SetCellSpacing(columnSpacing, rowSpacing)
+    if type(columnSpacing) ~= "number" then
+        error("LoolibGridLayout: SetCellSpacing: columnSpacing must be a number", 2)
+    end
     self.config.columnSpacing = columnSpacing
     self.config.rowSpacing = rowSpacing or columnSpacing
     self:MarkDirty()
@@ -82,6 +116,9 @@ end
 --- Set fill direction
 -- @param direction string - ROW or COLUMN
 function GridLayoutMixin:SetFillDirection(direction)
+    if not VALID_FILL_DIRECTION[direction] then
+        error("LoolibGridLayout: SetFillDirection: invalid direction '" .. tostring(direction) .. "', expected ROW|COLUMN", 2)
+    end
     self.config.fillDirection = direction
     self:MarkDirty()
 end
@@ -105,13 +142,15 @@ function GridLayoutMixin:GetCellPosition(index)
     index = index - 1  -- Convert to 0-based
 
     if config.fillDirection == "COLUMN" then
-        local rows = config.rows or math.ceil(#self:GetVisibleChildren() / config.columns)
-        local col = math.floor(index / rows)
+        local rows = config.rows or math_ceil(#self:GetVisibleChildren() / math_max(1, config.columns))
+        rows = math_max(1, rows)  -- guard against zero rows
+        local col = math_floor(index / rows)
         local row = index % rows
         return row, col
     else
-        local col = index % config.columns
-        local row = math.floor(index / config.columns)
+        local cols = math_max(1, config.columns)  -- guard against zero columns
+        local col = index % cols
+        local row = math_floor(index / cols)
         return row, col
     end
 end
@@ -132,8 +171,8 @@ function GridLayoutMixin:CalculateCellSize()
     for _, child in ipairs(self.children) do
         if child:IsShown() then
             local w, h = self:GetChildSize(child)
-            maxWidth = math.max(maxWidth, w)
-            maxHeight = math.max(maxHeight, h)
+            maxWidth = math_max(maxWidth, w)
+            maxHeight = math_max(maxHeight, h)
         end
     end
 
@@ -146,18 +185,25 @@ end
 function GridLayoutMixin:CalculateGridDimensions(numChildren)
     local config = self.config
 
+    if numChildren == 0 then
+        return 0, config.columns or 1
+    end
+
     if config.rows and config.columns then
         return config.rows, config.columns
     elseif config.columns then
-        local rows = math.ceil(numChildren / config.columns)
-        return rows, config.columns
+        local cols = math_max(1, config.columns)
+        local rows = math_ceil(numChildren / cols)
+        return rows, cols
     elseif config.rows then
-        local columns = math.ceil(numChildren / config.rows)
-        return config.rows, columns
+        local rows = math_max(1, config.rows)
+        local columns = math_ceil(numChildren / rows)
+        return rows, columns
     else
         -- Default to square-ish grid
-        local columns = math.ceil(math.sqrt(numChildren))
-        local rows = math.ceil(numChildren / columns)
+        local columns = math_ceil(math_sqrt(numChildren))
+        columns = math_max(1, columns)
+        local rows = math_ceil(numChildren / columns)
         return rows, columns
     end
 end
@@ -167,9 +213,11 @@ end
 ----------------------------------------------------------------------]]
 
 function GridLayoutMixin:Layout()
-    if not self.dirty then
-        return
+    if not self.dirty or self.layoutInProgress then
+        return  -- LY-04: reentrancy guard
     end
+
+    self.layoutInProgress = true  -- INTERNAL: prevent reentrant layout
 
     local children = self:GetVisibleChildren()
     local numChildren = #children
@@ -177,6 +225,7 @@ function GridLayoutMixin:Layout()
     if numChildren == 0 then
         self:SetContentSize(0, 0)
         self:MarkClean()
+        self.layoutInProgress = false
         return
     end
 
@@ -192,7 +241,7 @@ function GridLayoutMixin:Layout()
         local x = config.paddingLeft + col * (cellWidth + config.columnSpacing)
         local y = -(config.paddingTop + row * (cellHeight + config.rowSpacing))
 
-        -- Position child
+        -- Position child (NOTE: ClearAllPoints destroys external anchors - LY-01)
         child:ClearAllPoints()
         child:SetPoint("TOPLEFT", self.container, "TOPLEFT", x, y)
 
@@ -203,11 +252,12 @@ function GridLayoutMixin:Layout()
     end
 
     -- Calculate content size
-    local contentWidth = numCols * cellWidth + (numCols - 1) * config.columnSpacing
-    local contentHeight = numRows * cellHeight + (numRows - 1) * config.rowSpacing
+    local contentWidth = numCols * cellWidth + math_max(0, numCols - 1) * config.columnSpacing
+    local contentHeight = numRows * cellHeight + math_max(0, numRows - 1) * config.rowSpacing
 
     self:SetContentSize(contentWidth, contentHeight)
     self:MarkClean()
+    self.layoutInProgress = false
 end
 
 --[[--------------------------------------------------------------------
@@ -219,14 +269,19 @@ end
 -- @param col number - 0-based column
 -- @return Region|nil - The child at that position
 function GridLayoutMixin:GetChildAt(row, col)
+    if type(row) ~= "number" or type(col) ~= "number" then
+        error("LoolibGridLayout: GetChildAt: row and col must be numbers", 2)
+    end
+
     local config = self.config
     local index
 
     if config.fillDirection == "COLUMN" then
-        local rows = config.rows or math.ceil(#self:GetVisibleChildren() / config.columns)
+        local rows = config.rows or math_ceil(#self:GetVisibleChildren() / math_max(1, config.columns))
+        rows = math_max(1, rows)
         index = col * rows + row + 1
     else
-        index = row * config.columns + col + 1
+        index = row * math_max(1, config.columns) + col + 1
     end
 
     return self:GetVisibleChildren()[index]
@@ -251,9 +306,12 @@ end
 
 --- Create a grid layout
 -- @param container Frame - Container frame
--- @param config table - Configuration
+-- @param config table - Optional configuration
 -- @return table - Layout instance
 local function CreateGridLayout(container, config)
+    if not container then
+        error("LoolibGridLayout: CreateGridLayout: container is required", 2)
+    end
     local layout = CreateFromMixins(GridLayoutMixin)
     layout:Init(container, config)
     return layout

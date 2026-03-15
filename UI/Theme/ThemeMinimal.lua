@@ -3,19 +3,28 @@
     ThemeMinimal - Minimal/flat theme variant
 
     A clean, modern flat design with minimal decoration.
+    Inherits missing keys from Default theme via ThemeManager:GetValue fallback.
+
+    Dependencies:
+    - Core/Loolib.lua
+    - UI/Theme/ThemeManager.lua
+    - UI/Theme/ThemeDefault.lua (must be loaded first for Backdrop definitions)
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
 local Theme = Loolib.Theme or Loolib:GetOrCreateModule("Theme")
 local ThemeManager = assert(Loolib.ThemeManager or (Theme.Manager and Theme.Manager.Manager), "Loolib.ThemeManager is required for ThemeMinimal")
-local Backdrop = Loolib.Backdrop or Theme.Backdrop or {}
+
+-- TH-05: Validate Backdrop is fully populated before using references
+local Backdrop = Loolib.Backdrop or Theme.Backdrop
+assert(Backdrop and Backdrop.Flat, "Loolib.Backdrop (with Flat) is required for ThemeMinimal -- ensure ThemeDefault.lua loads first")
 
 --[[--------------------------------------------------------------------
     Minimal Backdrop
     Ultra-thin borders, no decorative elements
 ----------------------------------------------------------------------]]
 
-Backdrop.Minimal = {
+Backdrop.Minimal = Backdrop.Minimal or {
     bgFile = "Interface\\Buttons\\WHITE8x8",
     edgeFile = "Interface\\Buttons\\WHITE8x8",
     tile = false,
@@ -23,7 +32,7 @@ Backdrop.Minimal = {
     insets = { left = 0, right = 0, top = 0, bottom = 0 },
 }
 
-Backdrop.MinimalThick = {
+Backdrop.MinimalThick = Backdrop.MinimalThick or {
     bgFile = "Interface\\Buttons\\WHITE8x8",
     edgeFile = "Interface\\Buttons\\WHITE8x8",
     tile = false,
@@ -93,7 +102,8 @@ local ThemeMinimal = {
         buttonPrimaryHover = {0.3, 0.6, 1, 1},
         buttonPrimaryPressed = {0.15, 0.4, 0.8, 1},
 
-        -- Class colors - Same as default
+        -- Class colors - Same as default (inherited via GetValue fallback,
+        -- but included explicitly for completeness)
         classWarrior = {0.78, 0.61, 0.43, 1},
         classPaladin = {0.96, 0.55, 0.73, 1},
         classHunter = {0.67, 0.83, 0.45, 1},

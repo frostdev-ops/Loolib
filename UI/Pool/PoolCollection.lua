@@ -13,6 +13,16 @@ local CreateFramePool = assert(Loolib.CreateFramePool, "Loolib.CreateFramePool i
 local Pool = Loolib.Pool or Loolib:GetOrCreateModule("Pool")
 local PoolCollectionModule = Pool.PoolCollection or Loolib:GetModule("Pool.PoolCollection") or {}
 
+-- Cache globals
+local error = error
+local next = next
+local pairs = pairs
+local print = print
+local string_format = string.format
+local tostring = tostring
+local type = type
+local wipe = wipe
+
 --[[--------------------------------------------------------------------
     LoolibPoolCollectionMixin
 
@@ -30,7 +40,7 @@ end
     Pool Management
 ----------------------------------------------------------------------]]
 
---- Generate a unique key for a pool
+--- Generate a unique key for a pool -- INTERNAL
 -- @param frameType string - The frame type
 -- @param parent Frame - The parent frame
 -- @param template string - The template name
@@ -41,7 +51,7 @@ function PoolCollectionMixin:GeneratePoolKey(frameType, parent, template, specia
     local templateKey = template or ""
     local specKey = specialization and tostring(specialization) or ""
 
-    return string.format("%s:%s:%s:%s", frameType, parentKey, templateKey, specKey)
+    return string_format("%s:%s:%s:%s", frameType, parentKey, templateKey, specKey)
 end
 
 --- Get an existing pool
@@ -51,6 +61,9 @@ end
 -- @param specialization any - Optional additional key component
 -- @return table|nil - The pool or nil if not found
 function PoolCollectionMixin:GetPool(frameType, parent, template, specialization)
+    if type(frameType) ~= "string" then
+        error("LoolibPoolCollection: GetPool requires frameType as a string", 2)
+    end
     local key = self:GeneratePoolKey(frameType, parent, template, specialization)
     return self.pools[key]
 end
@@ -64,10 +77,17 @@ end
 -- @param capacity number - Optional maximum capacity
 -- @return table - The new pool
 function PoolCollectionMixin:CreatePool(frameType, parent, template, resetFunc, specialization, capacity)
+    if type(frameType) ~= "string" then
+        error("LoolibPoolCollection: CreatePool requires frameType as a string", 2)
+    end
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibPoolCollection: CreatePool resetFunc must be a function or nil", 2)
+    end
+
     local key = self:GeneratePoolKey(frameType, parent, template, specialization)
 
     if self.pools[key] then
-        error("LoolibPoolCollectionMixin:CreatePool - Pool already exists for key: " .. key)
+        error("LoolibPoolCollection: pool already exists for key: " .. key, 2)
     end
 
     local pool = CreateFramePool(frameType, parent, template, resetFunc, capacity)
@@ -116,7 +136,7 @@ end
 -- @param template string - The template name to find
 -- @return Frame, boolean|nil - The frame and isNew, or nil if no matching pool
 function PoolCollectionMixin:AcquireByTemplate(template)
-    for key, pool in pairs(self.pools) do
+    for _, pool in pairs(self.pools) do
         if pool.template == template then
             return pool:Acquire()
         end
@@ -124,25 +144,31 @@ function PoolCollectionMixin:AcquireByTemplate(template)
     return nil
 end
 
---- Release a frame back to its pool
+--- Release a frame back to its pool.
+-- Searches all pools for the active object. Returns false if
+-- the object is not active in any managed pool.
 -- @param object Frame - The frame to release
 -- @return boolean - True if the frame was released
 function PoolCollectionMixin:Release(object)
+    if object == nil then
+        error("LoolibPoolCollection: Release called with nil object", 2)
+    end
+
     -- Try each pool until we find the right one
-    for key, pool in pairs(self.pools) do
+    for _, pool in pairs(self.pools) do
         if pool:IsActive(object) then
             return pool:Release(object)
         end
     end
 
     -- Object not found in any pool
-    Loolib:Error("PoolCollection:Release - Object not found in any pool")
+    Loolib:Error("LoolibPoolCollection: Release - object not found in any pool")
     return false
 end
 
 --- Release all frames from all pools
 function PoolCollectionMixin:ReleaseAll()
-    for key, pool in pairs(self.pools) do
+    for _, pool in pairs(self.pools) do
         pool:ReleaseAll()
     end
 end
@@ -273,13 +299,13 @@ end
 --- Debug: Print statistics for all pools
 function PoolCollectionMixin:Dump()
     print("Pool Collection Statistics:")
-    print(string.format("  Total Pools: %d", self:GetNumPools()))
-    print(string.format("  Total Active: %d", self:GetNumActive()))
+    print(string_format("  Total Pools: %d", self:GetNumPools()))
+    print(string_format("  Total Active: %d", self:GetNumActive()))
     print("")
 
     for key, pool in pairs(self.pools) do
-        print(string.format("  [%s]", key))
-        print(string.format("    Active: %d, Inactive: %d, Total: %d",
+        print(string_format("  [%s]", key))
+        print(string_format("    Active: %d, Inactive: %d, Total: %d",
             pool:GetNumActive(),
             pool:GetNumInactive(),
             pool:GetTotalCreated()

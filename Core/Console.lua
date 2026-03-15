@@ -6,6 +6,17 @@
 local Loolib = LibStub("Loolib")
 local Core = Loolib.Core or Loolib:GetOrCreateModule("Core")
 
+-- Local references to globals
+local type = type
+local pairs = pairs
+local error = error
+local print = print
+local tostring = tostring
+local select = select
+local unpack = unpack
+local string_format = string.format
+local table_concat = table.concat
+
 --[[--------------------------------------------------------------------
     LoolibConsoleMixin
 
@@ -39,12 +50,15 @@ function ConsoleMixin:Print(frame, ...)
         message = self:_FormatMessage(...)
     else
         chatFrame = DEFAULT_CHAT_FRAME
+        if not chatFrame then
+            return -- No chat frame available (extremely early load)
+        end
         message = self:_FormatMessage(frame, ...)
     end
 
     -- Add addon name prefix if available
     if self.name then
-        message = string.format("|cff00ff00[%s]|r %s", self.name, message)
+        message = string_format("|cff00ff00[%s]|r %s", tostring(self.name), message)
     end
 
     chatFrame:AddMessage(message)
@@ -63,20 +77,30 @@ function ConsoleMixin:Printf(frame, format, ...)
     -- Detect if first argument is a frame
     if type(frame) == "table" and frame.AddMessage then
         chatFrame = frame
-        message = string.format(format, ...)
+        if type(format) ~= "string" then
+            error("LoolibConsole: Printf() format argument must be a string", 2)
+        end
+        message = string_format(format, ...)
     else
         chatFrame = DEFAULT_CHAT_FRAME
-        message = string.format(frame, format, ...)
+        if not chatFrame then
+            return -- No chat frame available (extremely early load)
+        end
+        if type(frame) ~= "string" then
+            error("LoolibConsole: Printf() format argument must be a string", 2)
+        end
+        message = string_format(frame, format, ...)
     end
 
     -- Add addon name prefix if available
     if self.name then
-        message = string.format("|cff00ff00[%s]|r %s", self.name, message)
+        message = string_format("|cff00ff00[%s]|r %s", tostring(self.name), message)
     end
 
     chatFrame:AddMessage(message)
 end
 
+-- INTERNAL
 --- Format multiple values into a message string
 -- @param ... - Values to format
 -- @return string - Formatted message
@@ -90,7 +114,7 @@ function ConsoleMixin:_FormatMessage(...)
         parts[i] = tostring(v)
     end
 
-    return table.concat(parts, " ")
+    return table_concat(parts, " ")
 end
 
 --[[--------------------------------------------------------------------
@@ -104,12 +128,12 @@ end
 -- @return boolean - Success
 function ConsoleMixin:RegisterChatCommand(command, func, persist)
     if type(command) ~= "string" or command == "" then
-        error("RegisterChatCommand: command must be a non-empty string", 2)
+        error("LoolibConsole: RegisterChatCommand() command must be a non-empty string", 2)
         return false
     end
 
     if not func then
-        error("RegisterChatCommand: func is required", 2)
+        error("LoolibConsole: RegisterChatCommand() func is required", 2)
         return false
     end
 
@@ -118,13 +142,13 @@ function ConsoleMixin:RegisterChatCommand(command, func, persist)
     if type(func) == "string" then
         handler = self[func]
         if not handler then
-            error(string.format("RegisterChatCommand: method '%s' not found", func), 2)
+            error(string_format("LoolibConsole: RegisterChatCommand() method '%s' not found on object", func), 2)
             return false
         end
     end
 
     if type(handler) ~= "function" then
-        error("RegisterChatCommand: func must be a function or method name", 2)
+        error("LoolibConsole: RegisterChatCommand() func must be a function or method name", 2)
         return false
     end
 
@@ -143,7 +167,7 @@ function ConsoleMixin:RegisterChatCommand(command, func, persist)
 
     -- Create the handler wrapper
     SlashCmdList[commandId] = function(msg, editBox)
-        handler(self, msg, editBox)
+        handler(self, msg or "", editBox)
     end
 
     -- Store command info
@@ -166,7 +190,7 @@ end
 -- @return boolean - Success
 function ConsoleMixin:UnregisterChatCommand(command)
     if type(command) ~= "string" then
-        error("UnregisterChatCommand: command must be a string", 2)
+        error("LoolibConsole: UnregisterChatCommand() command must be a string", 2)
         return false
     end
 
@@ -177,18 +201,22 @@ function ConsoleMixin:UnregisterChatCommand(command)
 
     -- intentional: slash command registration requires _G write
     local commandId = cmdInfo.id
-    local idx = 1
-    while _G["SLASH_" .. commandId .. idx] do
-        _G["SLASH_" .. commandId .. idx] = nil
-        idx = idx + 1
-    end
+    if commandId then
+        local idx = 1
+        while _G["SLASH_" .. commandId .. idx] do
+            _G["SLASH_" .. commandId .. idx] = nil
+            idx = idx + 1
+        end
 
-    -- Clear the handler
-    SlashCmdList[commandId] = nil
+        -- Clear the handler
+        SlashCmdList[commandId] = nil
+
+        -- Remove slash index tracking
+        self.slashIndices[commandId] = nil
+    end
 
     -- Remove from tracking
     self.commands[command] = nil
-    self.slashIndices[commandId] = nil
 
     return true
 end
@@ -214,12 +242,20 @@ end
 --- Parse slash command arguments
 -- Handles quoted strings and returns multiple values
 -- @param str string - The input string to parse
--- @param numargs number - (Optional) Number of arguments to extract
--- @param startpos number - (Optional) Starting position (default 1)
+-- @param numargs number|nil - (Optional) Number of arguments to extract
+-- @param startpos number|nil - (Optional) Starting position (default 1)
 -- @return ... - Parsed arguments
 function ConsoleMixin:GetArgs(str, numargs, startpos)
     if type(str) ~= "string" then
         return
+    end
+
+    if numargs ~= nil and type(numargs) ~= "number" then
+        error("LoolibConsole: GetArgs() numargs must be a number or nil", 2)
+    end
+
+    if startpos ~= nil and type(startpos) ~= "number" then
+        error("LoolibConsole: GetArgs() startpos must be a number or nil", 2)
     end
 
     local pos = startpos or 1

@@ -16,6 +16,14 @@ local ReflectScriptHandlers = assert(Loolib.ReflectScriptHandlers, "Loolib.Refle
 local Pool = Loolib.Pool or Loolib:GetOrCreateModule("Pool")
 local FramePoolModule = Pool.FramePool or Loolib:GetModule("Pool.FramePool") or {}
 
+-- Cache globals
+local error = error
+local type = type
+local unpack = unpack
+
+-- Cache WoW globals
+local CreateFrame = CreateFrame
+
 --[[--------------------------------------------------------------------
     Frame Pool
 ----------------------------------------------------------------------]]
@@ -30,12 +38,19 @@ local FramePoolModule = Pool.FramePool or Loolib:GetModule("Pool.FramePool") or 
 local function CreateFramePool(frameType, parent, template, resetFunc, capacity)
     frameType = frameType or "Frame"
 
+    if type(frameType) ~= "string" then
+        error("LoolibFramePool: CreateFramePool frameType must be a string", 2)
+    end
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibFramePool: CreateFramePool resetFunc must be a function or nil", 2)
+    end
+
     -- Default reset function based on frame type
     if not resetFunc then
         resetFunc = GetResetterForFrameType(frameType)
     end
 
-    -- Create function
+    -- Create function -- INTERNAL
     local createFunc = function(pool)
         local frame = CreateFrame(frameType, nil, parent, template)
         return frame
@@ -63,12 +78,19 @@ end
 local function CreateFramePoolWithMixins(frameType, parent, template, resetFunc, mixins, capacity)
     frameType = frameType or "Frame"
 
+    if type(frameType) ~= "string" then
+        error("LoolibFramePool: CreateFramePoolWithMixins frameType must be a string", 2)
+    end
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibFramePool: CreateFramePoolWithMixins resetFunc must be a function or nil", 2)
+    end
+
     -- Default reset function
     if not resetFunc then
         resetFunc = GetResetterForFrameType(frameType)
     end
 
-    -- Create function with mixin application
+    -- Create function with mixin application -- INTERNAL
     local createFunc = function(pool)
         local frame = CreateFrame(frameType, nil, parent, template)
 
@@ -117,6 +139,13 @@ end
 -- @param capacity number - Optional maximum capacity
 -- @return table - A new TexturePool instance
 local function CreateTexturePool(parent, layer, subLayer, template, resetFunc, capacity)
+    if parent == nil then
+        error("LoolibFramePool: CreateTexturePool requires a parent frame", 2)
+    end
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibFramePool: CreateTexturePool resetFunc must be a function or nil", 2)
+    end
+
     layer = layer or "ARTWORK"
     subLayer = subLayer or 0
 
@@ -125,7 +154,7 @@ local function CreateTexturePool(parent, layer, subLayer, template, resetFunc, c
         resetFunc = ResetTexture
     end
 
-    -- Create function
+    -- Create function -- INTERNAL
     local createFunc = function(pool)
         local texture = parent:CreateTexture(nil, layer, template, subLayer)
         return texture
@@ -155,6 +184,13 @@ end
 -- @param capacity number - Optional maximum capacity
 -- @return table - A new FontStringPool instance
 local function CreateFontStringPool(parent, layer, subLayer, template, resetFunc, capacity)
+    if parent == nil then
+        error("LoolibFramePool: CreateFontStringPool requires a parent frame", 2)
+    end
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibFramePool: CreateFontStringPool resetFunc must be a function or nil", 2)
+    end
+
     layer = layer or "OVERLAY"
     subLayer = subLayer or 0
 
@@ -163,7 +199,7 @@ local function CreateFontStringPool(parent, layer, subLayer, template, resetFunc
         resetFunc = ResetFontString
     end
 
-    -- Create function
+    -- Create function -- INTERNAL
     local createFunc = function(pool)
         local fontString = parent:CreateFontString(nil, layer, template, subLayer)
         return fontString
@@ -193,10 +229,17 @@ end
 -- @param capacity number - Optional maximum capacity
 -- @return table - A new LinePool instance
 local function CreateLinePool(parent, layer, subLayer, template, resetFunc, capacity)
+    if parent == nil then
+        error("LoolibFramePool: CreateLinePool requires a parent frame", 2)
+    end
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibFramePool: CreateLinePool resetFunc must be a function or nil", 2)
+    end
+
     layer = layer or "ARTWORK"
     subLayer = subLayer or 0
 
-    -- Default reset function
+    -- Default reset function -- INTERNAL
     if not resetFunc then
         resetFunc = function(pool, line)
             line:Hide()
@@ -206,7 +249,7 @@ local function CreateLinePool(parent, layer, subLayer, template, resetFunc, capa
         end
     end
 
-    -- Create function
+    -- Create function -- INTERNAL
     local createFunc = function(pool)
         local line = parent:CreateLine(nil, layer, template, subLayer)
         return line
@@ -233,7 +276,14 @@ end
 -- @param capacity number - Optional maximum capacity
 -- @return table - A new ActorPool instance
 local function CreateActorPool(modelScene, resetFunc, capacity)
-    -- Default reset function
+    if modelScene == nil then
+        error("LoolibFramePool: CreateActorPool requires a modelScene", 2)
+    end
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibFramePool: CreateActorPool resetFunc must be a function or nil", 2)
+    end
+
+    -- Default reset function -- INTERNAL
     if not resetFunc then
         resetFunc = function(pool, actor)
             actor:ClearModel()
@@ -241,7 +291,7 @@ local function CreateActorPool(modelScene, resetFunc, capacity)
         end
     end
 
-    -- Create function
+    -- Create function -- INTERNAL
     local createFunc = function(pool)
         return modelScene:CreateActor()
     end
@@ -263,6 +313,10 @@ end
 -- @param initializer function - Called with (frame) on first acquire
 -- @return Frame, boolean - The frame and whether it was newly created
 local function AcquireFrame(pool, initializer)
+    if pool == nil then
+        error("LoolibFramePool: AcquireFrame requires a pool", 2)
+    end
+
     local frame, isNew = pool:Acquire()
 
     if isNew and initializer then

@@ -6,6 +6,13 @@
 local Loolib = LibStub("Loolib")
 local Core = Loolib.Core or Loolib:GetOrCreateModule("Core")
 
+-- Local references to globals
+local type = type
+local pairs = pairs
+local error = error
+local tostring = tostring
+local hooksecurefunc = hooksecurefunc
+
 --[[--------------------------------------------------------------------
     LoolibHookMixin
 
@@ -24,6 +31,7 @@ local HookMixin = Core.Hook or Loolib:GetModule("Core.Hook") or {}
     Initialization
 ----------------------------------------------------------------------]]
 
+-- INTERNAL
 --- Initialize the hook storage for an object
 -- @param self table - The object to initialize
 function HookMixin:_InitHooks()
@@ -38,6 +46,7 @@ end
     Hook Signature Generation
 ----------------------------------------------------------------------]]
 
+-- INTERNAL
 --- Generate a unique signature for a hook
 -- @param object table|string - The object or global function name
 -- @param method string - The method/function name
@@ -53,6 +62,7 @@ local function GetSignature(object, method)
     return "UNKNOWN"
 end
 
+-- INTERNAL
 --- Generate a signature for a script hook
 -- @param frame Frame - The frame
 -- @param script string - The script name
@@ -65,6 +75,7 @@ end
     Handler Resolution
 ----------------------------------------------------------------------]]
 
+-- INTERNAL
 --- Resolve a handler to a function
 -- @param self table - The object
 -- @param handler function|string - Handler function or method name
@@ -123,33 +134,33 @@ function HookMixin:Hook(object, method, handler, hookSecure)
 
     -- Validate inputs
     if not targetObject or type(targetObject) ~= "table" then
-        error("Hook: invalid target object", 2)
+        error("LoolibHook: Hook() invalid target object", 2)
         return false
     end
 
     if type(targetMethod) ~= "string" or targetMethod == "" then
-        error("Hook: method must be a non-empty string", 2)
+        error("LoolibHook: Hook() method must be a non-empty string", 2)
         return false
     end
 
     -- Resolve handler
     local handlerFunc = ResolveHandler(self, targetHandler)
     if not handlerFunc then
-        error("Hook: handler must be a function or valid method name", 2)
+        error("LoolibHook: Hook() handler must be a function or valid method name", 2)
         return false
     end
 
     -- Check if already hooked
     local sig = GetSignature(isGlobal and targetMethod or targetObject, isGlobal and nil or targetMethod)
     if self.hooks[sig] then
-        error("Hook: already hooked " .. sig, 2)
+        error("LoolibHook: Hook() already hooked " .. sig, 2)
         return false
     end
 
     -- Get original function
     local original = targetObject[targetMethod]
     if type(original) ~= "function" then
-        error("Hook: " .. targetMethod .. " is not a function", 2)
+        error("LoolibHook: Hook() " .. targetMethod .. " is not a function", 2)
         return false
     end
 
@@ -204,33 +215,33 @@ function HookMixin:RawHook(object, method, handler)
 
     -- Validate
     if not targetObject or type(targetObject) ~= "table" then
-        error("RawHook: invalid target object", 2)
+        error("LoolibHook: RawHook() invalid target object", 2)
         return false
     end
 
     if type(targetMethod) ~= "string" or targetMethod == "" then
-        error("RawHook: method must be a non-empty string", 2)
+        error("LoolibHook: RawHook() method must be a non-empty string", 2)
         return false
     end
 
     -- Resolve handler
     local handlerFunc = ResolveHandler(self, targetHandler)
     if not handlerFunc then
-        error("RawHook: handler must be a function or valid method name", 2)
+        error("LoolibHook: RawHook() handler must be a function or valid method name", 2)
         return false
     end
 
     -- Check if already hooked
     local sig = GetSignature(isGlobal and targetMethod or targetObject, isGlobal and nil or targetMethod)
     if self.hooks[sig] then
-        error("RawHook: already hooked " .. sig, 2)
+        error("LoolibHook: RawHook() already hooked " .. sig, 2)
         return false
     end
 
     -- Get original
     local original = targetObject[targetMethod]
     if type(original) ~= "function" then
-        error("RawHook: " .. targetMethod .. " is not a function", 2)
+        error("LoolibHook: RawHook() " .. targetMethod .. " is not a function", 2)
         return false
     end
 
@@ -275,26 +286,26 @@ function HookMixin:SecureHook(object, method, handler)
 
     -- Validate
     if not isGlobal and (not targetObject or type(targetObject) ~= "table") then
-        error("SecureHook: invalid target object", 2)
+        error("LoolibHook: SecureHook() invalid target object", 2)
         return false
     end
 
     if type(targetMethod) ~= "string" or targetMethod == "" then
-        error("SecureHook: method must be a non-empty string", 2)
+        error("LoolibHook: SecureHook() method must be a non-empty string", 2)
         return false
     end
 
     -- Resolve handler
     local handlerFunc = ResolveHandler(self, targetHandler)
     if not handlerFunc then
-        error("SecureHook: handler must be a function or valid method name", 2)
+        error("LoolibHook: SecureHook() handler must be a function or valid method name", 2)
         return false
     end
 
     -- Check if already hooked
     local sig = GetSignature(isGlobal and targetMethod or targetObject, isGlobal and nil or targetMethod)
     if self.hooks[sig] then
-        error("SecureHook: already hooked " .. sig, 2)
+        error("LoolibHook: SecureHook() already hooked " .. sig, 2)
         return false
     end
 
@@ -336,31 +347,31 @@ function HookMixin:HookScript(frame, script, handler)
 
     -- Validate
     if type(frame) ~= "table" or not frame.GetScript then
-        error("HookScript: frame must be a valid frame object", 2)
+        error("LoolibHook: HookScript() frame must be a valid frame object", 2)
         return false
     end
 
     if type(script) ~= "string" or script == "" then
-        error("HookScript: script must be a non-empty string", 2)
+        error("LoolibHook: HookScript() script must be a non-empty string", 2)
         return false
     end
 
     if not frame:HasScript(script) then
-        error("HookScript: frame does not support script " .. script, 2)
+        error("LoolibHook: HookScript() frame does not support script " .. script, 2)
         return false
     end
 
     -- Resolve handler
     local handlerFunc = ResolveHandler(self, handler)
     if not handlerFunc then
-        error("HookScript: handler must be a function or valid method name", 2)
+        error("LoolibHook: HookScript() handler must be a function or valid method name", 2)
         return false
     end
 
     -- Check if already hooked
     local sig = GetScriptSignature(frame, script)
     if self.scripts[sig] then
-        error("HookScript: already hooked " .. sig, 2)
+        error("LoolibHook: HookScript() already hooked " .. sig, 2)
         return false
     end
 
@@ -400,31 +411,31 @@ function HookMixin:RawHookScript(frame, script, handler)
 
     -- Validate
     if type(frame) ~= "table" or not frame.GetScript then
-        error("RawHookScript: frame must be a valid frame object", 2)
+        error("LoolibHook: RawHookScript() frame must be a valid frame object", 2)
         return false
     end
 
     if type(script) ~= "string" or script == "" then
-        error("RawHookScript: script must be a non-empty string", 2)
+        error("LoolibHook: RawHookScript() script must be a non-empty string", 2)
         return false
     end
 
     if not frame:HasScript(script) then
-        error("RawHookScript: frame does not support script " .. script, 2)
+        error("LoolibHook: RawHookScript() frame does not support script " .. script, 2)
         return false
     end
 
     -- Resolve handler
     local handlerFunc = ResolveHandler(self, handler)
     if not handlerFunc then
-        error("RawHookScript: handler must be a function or valid method name", 2)
+        error("LoolibHook: RawHookScript() handler must be a function or valid method name", 2)
         return false
     end
 
     -- Check if already hooked
     local sig = GetScriptSignature(frame, script)
     if self.scripts[sig] then
-        error("RawHookScript: already hooked " .. sig, 2)
+        error("LoolibHook: RawHookScript() already hooked " .. sig, 2)
         return false
     end
 
@@ -458,31 +469,31 @@ function HookMixin:SecureHookScript(frame, script, handler)
 
     -- Validate
     if type(frame) ~= "table" or not frame.HookScript then
-        error("SecureHookScript: frame must be a valid frame object", 2)
+        error("LoolibHook: SecureHookScript() frame must be a valid frame object", 2)
         return false
     end
 
     if type(script) ~= "string" or script == "" then
-        error("SecureHookScript: script must be a non-empty string", 2)
+        error("LoolibHook: SecureHookScript() script must be a non-empty string", 2)
         return false
     end
 
     if not frame:HasScript(script) then
-        error("SecureHookScript: frame does not support script " .. script, 2)
+        error("LoolibHook: SecureHookScript() frame does not support script " .. script, 2)
         return false
     end
 
     -- Resolve handler
     local handlerFunc = ResolveHandler(self, handler)
     if not handlerFunc then
-        error("SecureHookScript: handler must be a function or valid method name", 2)
+        error("LoolibHook: SecureHookScript() handler must be a function or valid method name", 2)
         return false
     end
 
     -- Check if already hooked
     local sig = GetScriptSignature(frame, script)
     if self.scripts[sig] then
-        error("SecureHookScript: already hooked " .. sig, 2)
+        error("LoolibHook: SecureHookScript() already hooked " .. sig, 2)
         return false
     end
 
@@ -540,7 +551,7 @@ function HookMixin:Unhook(object, method)
 
     -- Restore original function
     local original = self.hooks[sig]
-    if original and type(original) == "function" then
+    if original and type(original) == "function" and hookData.object and hookData.method then
         hookData.object[hookData.method] = original
     end
 
@@ -573,9 +584,9 @@ function HookMixin:UnhookScript(frame, script)
         return false
     end
 
-    -- Restore original script
+    -- Restore original script (may be nil if frame had no prior script)
     local original = self.scripts[sig]
-    frame:SetScript(script, original)
+    frame:SetScript(script, type(original) == "function" and original or nil)
 
     -- Clean up
     self.scripts[sig] = nil
@@ -594,7 +605,7 @@ function HookMixin:UnhookAll()
     for sig, original in pairs(self.hooks) do
         local hookData = self.hookData[sig]
         if hookData and hookData.type ~= "securehook" then
-            if type(original) == "function" then
+            if type(original) == "function" and hookData.object and hookData.method then
                 hookData.object[hookData.method] = original
             end
         end
@@ -605,7 +616,10 @@ function HookMixin:UnhookAll()
         for sig, original in pairs(self.scripts) do
             local hookData = self.hookData[sig]
             if hookData and hookData.type ~= "securescripthook" then
-                hookData.frame:SetScript(hookData.script, original)
+                if hookData.frame and hookData.script then
+                    -- original may be nil (frame had no prior script), which is valid for SetScript
+                    hookData.frame:SetScript(hookData.script, original ~= true and original or nil)
+                end
             end
         end
     end

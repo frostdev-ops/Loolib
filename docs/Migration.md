@@ -20,10 +20,26 @@ The Migration module helps you safely upgrade your addon's database structure ac
 
 - **Semantic Versioning**: Compares versions like `1.0.0`, `1.1.0`, `2.0.0`
 - **Ordered Execution**: Runs migrations in version order
-- **History Tracking**: Prevents re-running migrations
-- **Error Handling**: Configurable stop-on-error behavior
+- **History Tracking**: Prevents re-running migrations (idempotency)
+- **Error Handling**: Configurable stop-on-error behavior with structured error returns
+- **Input Validation**: All public APIs validate types, version format, and db references
 - **Scope Support**: Global and profile-specific migrations
 - **Integration**: Works seamlessly with SavedVariables
+
+### Input Validation
+
+All public methods validate their arguments and raise descriptive errors prefixed with `LoolibMigration:`. For example:
+
+```lua
+-- These will error at the call site (level 2) with clear messages:
+migrations:RegisterMigration(123, func)   -- "LoolibMigration: migration version must be a non-empty string"
+migrations:RunMigrations(nil, "1.0.0")    -- "LoolibMigration: db must be a table"
+migrations:RunMigrations(db, "bad")       -- "LoolibMigration: currentVersion 'bad' is not a valid semantic version"
+```
+
+### Internal vs Public APIs
+
+Methods marked `-- INTERNAL` (`GetMigrationHistory`, `RecordMigration`, `ExecuteMigration`, `ParseVersion`) are implementation details. They are stable for now but may change without notice. Prefer the public API methods listed below.
 
 ## Basic Usage
 

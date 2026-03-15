@@ -29,6 +29,19 @@ local Loolib = LibStub("Loolib")
 local Transmog = Loolib:GetOrCreateModule("Transmog")
 
 --[[--------------------------------------------------------------------
+    Cached Globals & WoW APIs
+----------------------------------------------------------------------]]
+
+local type = type
+local pcall = pcall
+local ipairs = ipairs
+local error = error
+local format = string.format
+
+-- C_TransmogCollection may not exist in all contexts (Classic, early load)
+local C_TransmogCollection = C_TransmogCollection
+
+--[[--------------------------------------------------------------------
     Constants
 ----------------------------------------------------------------------]]
 
@@ -38,6 +51,47 @@ Transmog.APPEARANCE_KNOWN_FROM_ITEM = "KNOWN_FROM_ITEM"
 Transmog.APPEARANCE_UNKNOWN = "UNKNOWN"
 Transmog.APPEARANCE_CANNOT_LEARN = "CANNOT_LEARN"
 Transmog.APPEARANCE_NOT_TRANSMOGGABLE = "NOT_TRANSMOGGABLE"
+
+--[[--------------------------------------------------------------------
+    Internal Helpers
+----------------------------------------------------------------------]]
+
+--- Validate that itemLink is a non-empty string.
+-- @param itemLink any - Value to validate
+-- @param caller string - Calling function name for error messages
+-- @return boolean - True if itemLink is a valid string
+-- INTERNAL
+local function ValidateItemLink(itemLink, caller)
+    if itemLink == nil then
+        return false
+    end
+    if type(itemLink) ~= "string" then
+        error(format("LoolibTransmog: %s expected string itemLink, got %s", caller, type(itemLink)), 3)
+    end
+    return true
+end
+
+--- Validate that sourceID is a number.
+-- @param sourceID any - Value to validate
+-- @param caller string - Calling function name for error messages
+-- @return boolean - True if sourceID is a valid number
+-- INTERNAL
+local function ValidateSourceID(sourceID, caller)
+    if sourceID == nil then
+        return false
+    end
+    if type(sourceID) ~= "number" then
+        error(format("LoolibTransmog: %s expected number sourceID, got %s", caller, type(sourceID)), 3)
+    end
+    return true
+end
+
+--- Check whether C_TransmogCollection is available.
+-- @return boolean - True if the API namespace exists
+-- INTERNAL
+local function HasTransmogAPI()
+    return C_TransmogCollection ~= nil
+end
 
 --[[--------------------------------------------------------------------
     CanIMogIt Integration
@@ -51,6 +105,7 @@ end
 
 --- Get the CanIMogIt addon reference
 -- @return table|nil - The CanIMogIt addon table, or nil if not loaded
+-- INTERNAL
 function Transmog:GetCanIMogIt()
     return _G.CanIMogIt
 end
@@ -64,7 +119,7 @@ end
 -- @param itemLink string - Item link or item ID
 -- @return boolean - True if the item can be transmogged
 function Transmog:IsTransmoggable(itemLink)
-    if not itemLink then return false end
+    if not ValidateItemLink(itemLink, "IsTransmoggable") then return false end
 
     -- Try CanIMogIt first if available
     local canIMogIt = self:GetCanIMogIt()
@@ -76,7 +131,8 @@ function Transmog:IsTransmoggable(itemLink)
     end
 
     -- Fall back to C_TransmogCollection
-    local appearanceID, sourceID = C_TransmogCollection.GetItemInfo(itemLink)
+    if not HasTransmogAPI() then return false end
+    local appearanceID = C_TransmogCollection.GetItemInfo(itemLink)
     return appearanceID ~= nil
 end
 
@@ -85,7 +141,8 @@ end
 -- @return number|nil appearanceID - The appearance ID
 -- @return number|nil sourceID - The modified appearance source ID
 function Transmog:GetAppearanceInfo(itemLink)
-    if not itemLink then return nil, nil end
+    if not ValidateItemLink(itemLink, "GetAppearanceInfo") then return nil, nil end
+    if not HasTransmogAPI() then return nil, nil end
 
     local appearanceID, sourceID = C_TransmogCollection.GetItemInfo(itemLink)
     return appearanceID, sourceID
@@ -95,7 +152,8 @@ end
 -- @param itemLink string - Item link or item ID
 -- @return number|nil - The modified appearance source ID
 function Transmog:GetAppearanceSourceID(itemLink)
-    if not itemLink then return nil end
+    if not ValidateItemLink(itemLink, "GetAppearanceSourceID") then return nil end
+    if not HasTransmogAPI() then return nil end
 
     local _, sourceID = C_TransmogCollection.GetItemInfo(itemLink)
     return sourceID
@@ -105,12 +163,12 @@ end
     Player Knowledge Detection
 ----------------------------------------------------------------------]]
 
---- Internal function to check if player knows a transmog appearance
+--- Check if player knows a transmog appearance -- INTERNAL
 -- @param itemLink string - Item link or item ID
 -- @param checkSource boolean - If true, check if player knows from this specific source
 -- @return boolean - True if player knows the appearance (optionally from this source)
 local function PlayerKnowsTransmogInternal(itemLink, checkSource)
-    if not itemLink then return false end
+    if not ValidateItemLink(itemLink, "PlayerKnowsTransmogInternal") then return false end
 
     -- Try CanIMogIt first if available
     local canIMogIt = Transmog:GetCanIMogIt()
@@ -125,6 +183,8 @@ local function PlayerKnowsTransmogInternal(itemLink, checkSource)
     end
 
     -- Fall back to C_TransmogCollection
+    if not HasTransmogAPI() then return false end
+
     local appearanceID, itemModifiedAppearanceID = C_TransmogCollection.GetItemInfo(itemLink)
     if not appearanceID then
         return false
@@ -179,7 +239,7 @@ end
 -- @return boolean canLearn - True if the player can learn this appearance
 -- @return string|nil reason - If cannot learn, a reason string (e.g., "Wrong armor type", "Wrong class")
 function Transmog:CanLearnAppearance(itemLink)
-    if not itemLink then
+    if not ValidateItemLink(itemLink, "CanLearnAppearance") then
         return false, "Invalid item"
     end
 
@@ -193,6 +253,8 @@ function Transmog:CanLearnAppearance(itemLink)
     end
 
     -- Fall back to C_TransmogCollection
+    if not HasTransmogAPI() then return false, "Transmog API unavailable" end
+
     local sourceID = self:GetAppearanceSourceID(itemLink)
     if not sourceID then
         return false, "Not transmoggable"
@@ -229,7 +291,7 @@ end
 -- @param itemLink string - Item link or item ID
 -- @return string|nil - One of the APPEARANCE_* constants, or nil if item is invalid
 function Transmog:CanIMogItCheck(itemLink)
-    if not itemLink then return nil end
+    if not ValidateItemLink(itemLink, "CanIMogItCheck") then return nil end
 
     -- Try CanIMogIt for most accurate status
     local canIMogIt = self:GetCanIMogIt()
@@ -281,7 +343,8 @@ end
 -- @param itemLink string - Item link or item ID
 -- @return table|nil - Array of source IDs, or nil if no appearance
 function Transmog:GetAllAppearanceSources(itemLink)
-    if not itemLink then return nil end
+    if not ValidateItemLink(itemLink, "GetAllAppearanceSources") then return nil end
+    if not HasTransmogAPI() then return nil end
 
     local appearanceID = self:GetAppearanceInfo(itemLink)
     if not appearanceID then return nil end
@@ -293,7 +356,9 @@ end
 -- @param sourceID number - The appearance source ID
 -- @return table|nil - Source info table with fields: sourceID, visualID, isCollected, etc.
 function Transmog:GetSourceInfo(sourceID)
-    if not sourceID then return nil end
+    if not ValidateSourceID(sourceID, "GetSourceInfo") then return nil end
+    if not HasTransmogAPI() then return nil end
+
     return C_TransmogCollection.GetSourceInfo(sourceID)
 end
 
@@ -301,10 +366,14 @@ end
 -- @param sourceID number - The appearance source ID
 -- @return boolean - True if the source is collected
 function Transmog:IsSourceCollected(sourceID)
-    if not sourceID then return false end
+    if not ValidateSourceID(sourceID, "IsSourceCollected") then return false end
+    if not HasTransmogAPI() then return false end
 
     local sourceInfo = C_TransmogCollection.GetSourceInfo(sourceID)
-    return sourceInfo and sourceInfo.isCollected or false
+    if sourceInfo and sourceInfo.isCollected then
+        return true
+    end
+    return false
 end
 
 --[[--------------------------------------------------------------------
@@ -316,7 +385,7 @@ end
 -- @return number collected - Number of sources collected for this appearance
 -- @return number total - Total number of sources for this appearance
 function Transmog:GetAppearanceCollectionProgress(itemLink)
-    if not itemLink then return 0, 0 end
+    if not ValidateItemLink(itemLink, "GetAppearanceCollectionProgress") then return 0, 0 end
 
     local sourceIDs = self:GetAllAppearanceSources(itemLink)
     if not sourceIDs then return 0, 0 end

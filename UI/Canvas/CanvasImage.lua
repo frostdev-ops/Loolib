@@ -50,6 +50,15 @@
 
 local Loolib = LibStub("Loolib")
 
+-- Cached globals
+local type = type
+local error = error
+local pairs = pairs
+local ipairs = ipairs
+local math_abs = math.abs
+local math_max = math.max
+local math_min = math.min
+
 ---@class LoolibCanvasImageMixin : LoolibCallbackRegistryMixin
 ---@field _defaultPath string Default texture path for new images
 ---@field _defaultAlpha number Default alpha value for new images (0.1-1.0)
@@ -371,12 +380,18 @@ end
 -- Image Property Updates
 --------------------------------------------------------------------------------
 
----Set the texture path for an image.
+--- Set the texture path for an image.
+--- CV-12 FIX: Validates texture path is a non-empty string before
+--- passing to SetTexture, preventing WoW client errors from invalid paths.
 ---@param index number Image index
 ---@param path string New texture path
 ---@return LoolibCanvasImageMixin self For method chaining
 function LoolibCanvasImageMixin:SetImagePath(index, path)
     if not self._image_X1[index] then return self end
+    -- CV-12: Validate texture path
+    if type(path) ~= "string" or path == "" then
+        error("LoolibCanvasImage: SetImagePath: path must be a non-empty string", 2)
+    end
     self._image_PATH[index] = path
     if self.TriggerEvent then
         self:TriggerEvent("OnImageUpdated", index)
@@ -657,7 +672,13 @@ local function LoolibCreateCanvasImage()
     return imageManager
 end
 
--- Register with Loolib module system
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasImage", {
+    Mixin = LoolibCanvasImageMixin,
+    Create = LoolibCreateCanvasImage,
+})
+
+-- Backward-compat alias
 Loolib:RegisterModule("CanvasImage", {
     Mixin = LoolibCanvasImageMixin,
     Create = LoolibCreateCanvasImage,

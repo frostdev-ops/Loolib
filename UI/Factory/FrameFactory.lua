@@ -16,6 +16,14 @@ local ReflectScriptHandlers = assert(Loolib.ReflectScriptHandlers, "Loolib.Refle
 local Factory = Loolib.Factory or Loolib:GetOrCreateModule("Factory")
 local FrameFactoryModule = Factory.FrameFactory or Loolib:GetModule("Factory.FrameFactory") or {}
 
+-- Cache globals
+local error = error
+local pcall = pcall
+local print = print
+local select = select
+local type = type
+local wipe = wipe
+
 --[[--------------------------------------------------------------------
     Template Info Cache
 
@@ -53,19 +61,21 @@ function TemplateInfoCacheMixin:GetTemplateInfo(templateName)
     return result ~= false and result or nil
 end
 
+-- Known WoW frame types (hoisted to avoid table recreation per call) -- INTERNAL
+local KNOWN_FRAME_TYPES = {
+    Frame = true, Button = true, CheckButton = true, EditBox = true,
+    ScrollFrame = true, Slider = true, StatusBar = true, Cooldown = true,
+    ColorSelect = true, GameTooltip = true, MessageFrame = true,
+    Model = true, PlayerModel = true, DressUpModel = true,
+    MovieFrame = true, SimpleHTML = true, Browser = true,
+    ModelScene = true, OffScreenFrame = true,
+}
+
 --- Check if a string is a known frame type (not a template)
 -- @param name string - The name to check
 -- @return boolean
 function TemplateInfoCacheMixin:IsFrameType(name)
-    local frameTypes = {
-        Frame = true, Button = true, CheckButton = true, EditBox = true,
-        ScrollFrame = true, Slider = true, StatusBar = true, Cooldown = true,
-        ColorSelect = true, GameTooltip = true, MessageFrame = true,
-        Model = true, PlayerModel = true, DressUpModel = true,
-        MovieFrame = true, SimpleHTML = true, Browser = true,
-        ModelScene = true, OffScreenFrame = true,
-    }
-    return frameTypes[name] == true
+    return KNOWN_FRAME_TYPES[name] == true
 end
 
 --- Clear the cache
@@ -73,7 +83,7 @@ function TemplateInfoCacheMixin:Clear()
     wipe(self.cache)
 end
 
---- Create a new template info cache
+--- Create a new template info cache -- INTERNAL
 local function CreateTemplateInfoCache()
     local cache = CreateFromMixins(TemplateInfoCacheMixin)
     cache:Init()
@@ -103,6 +113,13 @@ end
 -- @param resetFunc function - Optional reset function
 -- @return Frame, boolean, table - Frame, isNew, templateInfo
 function FrameFactoryMixin:Create(parent, frameTemplateOrType, resetFunc)
+    if type(frameTemplateOrType) ~= "string" or frameTemplateOrType == "" then
+        error("LoolibFactory: Create: frameTemplateOrType must be a non-empty string", 2)
+    end
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibFactory: Create: resetFunc must be a function or nil", 2)
+    end
+
     local frameTemplate = nil
     local frameType = nil
     local info = nil
@@ -145,6 +162,11 @@ end
 -- @param ... - Mixins to apply
 -- @return Frame, boolean
 function FrameFactoryMixin:CreateWithMixins(parent, frameTemplateOrType, resetFunc, ...)
+    -- Validate that at least one mixin was provided
+    if select("#", ...) == 0 then
+        error("LoolibFactory: CreateWithMixins: at least one mixin table must be provided", 2)
+    end
+
     local frame, isNew, info = self:Create(parent, frameTemplateOrType, resetFunc)
 
     if isNew then
@@ -170,6 +192,9 @@ end
 -- @param frame Frame - The frame to release
 -- @return boolean - True if released
 function FrameFactoryMixin:Release(frame)
+    if frame == nil then
+        error("LoolibFactory: Release: frame must not be nil", 2)
+    end
     return self.poolCollection:Release(frame)
 end
 
@@ -189,6 +214,12 @@ end
 -- @param resetFunc function - Reset function
 -- @return table, boolean - Pool, isNew
 function FrameFactoryMixin:GetOrCreatePool(frameType, parent, template, resetFunc)
+    if type(frameType) ~= "string" or frameType == "" then
+        error("LoolibFactory: GetOrCreatePool: frameType must be a non-empty string", 2)
+    end
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibFactory: GetOrCreatePool: resetFunc must be a function or nil", 2)
+    end
     return self.poolCollection:GetOrCreatePool(frameType, parent, template, resetFunc)
 end
 

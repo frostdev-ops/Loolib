@@ -32,6 +32,14 @@ Usage:
 
 local Loolib = LibStub("Loolib")
 
+-- Cached globals
+local type = type
+local error = error
+local pairs = pairs
+local ipairs = ipairs
+local math_floor = math.floor
+local string_format = string.format
+
 -- Tool constants
 local LOOLIB_CANVAS_TOOLS = {
     BRUSH = "brush",
@@ -472,7 +480,14 @@ local function LoolibCreateCanvasToolbar()
     return toolbar
 end
 
--- Module registration
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasToolbar", {
+    Mixin = LoolibCanvasToolbarMixin,
+    TOOLS = LOOLIB_CANVAS_TOOLS,
+    Create = LoolibCreateCanvasToolbar,
+})
+
+-- Backward-compat alias
 Loolib:RegisterModule("CanvasToolbar", {
     Mixin = LoolibCanvasToolbarMixin,
     TOOLS = LOOLIB_CANVAS_TOOLS,

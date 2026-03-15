@@ -334,7 +334,9 @@ slider:SetEnabled(hasPermission)
 
 #### :Tooltip(text)
 
-Sets tooltip text for the slider.
+Sets tooltip text for the slider. Uses `HookScript` internally so it does not
+clobber existing `OnEnter`/`OnLeave` handlers (e.g., mouse wheel, DragDrop).
+Calling `:Tooltip()` multiple times safely updates the text without re-hooking.
 
 **Parameters:**
 - `text` (string|table) - Tooltip text
@@ -458,7 +460,10 @@ local vSlider = LoolibCreateEnhancedSlider(parent)
 
 ### :SetDefault(defaultValue)
 
-Sets a default value and enables right-click reset.
+Sets a default value and enables right-click reset. Uses `HookScript` internally
+so it does not clobber existing `OnMouseDown`/`OnMouseUp` handlers. Calling
+`:SetDefault()` multiple times safely updates the default value without
+re-hooking.
 
 **Parameters:**
 - `defaultValue` (number) - Default value to reset to
@@ -724,16 +729,22 @@ local verticalSlider = LoolibCreateEnhancedSlider(sidePanel)
 
 ### Custom Mouse Handlers
 
-You can add additional mouse handlers if needed:
+You can add additional mouse handlers using `HookScript` to avoid clobbering
+the built-in handlers (tooltip, SetDefault right-click reset, etc.):
 
 ```lua
-slider:SetScript("OnMouseDown", function(self, button)
+slider:HookScript("OnMouseDown", function(self, button)
     if button == "MiddleButton" then
         -- Custom middle-click behavior
         self:SetValue((self._minValue + self._maxValue) / 2)
     end
 end)
 ```
+
+**Important:** Do not use `SetScript` on EnhancedSlider for `OnEnter`,
+`OnLeave`, `OnMouseDown`, or `OnMouseUp` -- these are used internally by
+`:Tooltip()` and `:SetDefault()`. Always use `HookScript` to add additional
+handlers.
 
 ## Best Practices
 
@@ -783,6 +794,9 @@ end)
 - Font string creation happens once in `OnLoad`
 - No memory leaks - all child frames are parented correctly
 - Mouse wheel is enabled by default but can be disabled via `MouseWheel(false)` if WidgetMod is available
+- `OnChange` callback is wrapped in `pcall` -- errors are surfaced via `geterrorhandler()` without halting the slider's value display update
+- Value format string (`string.format`) is wrapped in `pcall` -- a format/value type mismatch falls back to `tostring()` instead of throwing
+- `Tooltip()` and `SetDefault()` use `HookScript` (hook-once pattern) so they never clobber prior script handlers
 
 ## Related Modules
 

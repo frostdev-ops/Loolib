@@ -1726,10 +1726,19 @@ function ConfigDialogMixin:RenderToggle(parent, option, name, desc, registry, in
 end
 
 --- Render input (editbox)
+-- option.multiline: false/nil = single-line, true = 4-line scrollable,
+--                   number = that many lines scrollable.
 function ConfigDialogMixin:RenderInput(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
+    local isMultiline = option.multiline and true or false
+    local lineCount = type(option.multiline) == "number" and option.multiline or 4
+    local LINE_HEIGHT = 14
+    local editHeight = isMultiline and (lineCount * LINE_HEIGHT) or 20
+    local containerHeight = isMultiline and (editHeight + 20) or 28
+    local editWidth = LABEL_WIDTH * widthMod
+
     local container = CreateFrame("Frame", nil, parent)
     container:SetPoint("TOPLEFT", 8, yOffset)
-    container:SetSize(LABEL_WIDTH * widthMod + LABEL_WIDTH, option.multiline and 80 or 28)
+    container:SetSize(editWidth + LABEL_WIDTH, containerHeight)
 
     -- Label
     local label = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1740,54 +1749,90 @@ function ConfigDialogMixin:RenderInput(parent, option, name, desc, registry, inf
         label:SetTextColor(0.5, 0.5, 0.5)
     end
 
-    -- Edit box
-    local editHeight = option.multiline and 60 or 20
-    local editBox = CreateFrame("EditBox", nil, container, "BackdropTemplate")
-    editBox:SetPoint("TOPLEFT", LABEL_WIDTH, 0)
-    editBox:SetSize(LABEL_WIDTH * widthMod, editHeight)
-    editBox:SetFontObject("GameFontHighlight")
-    editBox:SetAutoFocus(false)
-    editBox:SetMultiLine(option.multiline or false)
-
-    editBox:SetBackdrop({
+    local INPUT_BACKDROP = {
         bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
         tile = true, tileSize = 16, edgeSize = 12,
         insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    editBox:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-    editBox:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
-    editBox:SetTextInsets(5, 5, 3, 3)
+    }
+
+    local editBox
+
+    if isMultiline then
+        -- Backdrop container for the scroll area
+        local bg = CreateFrame("Frame", nil, container, "BackdropTemplate")
+        bg:SetPoint("TOPLEFT", LABEL_WIDTH, 0)
+        bg:SetSize(editWidth, editHeight)
+        bg:SetBackdrop(INPUT_BACKDROP)
+        bg:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+        bg:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+
+        -- Click anywhere in backdrop to focus the editbox
+        bg:EnableMouse(true)
+        bg:SetScript("OnMouseDown", function()
+            editBox:SetFocus()
+        end)
+
+        -- ScrollFrame clips content and adds a vertical scrollbar
+        local scrollFrame = CreateFrame("ScrollFrame", nil, bg, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", 5, -5)
+        scrollFrame:SetPoint("BOTTOMRIGHT", -24, 5)
+
+        editBox = CreateFrame("EditBox", nil, scrollFrame)
+        editBox:SetMultiLine(true)
+        editBox:SetAutoFocus(false)
+        editBox:SetFontObject("GameFontHighlight")
+        editBox:SetWidth(editWidth - 29)
+        editBox:SetTextInsets(0, 0, 0, 0)
+        scrollFrame:SetScrollChild(editBox)
+
+        if disabled then
+            editBox:Disable()
+            bg:SetBackdropColor(0.2, 0.2, 0.2, 0.5)
+        end
+    else
+        editBox = CreateFrame("EditBox", nil, container, "BackdropTemplate")
+        editBox:SetPoint("TOPLEFT", LABEL_WIDTH, 0)
+        editBox:SetSize(editWidth, editHeight)
+        editBox:SetFontObject("GameFontHighlight")
+        editBox:SetAutoFocus(false)
+        editBox:SetMultiLine(false)
+
+        editBox:SetBackdrop(INPUT_BACKDROP)
+        editBox:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+        editBox:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+        editBox:SetTextInsets(5, 5, 3, 3)
+
+        if disabled then
+            editBox:Disable()
+            editBox:SetBackdropColor(0.2, 0.2, 0.2, 0.5)
+        end
+
+        -- Tooltip
+        if desc then
+            editBox:SetScript("OnEnter", function(widget)
+                GameTooltip:SetOwner(widget, "ANCHOR_RIGHT")
+                GameTooltip:SetText(name, 1, 1, 1)
+                GameTooltip:AddLine(desc, 1, 0.82, 0, true)
+                GameTooltip:Show()
+            end)
+            editBox:SetScript("OnLeave", function()
+                if GameTooltip_Hide then
+                    GameTooltip_Hide()
+                else
+                    GameTooltip:Hide()
+                end
+            end)
+        end
+    end
 
     -- Set current value
     local value = registry:GetValue(option, info)
     editBox:SetText(value or "")
 
-    if disabled then
-        editBox:Disable()
-        editBox:SetBackdropColor(0.2, 0.2, 0.2, 0.5)
-    end
-
-    -- Tooltip
-    if desc then
-        editBox:SetScript("OnEnter", function(widget)
-            GameTooltip:SetOwner(widget, "ANCHOR_RIGHT")
-            GameTooltip:SetText(name, 1, 1, 1)
-            GameTooltip:AddLine(desc, 1, 0.82, 0, true)
-            GameTooltip:Show()
-        end)
-        editBox:SetScript("OnLeave", function()
-            if GameTooltip_Hide then
-                GameTooltip_Hide()
-            else
-                GameTooltip:Hide()
-            end
-        end)
-    end
-
     -- Handlers
     editBox:SetScript("OnEnterPressed", function()
-        if not option.multiline then
+        if not isMultiline then
             registry:SetValue(option, info, editBox:GetText())
             editBox:ClearFocus()
         end
@@ -1798,13 +1843,19 @@ function ConfigDialogMixin:RenderInput(parent, option, name, desc, registry, inf
         editBox:ClearFocus()
     end)
 
-    if option.multiline then
+    if isMultiline then
         editBox:SetScript("OnEditFocusLost", function()
             registry:SetValue(option, info, editBox:GetText())
         end)
+        -- Sync value on every change so other widgets see updated data
+        editBox:SetScript("OnTextChanged", function(_, userInput)
+            if userInput then
+                registry:SetValue(option, info, editBox:GetText())
+            end
+        end)
     end
 
-    return yOffset - container:GetHeight() - WIDGET_SPACING
+    return yOffset - containerHeight - WIDGET_SPACING
 end
 
 --- Render range (slider)

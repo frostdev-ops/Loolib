@@ -398,6 +398,8 @@ end
 -- ============================================================
 
 --- Add tooltip to widget
+-- Uses HookScript to avoid clobbering existing OnEnter/OnLeave handlers.
+-- Subsequent calls update the tooltip text without re-hooking.
 -- @param text string|table - Tooltip text or {title, line1, line2, ...} for multi-line
 -- @return Frame - self for chaining
 function LoolibWidgetModMixin:Tooltip(text)
@@ -411,34 +413,40 @@ function LoolibWidgetModMixin:Tooltip(text)
         self.tooltipLines = nil
     end
 
-    -- Set up tooltip handlers
-    self:OnEnter(function(frame)
-        if not frame.tooltipText and not frame.tooltipLines then
-            return
-        end
+    -- INTERNAL: Only hook once; subsequent calls just update the data fields
+    if not self._tooltipHooked then
+        self._tooltipHooked = true
 
-        GameTooltip:SetOwner(frame, frame.tooltipAnchor or "ANCHOR_RIGHT")
-
-        if frame.tooltipLines then
-            -- Multi-line tooltip
-            for i, line in ipairs(frame.tooltipLines) do
-                if i == 1 then
-                    GameTooltip:SetText(line, 1, 1, 1, 1, true)
-                else
-                    GameTooltip:AddLine(line, nil, nil, nil, true)
+        if self.HasScript and self:HasScript("OnEnter") then
+            self:HookScript("OnEnter", function(frame)
+                if not frame.tooltipText and not frame.tooltipLines then
+                    return
                 end
-            end
-        else
-            -- Single line tooltip
-            GameTooltip:SetText(frame.tooltipText, 1, 1, 1, 1, true)
+
+                GameTooltip:SetOwner(frame, frame.tooltipAnchor or "ANCHOR_RIGHT")
+
+                if frame.tooltipLines then
+                    for i, line in ipairs(frame.tooltipLines) do
+                        if i == 1 then
+                            GameTooltip:SetText(line, 1, 1, 1, 1, true)
+                        else
+                            GameTooltip:AddLine(line, nil, nil, nil, true)
+                        end
+                    end
+                else
+                    GameTooltip:SetText(frame.tooltipText, 1, 1, 1, 1, true)
+                end
+
+                GameTooltip:Show()
+            end)
         end
 
-        GameTooltip:Show()
-    end)
-
-    self:OnLeave(function()
-        GameTooltip:Hide()
-    end)
+        if self.HasScript and self:HasScript("OnLeave") then
+            self:HookScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+        end
+    end
 
     return self
 end

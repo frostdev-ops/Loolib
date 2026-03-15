@@ -13,6 +13,7 @@ local ChatFontNormal = ChatFontNormal
 local CreateFrame = CreateFrame
 local UIParent = UIParent
 local error = error
+local format = string.format
 local ipairs = ipairs
 local pairs = pairs
 local pcall = pcall
@@ -20,6 +21,7 @@ local print = print
 local strtrim = strtrim
 local tostring = tostring
 local type = type
+local wipe = wipe
 local concat = table.concat
 local char = string.char
 
@@ -38,6 +40,9 @@ Loolib.Data = Data
 
 local ProfileManagerModule = Data.ProfileManager or Loolib:GetModule("Data.ProfileManager") or {}
 Loolib.Data.ProfileManager = ProfileManagerModule
+
+-- INTERNAL: Maximum number of auto-generated import name attempts before giving up
+local MAX_IMPORT_NAME_ATTEMPTS = 1000
 
 --[[--------------------------------------------------------------------
     LoolibProfileManagerMixin
@@ -118,20 +123,17 @@ function ProfileManagerMixin:CreateProfile(db, name)
         return false, "Database not provided"
     end
 
-    if not name or name == "" then
-        return false, "Profile name cannot be empty"
+    if type(name) ~= "string" then
+        return false, "Profile name must be a string"
     end
 
     -- Trim whitespace
     name = strtrim(name)
 
-    if name == "" then
-        return false, "Profile name cannot be empty"
-    end
-
-    -- Check for invalid characters
-    if name:match("[<>:\"/\\|?*]") then
-        return false, "Profile name contains invalid characters"
+    -- Use centralized validation
+    local valid, validErr = self:ValidateProfileName(name)
+    if not valid then
+        return false, validErr
     end
 
     -- Check if profile already exists
@@ -168,19 +170,14 @@ function ProfileManagerMixin:DeleteProfile(db, name)
         return false, "Database not provided"
     end
 
-    if not name or name == "" then
-        return false, "Profile name cannot be empty"
+    if type(name) ~= "string" or name == "" then
+        return false, "Profile name must be a non-empty string"
     end
 
-    -- Safety checks
-    local currentProfile = db:GetCurrentProfile()
-    if name == currentProfile then
-        return false, "Cannot delete the current profile. Switch profiles first."
-    end
-
-    local defaultProfile = db.defaultProfile or "Default"
-    if name == defaultProfile then
-        return false, "Cannot delete the default profile"
+    -- Use centralized deletion check
+    local canDelete, reason = self:CanDeleteProfile(db, name)
+    if not canDelete then
+        return false, reason
     end
 
     -- Check if profile exists
@@ -195,11 +192,6 @@ function ProfileManagerMixin:DeleteProfile(db, name)
 
     if not exists then
         return false, "Profile '" .. name .. "' does not exist"
-    end
-
-    -- Don't delete last profile
-    if #profiles <= 1 then
-        return false, "Cannot delete the last profile"
     end
 
     -- Delete the profile
@@ -229,8 +221,8 @@ function ProfileManagerMixin:CopyProfile(db, sourceName, destName)
         return false, "Database not provided"
     end
 
-    if not sourceName or sourceName == "" then
-        return false, "Source profile name cannot be empty"
+    if type(sourceName) ~= "string" or sourceName == "" then
+        return false, "Source profile name must be a non-empty string"
     end
 
     -- Check if source exists
@@ -249,15 +241,16 @@ function ProfileManagerMixin:CopyProfile(db, sourceName, destName)
 
     -- If destName provided, create new profile first
     if destName then
-        destName = strtrim(destName)
-
-        if destName == "" then
-            return false, "Destination profile name cannot be empty"
+        if type(destName) ~= "string" then
+            return false, "Destination profile name must be a string"
         end
 
-        -- Check for invalid characters
-        if destName:match("[<>:\"/\\|?*]") then
-            return false, "Profile name contains invalid characters"
+        destName = strtrim(destName)
+
+        -- Use centralized validation
+        local valid, validErr = self:ValidateProfileName(destName)
+        if not valid then
+            return false, validErr
         end
 
         -- Check if already exists
@@ -322,8 +315,22 @@ function ProfileManagerMixin:GetCharactersUsingProfile(db, profileName)
         return {}
     end
 
+    if type(profileName) ~= "string" or profileName == "" then
+        return {}
+    end
+
     local characters = {}
-    local profileKeys = db.data.profileKeys or {}
+
+    -- Access profileKeys safely through the db's data table
+    local dataTable = db.data
+    if type(dataTable) ~= "table" then
+        return {}
+    end
+
+    local profileKeys = dataTable.profileKeys
+    if type(profileKeys) ~= "table" then
+        return {}
+    end
 
     for charKey, profile in pairs(profileKeys) do
         if profile == profileName then
@@ -348,24 +355,36 @@ function ProfileManagerMixin:ResetProfile(db, profileName)
         return false, "Database not provided"
     end
 
-    if profileName then
-        -- Switch to the profile first
-        local currentProfile = db:GetCurrentProfile()
-        if currentProfile ~= profileName then
-            local success, err = pcall(function()
-                db:SetProfile(profileName)
-            end)
+    if profileName ~= nil and (type(profileName) ~= "string" or profileName == "") then
+        return false, "Profile name must be a non-empty string or nil"
+    end
 
-            if not success then
-                return false, "Failed to switch to profile: " .. tostring(err)
-            end
+    local originalProfile = db:GetCurrentProfile()
+    local switched = false
+
+    if profileName and originalProfile ~= profileName then
+        -- Switch to the profile first
+        local switchOk, switchErr = pcall(function()
+            db:SetProfile(profileName)
+        end)
+
+        if not switchOk then
+            return false, "Failed to switch to profile: " .. tostring(switchErr)
         end
+        switched = true
     end
 
     -- Reset current profile
     local success, err = pcall(function()
         db:ResetProfile()
     end)
+
+    -- Switch back if we changed profiles, regardless of reset success
+    if switched then
+        pcall(function()
+            db:SetProfile(originalProfile)
+        end)
+    end
 
     if not success then
         return false, "Failed to reset profile: " .. tostring(err)
@@ -383,8 +402,8 @@ end
 -- @return boolean - Valid
 -- @return string - Error message (if invalid)
 function ProfileManagerMixin:ValidateProfileName(name)
-    if not name or name == "" then
-        return false, "Profile name cannot be empty"
+    if type(name) ~= "string" or name == "" then
+        return false, "Profile name must be a non-empty string"
     end
 
     name = strtrim(name)
@@ -410,8 +429,12 @@ end
 -- @return boolean - Can delete
 -- @return string - Reason (if cannot delete)
 function ProfileManagerMixin:CanDeleteProfile(db, name)
-    if not db or not name then
-        return false, "Invalid parameters"
+    if not db then
+        return false, "Database not provided"
+    end
+
+    if type(name) ~= "string" or name == "" then
+        return false, "Profile name must be a non-empty string"
     end
 
     local currentProfile = db:GetCurrentProfile()
@@ -448,6 +471,10 @@ function ProfileManagerMixin:ExportProfile(db, profileName)
 
     profileName = profileName or db:GetCurrentProfile()
 
+    if type(profileName) ~= "string" or profileName == "" then
+        return nil, "Profile name must be a non-empty string"
+    end
+
     -- Check if profile exists
     local profiles = db:GetProfiles()
     local exists = false
@@ -462,8 +489,13 @@ function ProfileManagerMixin:ExportProfile(db, profileName)
         return nil, "Profile '" .. profileName .. "' does not exist"
     end
 
-    -- Get profile data
-    local profileData = db.data.profiles[profileName]
+    -- Get profile data safely
+    local dataTable = db.data
+    if type(dataTable) ~= "table" or type(dataTable.profiles) ~= "table" then
+        return nil, "Profile data not accessible"
+    end
+
+    local profileData = dataTable.profiles[profileName]
     if not profileData then
         return nil, "Profile data not found"
     end
@@ -522,24 +554,24 @@ function ProfileManagerMixin:ImportProfile(db, encodedString, targetProfileName)
         return false, "Database not provided"
     end
 
-    if not encodedString or encodedString == "" then
-        return false, "Import string cannot be empty"
+    if type(encodedString) ~= "string" or encodedString == "" then
+        return false, "Import string must be a non-empty string"
     end
 
     -- Remove whitespace
     encodedString = encodedString:gsub("%s", "")
 
     -- Determine format (C: = compressed, S: = serialized only)
-    local format = encodedString:sub(1, 2)
+    local importFormat = encodedString:sub(1, 2)
     local data = encodedString:sub(3)
 
-    if format ~= "C:" and format ~= "S:" then
+    if importFormat ~= "C:" and importFormat ~= "S:" then
         return false, "Invalid import format. Expected 'C:' or 'S:' prefix."
     end
 
     local serialized
 
-    if format == "C:" then
+    if importFormat == "C:" then
         -- Compressed format
         local CompressorModule = Loolib:GetModule("Compressor")
         if not CompressorModule or not CompressorModule.Compressor then
@@ -555,8 +587,8 @@ function ProfileManagerMixin:ImportProfile(db, encodedString, targetProfileName)
         end
 
         -- Decompress
-        local decompressed, success = Compressor:Decompress(compressed)
-        if not success or not decompressed then
+        local decompressed, decompressOk = Compressor:Decompress(compressed)
+        if not decompressOk or not decompressed then
             return false, "Failed to decompress data"
         end
 
@@ -578,8 +610,8 @@ function ProfileManagerMixin:ImportProfile(db, encodedString, targetProfileName)
     local Serializer = SerializerModule.Serializer
 
     -- Deserialize the data
-    local success, profileData = Serializer:Deserialize(serialized)
-    if not success then
+    local deserializeOk, profileData = Serializer:Deserialize(serialized)
+    if not deserializeOk then
         return false, "Failed to deserialize profile data: " .. tostring(profileData)
     end
 
@@ -601,16 +633,22 @@ function ProfileManagerMixin:ImportProfile(db, encodedString, targetProfileName)
             targetProfileName = baseName
         else
             local counter = 1
-            while existingNames[baseName .. " " .. counter] do
+            while existingNames[baseName .. " " .. counter] and counter <= MAX_IMPORT_NAME_ATTEMPTS do
                 counter = counter + 1
+            end
+            if counter > MAX_IMPORT_NAME_ATTEMPTS then
+                return false, "Could not generate a unique profile name after " .. MAX_IMPORT_NAME_ATTEMPTS .. " attempts"
             end
             targetProfileName = baseName .. " " .. counter
         end
     else
+        if type(targetProfileName) ~= "string" then
+            return false, "Target profile name must be a string"
+        end
         -- Validate provided name
-        local valid, err = self:ValidateProfileName(targetProfileName)
+        local valid, validErr = self:ValidateProfileName(targetProfileName)
         if not valid then
-            return false, err
+            return false, validErr
         end
     end
 
@@ -623,8 +661,17 @@ function ProfileManagerMixin:ImportProfile(db, encodedString, targetProfileName)
         return false, "Failed to create profile: " .. tostring(createErr)
     end
 
-    -- Copy imported data to the new profile
-    local currentProfileData = db.data.profiles[targetProfileName]
+    -- Copy imported data to the new profile safely
+    local dataTable = db.data
+    if type(dataTable) ~= "table" or type(dataTable.profiles) ~= "table" then
+        return false, "Profile data not accessible after creation"
+    end
+
+    local currentProfileData = dataTable.profiles[targetProfileName]
+    if not currentProfileData then
+        return false, "Failed to access created profile data"
+    end
+
     wipe(currentProfileData)
 
     for key, value in pairs(profileData) do
@@ -653,10 +700,14 @@ for i = 1, #BASE64_CHARS do
     BASE64_DECODE[BASE64_CHARS:sub(i, i)] = i - 1
 end
 
---- Encode a string to base64
+-- INTERNAL: Encode a string to base64
 -- @param data string - Data to encode
 -- @return string - Base64 encoded string
 function ProfileManagerMixin:Base64Encode(data)
+    if type(data) ~= "string" then
+        error("LoolibProfileManager: Base64Encode expects a string", 2)
+    end
+
     local result = {}
     local len = #data
 
@@ -686,10 +737,14 @@ function ProfileManagerMixin:Base64Encode(data)
     return concat(result)
 end
 
---- Decode a base64 string
+-- INTERNAL: Decode a base64 string
 -- @param data string - Base64 encoded string
 -- @return string - Decoded data
 function ProfileManagerMixin:Base64Decode(data)
+    if type(data) ~= "string" then
+        error("LoolibProfileManager: Base64Decode expects a string", 2)
+    end
+
     -- Remove whitespace and padding
     data = data:gsub("%s", ""):gsub("=", "")
 
@@ -739,18 +794,18 @@ function ProfileManagerMixin:CopyProfileTo(db, sourceProfile, targetProfile)
         return false, "Database not provided"
     end
 
-    if not sourceProfile or sourceProfile == "" then
-        return false, "Source profile name cannot be empty"
+    if type(sourceProfile) ~= "string" or sourceProfile == "" then
+        return false, "Source profile name must be a non-empty string"
     end
 
-    if not targetProfile or targetProfile == "" then
-        return false, "Target profile name cannot be empty"
+    if type(targetProfile) ~= "string" or targetProfile == "" then
+        return false, "Target profile name must be a non-empty string"
     end
 
     -- Validate target name
-    local valid, err = self:ValidateProfileName(targetProfile)
+    local valid, validErr = self:ValidateProfileName(targetProfile)
     if not valid then
-        return false, err
+        return false, validErr
     end
 
     -- Check if source exists
@@ -771,8 +826,13 @@ function ProfileManagerMixin:CopyProfileTo(db, sourceProfile, targetProfile)
         return false, "Source profile '" .. sourceProfile .. "' does not exist"
     end
 
-    -- Get source data
-    local sourceData = db.data.profiles[sourceProfile]
+    -- Get source data safely
+    local dataTable = db.data
+    if type(dataTable) ~= "table" or type(dataTable.profiles) ~= "table" then
+        return false, "Profile data not accessible"
+    end
+
+    local sourceData = dataTable.profiles[sourceProfile]
     if not sourceData then
         return false, "Source profile data not found"
     end
@@ -789,7 +849,11 @@ function ProfileManagerMixin:CopyProfileTo(db, sourceProfile, targetProfile)
     end
 
     -- Deep copy source to target
-    local targetData = db.data.profiles[targetProfile]
+    local targetData = dataTable.profiles[targetProfile]
+    if not targetData then
+        return false, "Failed to access target profile data"
+    end
+
     wipe(targetData)
 
     for key, value in pairs(sourceData) do
@@ -819,6 +883,10 @@ function ProfileManagerMixin:ResetProfileToDefaults(db, profileName)
     end
 
     profileName = profileName or db:GetCurrentProfile()
+
+    if type(profileName) ~= "string" or profileName == "" then
+        return false, "Profile name must be a non-empty string"
+    end
 
     -- Check if profile exists
     local profiles = db:GetProfiles()
@@ -854,15 +922,15 @@ function ProfileManagerMixin:ResetProfileToDefaults(db, profileName)
         db:ResetProfile()
     end)
 
-    if not resetSuccess then
-        return false, "Failed to reset profile: " .. tostring(resetErr)
-    end
-
-    -- Switch back if we changed profiles
+    -- Switch back if we changed profiles, regardless of reset success
     if switched then
         pcall(function()
             db:SetProfile(currentProfile)
         end)
+    end
+
+    if not resetSuccess then
+        return false, "Failed to reset profile: " .. tostring(resetErr)
     end
 
     -- Fire event

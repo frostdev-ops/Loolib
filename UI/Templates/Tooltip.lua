@@ -15,6 +15,27 @@ local LoolibCreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFro
 local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for Tooltip")
 local LoolibTemplates = assert(Loolib.Templates or (Loolib.UI and Loolib.UI.Templates), "Loolib.Templates is required for Tooltip")
 
+-- Cache globals
+local error = error
+local ipairs = ipairs
+local math_floor = math.floor
+local math_max = math.max
+local string_format = string.format
+local table_concat = table.concat
+local table_insert = table.insert
+local type = type
+local wipe = wipe
+
+-- Cache WoW globals
+local CreateFrame = CreateFrame
+local GetCursorPosition = GetCursorPosition
+local GetScreenHeight = GetScreenHeight
+local GetScreenWidth = GetScreenWidth
+local UIParent = UIParent
+
+-- INTERNAL: Reference to Frame:Show() to avoid fragile metatable lookup (TP-01)
+local FrameShow = getmetatable(CreateFrame("Frame")).__index.Show
+
 --[[--------------------------------------------------------------------
     LoolibTooltipMixin
 ----------------------------------------------------------------------]]
@@ -132,6 +153,9 @@ end
 -- @param offsetX number - X offset
 -- @param offsetY number - Y offset
 function LoolibTooltipMixin:SetOwner(owner, anchor, offsetX, offsetY)
+    if owner ~= nil and type(owner) ~= "table" then
+        error("LoolibTooltip: SetOwner: 'owner' must be a frame or nil", 2)
+    end
     self.owner = owner
     self.anchor = anchor or "ANCHOR_RIGHT"
     self.offsetX = offsetX or 0
@@ -142,44 +166,61 @@ end
 function LoolibTooltipMixin:Show()
     self:BuildContent()
     self:Position()
-    getmetatable(self).__index.Show(self)
+    -- FIX(TP-01): Use cached Frame.Show ref instead of fragile metatable lookup
+    FrameShow(self)
 end
 
 --- Build the content from lines
+-- FIX(TP-07): Use table.concat instead of string concatenation in loop
 function LoolibTooltipMixin:BuildContent()
     if not self.Text then
         return
     end
 
-    local textContent = ""
-    for i, line in ipairs(self.lines) do
+    local parts = {}
+    for _, line in ipairs(self.lines) do
         if line.type == "line" then
-            local color = string.format("|cff%02x%02x%02x",
-                math.floor(line.r * 255),
-                math.floor(line.g * 255),
-                math.floor(line.b * 255))
-            textContent = textContent .. color .. line.text .. "|r\n"
+            local color = string_format("|cff%02x%02x%02x",
+                math_floor(line.r * 255),
+                math_floor(line.g * 255),
+                math_floor(line.b * 255))
+            table_insert(parts, color)
+            table_insert(parts, line.text)
+            table_insert(parts, "|r\n")
         elseif line.type == "double" then
-            local leftColor = string.format("|cff%02x%02x%02x",
-                math.floor(line.leftR * 255),
-                math.floor(line.leftG * 255),
-                math.floor(line.leftB * 255))
-            local rightColor = string.format("|cff%02x%02x%02x",
-                math.floor(line.rightR * 255),
-                math.floor(line.rightG * 255),
-                math.floor(line.rightB * 255))
-            textContent = textContent .. leftColor .. line.leftText .. "|r    " .. rightColor .. line.rightText .. "|r\n"
+            local leftColor = string_format("|cff%02x%02x%02x",
+                math_floor(line.leftR * 255),
+                math_floor(line.leftG * 255),
+                math_floor(line.leftB * 255))
+            local rightColor = string_format("|cff%02x%02x%02x",
+                math_floor(line.rightR * 255),
+                math_floor(line.rightG * 255),
+                math_floor(line.rightB * 255))
+            table_insert(parts, leftColor)
+            table_insert(parts, line.leftText)
+            table_insert(parts, "|r    ")
+            table_insert(parts, rightColor)
+            table_insert(parts, line.rightText)
+            table_insert(parts, "|r\n")
         elseif line.type == "blank" then
-            textContent = textContent .. "\n"
+            table_insert(parts, "\n")
         elseif line.type == "separator" then
-            textContent = textContent .. "|cff666666------------|r\n"
+            table_insert(parts, "|cff666666------------|r\n")
         end
     end
 
-    -- Remove trailing newline
-    textContent = textContent:gsub("\n$", "")
+    -- Remove trailing newline from last entry
+    local n = #parts
+    if n > 0 then
+        local last = parts[n]
+        if last == "\n" then
+            parts[n] = nil
+        elseif last:sub(-1) == "\n" then
+            parts[n] = last:sub(1, -2)
+        end
+    end
 
-    self.Text:SetText(textContent)
+    self.Text:SetText(table_concat(parts))
     self:UpdateSize()
 end
 
@@ -190,14 +231,14 @@ function LoolibTooltipMixin:UpdateSize()
     local textWidth = self.Text and self.Text:GetStringWidth() or 0
     local titleWidth = self.Title and self.Title:GetStringWidth() or 0
 
-    local width = math.max(textWidth, titleWidth) + 20
+    local width = math_max(textWidth, titleWidth) + 20
     local height = titleHeight + textHeight + 24
 
     if titleHeight > 0 and textHeight > 0 then
         height = height + 4  -- Spacing between title and text
     end
 
-    self:SetSize(math.max(100, width), math.max(30, height))
+    self:SetSize(math_max(100, width), math_max(30, height))
 end
 
 --- Position the tooltip
@@ -237,15 +278,27 @@ function LoolibTooltipMixin:Position()
 end
 
 --- Clamp tooltip to screen bounds
+-- FIX(TP-02): Nil-guard GetLeft/GetRight/GetTop/GetBottom which return nil
+-- before the frame is positioned or has zero dimensions.
 function LoolibTooltipMixin:ClampToScreen()
+    local rawLeft = self:GetLeft()
+    local rawRight = self:GetRight()
+    local rawTop = self:GetTop()
+    local rawBottom = self:GetBottom()
+
+    -- Bail out if geometry is not yet available (frame not positioned)
+    if not rawLeft or not rawRight or not rawTop or not rawBottom then
+        return
+    end
+
     local screenWidth = GetScreenWidth()
     local screenHeight = GetScreenHeight()
     local scale = self:GetEffectiveScale()
 
-    local left = self:GetLeft() * scale
-    local right = self:GetRight() * scale
-    local top = self:GetTop() * scale
-    local bottom = self:GetBottom() * scale
+    local left = rawLeft * scale
+    local right = rawRight * scale
+    local top = rawTop * scale
+    local bottom = rawBottom * scale
 
     local xOffset = 0
     local yOffset = 0
@@ -264,7 +317,9 @@ function LoolibTooltipMixin:ClampToScreen()
 
     if xOffset ~= 0 or yOffset ~= 0 then
         local point, relativeTo, relativePoint, x, y = self:GetPoint()
-        self:SetPoint(point, relativeTo, relativePoint, x + xOffset / scale, y + yOffset / scale)
+        if point then
+            self:SetPoint(point, relativeTo, relativePoint, x + xOffset / scale, y + yOffset / scale)
+        end
     end
 end
 
@@ -276,6 +331,10 @@ end
 -- @param frame Frame - Frame to attach to
 -- @param anchor string - Anchor type
 function LoolibTooltipMixin:AttachToFrame(frame, anchor)
+    if type(frame) ~= "table" or not frame.HookScript then
+        error("LoolibTooltip: AttachToFrame: 'frame' must be a valid frame with HookScript", 2)
+    end
+
     local tooltip = self
 
     frame:HookScript("OnEnter", function()

@@ -3,12 +3,21 @@
     ThemeDark - Dark theme variant
 
     A darker, more subdued theme for users who prefer less contrast.
+    Inherits missing keys from Default theme via ThemeManager:GetValue fallback.
+
+    Dependencies:
+    - Core/Loolib.lua
+    - UI/Theme/ThemeManager.lua
+    - UI/Theme/ThemeDefault.lua (must be loaded first for Backdrop definitions)
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
 local Theme = Loolib.Theme or Loolib:GetOrCreateModule("Theme")
 local ThemeManager = assert(Loolib.ThemeManager or (Theme.Manager and Theme.Manager.Manager), "Loolib.ThemeManager is required for ThemeDark")
-local Backdrop = assert(Loolib.Backdrop or Theme.Backdrop, "Loolib.Backdrop is required for ThemeDark")
+
+-- TH-05: Validate Backdrop is fully populated before using references
+local Backdrop = Loolib.Backdrop or Theme.Backdrop
+assert(Backdrop and Backdrop.Flat, "Loolib.Backdrop (with Flat) is required for ThemeDark -- ensure ThemeDefault.lua loads first")
 
 --[[--------------------------------------------------------------------
     Dark Theme Definition
@@ -67,7 +76,8 @@ local ThemeDark = {
         buttonPressed = {0.05, 0.05, 0.06, 0.95},
         buttonDisabled = {0.06, 0.06, 0.06, 0.5},
 
-        -- Class colors - Same as default
+        -- Class colors - Same as default (inherited via GetValue fallback,
+        -- but included explicitly for completeness)
         classWarrior = {0.78, 0.61, 0.43, 1},
         classPaladin = {0.96, 0.55, 0.73, 1},
         classHunter = {0.67, 0.83, 0.45, 1},

@@ -252,31 +252,39 @@ function LoolibEnhancedSliderMixin:SetEnabled(enabled)
 end
 
 --- Set tooltip text
+-- Uses HookScript to avoid clobbering existing OnEnter/OnLeave handlers.
 -- @param text string|table - Single string or {title, line1, line2, ...}
 -- @return self
 function LoolibEnhancedSliderMixin:Tooltip(text)
     self.tooltipText = text
 
-    self:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    -- INTERNAL: Only hook once; subsequent calls just update tooltipText
+    if not self._tooltipHooked then
+        self._tooltipHooked = true
 
-        if type(self.tooltipText) == "table" then
-            -- Multi-line tooltip
-            GameTooltip:SetText(self.tooltipText[1] or "", 1, 1, 1, 1, true)
-            for i = 2, #self.tooltipText do
-                GameTooltip:AddLine(self.tooltipText[i], 1, 1, 1, true)
+        self:HookScript("OnEnter", function(frame)
+            if not frame.tooltipText then return end
+
+            GameTooltip:SetOwner(frame, frame.tooltipAnchor or "ANCHOR_RIGHT")
+
+            if type(frame.tooltipText) == "table" then
+                -- Multi-line tooltip
+                GameTooltip:SetText(frame.tooltipText[1] or "", 1, 1, 1, 1, true)
+                for i = 2, #frame.tooltipText do
+                    GameTooltip:AddLine(frame.tooltipText[i], 1, 1, 1, true)
+                end
+            else
+                -- Single line tooltip
+                GameTooltip:SetText(frame.tooltipText, 1, 1, 1, 1, true)
             end
-        else
-            -- Single line tooltip
-            GameTooltip:SetText(self.tooltipText, 1, 1, 1, 1, true)
-        end
 
-        GameTooltip:Show()
-    end)
+            GameTooltip:Show()
+        end)
 
-    self:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
+        self:HookScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+    end
 
     return self
 end
@@ -357,18 +365,30 @@ end
 -- INTERNAL HANDLERS
 -- ============================================================
 
+-- INTERNAL: Called by OnValueChanged script. Wraps callback in pcall so an
+-- error in consumer code does not stale the value display or halt the handler.
 function LoolibEnhancedSliderMixin:_OnValueChanged(value, userInput)
     self._value = value
     self:_UpdateValueDisplay()
 
     if self._onChangeCallback then
-        self._onChangeCallback(self, value, userInput)
+        local ok, err = pcall(self._onChangeCallback, self, value, userInput)
+        if not ok then
+            -- Surface the error without halting the slider
+            geterrorhandler()(("LoolibEnhancedSlider: OnChange callback error: %s"):format(tostring(err)))
+        end
     end
 end
 
+-- INTERNAL: Updates the value text above the slider.  Wraps string.format in
+-- pcall so a format/value type mismatch (e.g. "%d" with a float NaN) does not
+-- throw; falls back to tostring on failure.
 function LoolibEnhancedSliderMixin:_UpdateValueDisplay()
     if self._showValue and self.valueText then
-        local formatted = string.format(self._valueFormat, self._value)
+        local ok, formatted = pcall(string.format, self._valueFormat, self._value)
+        if not ok then
+            formatted = tostring(self._value)
+        end
         self.valueText:SetText(formatted)
     end
 end
@@ -411,24 +431,29 @@ end
 -- ============================================================
 
 --- Reset slider to default value
+-- Uses HookScript to avoid clobbering existing OnMouseDown/OnMouseUp handlers.
 -- @param defaultValue number - Default value to reset to
 -- @return self
 function LoolibEnhancedSliderMixin:SetDefault(defaultValue)
     self._defaultValue = defaultValue
 
-    -- Add right-click to reset functionality
-    self:SetScript("OnMouseDown", function(self, button)
-        if button == "RightButton" and self._defaultValue then
-            self.InResetState = self._defaultValue
-            self:SetValue(self._defaultValue)
-        end
-    end)
+    -- INTERNAL: Only hook once; subsequent calls just update _defaultValue
+    if not self._defaultHooked then
+        self._defaultHooked = true
 
-    self:SetScript("OnMouseUp", function(self, button)
-        if button == "RightButton" then
-            self.InResetState = nil
-        end
-    end)
+        self:HookScript("OnMouseDown", function(frame, button)
+            if button == "RightButton" and frame._defaultValue then
+                frame.InResetState = frame._defaultValue
+                frame:SetValue(frame._defaultValue)
+            end
+        end)
+
+        self:HookScript("OnMouseUp", function(frame, button)
+            if button == "RightButton" then
+                frame.InResetState = nil
+            end
+        end)
+    end
 
     return self
 end

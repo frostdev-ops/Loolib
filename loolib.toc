@@ -44,6 +44,7 @@ Data\SavedVariables.lua
 # ============================================================
 Comm\Serializer.lua
 Comm\Compressor.lua
+Comm\ExportCodec.lua
 Comm\AddonMessage.lua
 
 # ============================================================
@@ -60,6 +61,15 @@ Config\Config.lua
 # UI Templates - Component implementations
 # ============================================================
 UI\Templates\Dialog.lua
+
+# ============================================================
+# Core Extensions - TempTable pooling, Console, Hook, Locale
+# ============================================================
+Core\TempTable.lua
+Core\Console.lua
+Core\Hook.lua
+Core\Locale.lua
+Core\WindowManager.lua
 
 # ============================================================
 # Utils - Utility modules

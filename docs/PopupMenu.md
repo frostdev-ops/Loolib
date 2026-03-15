@@ -218,7 +218,9 @@ menu:SetMenuWidth(250)
 
 #### `:ShowAtCursor()`
 
-Show the menu at the cursor position.
+Show the menu at the cursor position. Automatically compensates for
+`UIParent:GetEffectiveScale()` so the menu appears at the correct screen
+location regardless of UI scale settings.
 
 ```lua
 menu:ShowAtCursor()
@@ -509,6 +511,7 @@ end)
 - Items are created when menu is shown and released when hidden
 - Automatic cleanup of event handlers and submenus on close
 - No frame pooling needed - menu frames are long-lived
+- Cursor positioning compensates for `UIParent:GetEffectiveScale()` internally, so callers never need to pre-scale coordinates
 
 ## Integration with Loolib
 

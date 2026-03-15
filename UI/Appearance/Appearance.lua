@@ -5,6 +5,12 @@
     Provides skin registration, switching, and application to frames.
     Skins define visual appearance (textures, colors) that can be
     saved/loaded and applied to any frame using BackdropTemplate.
+
+    Dependencies (must be loaded before this file):
+    - Core/Loolib.lua (Loolib namespace)
+    - Core/Mixin.lua (CreateFromMixins)
+    - Core/TableUtil.lua (DeepCopy, Copy, Contains)
+    - Events/CallbackRegistry.lua (CallbackRegistryMixin)
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
@@ -13,6 +19,19 @@ local CallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib.Callb
 local TableUtil = assert(Loolib.TableUtil, "Loolib.TableUtil is required for Appearance")
 local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 local AppearanceModule = UI.Appearance or Loolib:GetModule("UI.Appearance") or {}
+
+-- Cache globals at file top
+local error = error
+local format = string.format
+local ipairs = ipairs
+local math_max = math.max
+local math_min = math.min
+local next = next
+local pairs = pairs
+local pcall = pcall
+local tostring = tostring
+local type = type
+local wipe = wipe
 
 --[[--------------------------------------------------------------------
     Default Skin Definition
@@ -58,6 +77,95 @@ local APPEARANCE_EVENTS = {
 }
 
 --[[--------------------------------------------------------------------
+    Internal Helpers
+----------------------------------------------------------------------]]
+
+-- INTERNAL: Clamp a number to [0, 1] range for color components
+local function ClampColor(value)
+    if type(value) ~= "number" then return nil end
+    return math_max(0, math_min(1, value))
+end
+
+-- INTERNAL: Validate that a frame reference is still alive and usable.
+-- WoW frames that have been garbage-collected or whose C-side object was
+-- destroyed will error on any method call. We pcall a cheap introspection
+-- method to detect this without risk.
+local function IsFrameValid(frame)
+    local frameType = type(frame)
+    if frameType ~= "table" and frameType ~= "userdata" then
+        return false
+    end
+
+    -- Probe liveness through a cheap object method. Keep the lookup and call
+    -- inside pcall so dead/protected frame objects fail closed instead of
+    -- throwing while we validate them.
+    local ok, objectType = pcall(function()
+        local getter = frame.GetObjectType
+        if type(getter) ~= "function" then
+            return nil
+        end
+        return getter(frame)
+    end)
+
+    return ok and type(objectType) == "string" and objectType ~= ""
+end
+
+-- INTERNAL: Validate a skin table has the required structure
+local function ValidateSkinStructure(skin)
+    if type(skin) ~= "table" then
+        return false
+    end
+    if type(skin.background) ~= "table" then
+        return false
+    end
+    if type(skin.border) ~= "table" then
+        return false
+    end
+    if type(skin.background.color) ~= "table" then
+        return false
+    end
+    if type(skin.border.color) ~= "table" then
+        return false
+    end
+    -- Validate color fields are numbers
+    local bgc = skin.background.color
+    local brc = skin.border.color
+    if type(bgc.r) ~= "number" or type(bgc.g) ~= "number" or type(bgc.b) ~= "number" then
+        return false
+    end
+    if type(brc.r) ~= "number" or type(brc.g) ~= "number" or type(brc.b) ~= "number" then
+        return false
+    end
+    -- Texture fields should be strings (if present)
+    if skin.background.texture ~= nil and type(skin.background.texture) ~= "string" then
+        return false
+    end
+    if skin.border.texture ~= nil and type(skin.border.texture) ~= "string" then
+        return false
+    end
+    return true
+end
+
+-- INTERNAL: Sanitize a skin's numeric color fields to [0,1] range
+local function SanitizeSkinColors(skin)
+    if not skin then return end
+    if skin.background and skin.background.color then
+        local c = skin.background.color
+        c.r = ClampColor(c.r) or 0
+        c.g = ClampColor(c.g) or 0
+        c.b = ClampColor(c.b) or 0
+        c.a = ClampColor(c.a) or 1
+    end
+    if skin.border and skin.border.color then
+        local c = skin.border.color
+        c.r = ClampColor(c.r) or 0.6
+        c.g = ClampColor(c.g) or 0.6
+        c.b = ClampColor(c.b) or 0.6
+        c.a = ClampColor(c.a) or 1
+    end
+end
+
+--[[--------------------------------------------------------------------
     LoolibAppearanceMixin
 
     A mixin that provides skin management for UI appearance.
@@ -71,11 +179,37 @@ function AppearanceMixin:Init(savedData)
     CallbackRegistryMixin.OnLoad(self)
     self:GenerateCallbackEvents(APPEARANCE_EVENTS)
 
+    -- FIX(AP-05): Validate savedData field types before applying
+    if savedData ~= nil and type(savedData) ~= "table" then
+        savedData = nil
+    end
     savedData = savedData or {}
 
+    -- Validate skins from saved data: must be a table of tables
+    local loadedSkins = nil
+    if type(savedData.skins) == "table" then
+        loadedSkins = {}
+        for name, skin in pairs(savedData.skins) do
+            if type(name) == "string" and ValidateSkinStructure(skin) then
+                SanitizeSkinColors(skin)
+                loadedSkins[name] = skin
+            end
+        end
+        -- If all skins were invalid, discard
+        if not next(loadedSkins) then
+            loadedSkins = nil
+        end
+    end
+
     -- Initialize skins collection
-    self.skins = savedData.skins or { Default = TableUtil.DeepCopy(DEFAULT_SKIN) }
-    self.currentSkinName = savedData.currentSkin or "Default"
+    self.skins = loadedSkins or { Default = TableUtil.DeepCopy(DEFAULT_SKIN) }
+
+    -- Validate currentSkin name from saved data
+    local requestedSkin = nil
+    if type(savedData.currentSkin) == "string" and savedData.currentSkin ~= "" then
+        requestedSkin = savedData.currentSkin
+    end
+    self.currentSkinName = requestedSkin or "Default"
 
     -- Ensure default skin always exists
     if not self.skins.Default then
@@ -89,8 +223,9 @@ function AppearanceMixin:Init(savedData)
         self.currentSkin = self.skins.Default
     end
 
-    -- Track registered frames for automatic updates
-    self.registeredFrames = {}
+    -- FIX(AP-01): Use weak-keyed table for registered frames to allow GC
+    -- of frames that are destroyed but not explicitly unregistered.
+    self.registeredFrames = setmetatable({}, { __mode = "k" })
 end
 
 --[[--------------------------------------------------------------------
@@ -113,9 +248,8 @@ end
 -- @param skinName string - Name of the skin to activate
 -- @return boolean - True if skin was set successfully
 function AppearanceMixin:SetCurrentSkin(skinName)
-    if not skinName or skinName == "" then
-        Loolib:Error("Appearance:SetCurrentSkin - skin name is required")
-        return false
+    if type(skinName) ~= "string" or skinName == "" then
+        error("LoolibAppearance: SetCurrentSkin: skinName must be a non-empty string", 2)
     end
 
     local skin = self.skins[skinName]
@@ -163,9 +297,8 @@ end
 -- @param name string - Name for the skin
 -- @return boolean - True if saved successfully
 function AppearanceMixin:SaveSkin(name)
-    if not name or name == "" then
-        Loolib:Error("Appearance:SaveSkin - name is required")
-        return false
+    if type(name) ~= "string" or name == "" then
+        error("LoolibAppearance: SaveSkin: name must be a non-empty string", 2)
     end
 
     -- Deep copy current skin settings
@@ -187,9 +320,8 @@ end
 -- @param name string - Name of the skin to delete
 -- @return boolean - True if deleted successfully
 function AppearanceMixin:DeleteSkin(name)
-    if not name or name == "" then
-        Loolib:Error("Appearance:DeleteSkin - name is required")
-        return false
+    if type(name) ~= "string" or name == "" then
+        error("LoolibAppearance: DeleteSkin: name must be a non-empty string", 2)
     end
 
     -- Cannot delete the Default skin
@@ -235,15 +367,17 @@ end
 -- @return string - Texture path
 function AppearanceMixin:GetBackgroundTexture()
     if not self.currentSkin or not self.currentSkin.background then
-        return "Interface\\DialogFrame\\UI-DialogBox-Background-Dark"
+        return DEFAULT_SKIN.background.texture
     end
-    return self.currentSkin.background.texture
+    return self.currentSkin.background.texture or DEFAULT_SKIN.background.texture
 end
 
 --- Set the background texture
 -- @param texture string - Texture path
 function AppearanceMixin:SetBackgroundTexture(texture)
-    if not texture then return end
+    if type(texture) ~= "string" then
+        error("LoolibAppearance: SetBackgroundTexture: texture must be a string", 2)
+    end
     if not self.currentSkin or not self.currentSkin.background then return end
     self.currentSkin.background.texture = texture
     self:UpdateRegisteredFrames()
@@ -256,7 +390,7 @@ function AppearanceMixin:GetBackgroundColor()
         return 0, 0, 0, 1  -- Return safe default
     end
     local c = self.currentSkin.background.color
-    return c.r, c.g, c.b, c.a
+    return c.r or 0, c.g or 0, c.b or 0, c.a or 1
 end
 
 --- Set the background color
@@ -269,10 +403,11 @@ function AppearanceMixin:SetBackgroundColor(r, g, b, a)
         return
     end
     local c = self.currentSkin.background.color
-    c.r = r or c.r
-    c.g = g or c.g
-    c.b = b or c.b
-    c.a = a or c.a
+    -- Clamp provided values, keep existing if nil
+    c.r = ClampColor(r) or c.r
+    c.g = ClampColor(g) or c.g
+    c.b = ClampColor(b) or c.b
+    c.a = ClampColor(a) or c.a
     self:UpdateRegisteredFrames()
 end
 
@@ -284,15 +419,17 @@ end
 -- @return string - Texture path
 function AppearanceMixin:GetBorderTexture()
     if not self.currentSkin or not self.currentSkin.border then
-        return "Interface\\DialogFrame\\UI-DialogBox-Border"
+        return DEFAULT_SKIN.border.texture
     end
-    return self.currentSkin.border.texture
+    return self.currentSkin.border.texture or DEFAULT_SKIN.border.texture
 end
 
 --- Set the border texture
 -- @param texture string - Texture path
 function AppearanceMixin:SetBorderTexture(texture)
-    if not texture then return end
+    if type(texture) ~= "string" then
+        error("LoolibAppearance: SetBorderTexture: texture must be a string", 2)
+    end
     if not self.currentSkin or not self.currentSkin.border then return end
     self.currentSkin.border.texture = texture
     self:UpdateRegisteredFrames()
@@ -305,7 +442,7 @@ function AppearanceMixin:GetBorderColor()
         return 0.6, 0.6, 0.6, 1  -- Return safe default
     end
     local c = self.currentSkin.border.color
-    return c.r, c.g, c.b, c.a
+    return c.r or 0.6, c.g or 0.6, c.b or 0.6, c.a or 1
 end
 
 --- Set the border color
@@ -318,10 +455,11 @@ function AppearanceMixin:SetBorderColor(r, g, b, a)
         return
     end
     local c = self.currentSkin.border.color
-    c.r = r or c.r
-    c.g = g or c.g
-    c.b = b or c.b
-    c.a = a or c.a
+    -- Clamp provided values, keep existing if nil
+    c.r = ClampColor(r) or c.r
+    c.g = ClampColor(g) or c.g
+    c.b = ClampColor(b) or c.b
+    c.a = ClampColor(a) or c.a
     self:UpdateRegisteredFrames()
 end
 
@@ -332,7 +470,11 @@ end
 --- Apply the current skin to a frame with BackdropTemplate
 -- @param frame Frame - The frame to apply skin to (must have BackdropTemplate)
 function AppearanceMixin:ApplyToFrame(frame)
-    if not frame or not frame.SetBackdrop then
+    -- FIX(AP-01): Validate frame is alive before calling any methods on it
+    if not IsFrameValid(frame) then
+        return
+    end
+    if not frame.SetBackdrop then
         return
     end
 
@@ -344,10 +486,19 @@ function AppearanceMixin:ApplyToFrame(frame)
         return
     end
 
+    -- FIX(AP-03): If both textures are nil/empty, clear the backdrop and return
+    -- without attempting SetBackdropColor which would error after SetBackdrop(nil).
+    local bgTexture = skin.background.texture
+    local borderTexture = skin.border.texture
+    if not bgTexture and not borderTexture then
+        frame:SetBackdrop(nil)
+        return
+    end
+
     -- Build and apply backdrop
     local backdrop = {
-        bgFile = skin.background.texture,
-        edgeFile = skin.border.texture,
+        bgFile = bgTexture,
+        edgeFile = borderTexture,
         tile = true,
         tileEdge = true,
         tileSize = 32,
@@ -357,19 +508,26 @@ function AppearanceMixin:ApplyToFrame(frame)
 
     frame:SetBackdrop(backdrop)
 
-    -- Apply background color
-    local bg = skin.background.color
-    frame:SetBackdropColor(bg.r, bg.g, bg.b, bg.a)
+    -- FIX(AP-03): Guard SetBackdropColor/SetBackdropBorderColor — these
+    -- methods are only valid after a successful SetBackdrop with content.
+    -- After SetBackdrop(nil) or with no bgFile, SetBackdropColor may error.
+    if frame.SetBackdropColor and bgTexture then
+        local bg = skin.background.color
+        frame:SetBackdropColor(bg.r or 0, bg.g or 0, bg.b or 0, bg.a or 1)
+    end
 
-    -- Apply border color
-    local border = skin.border.color
-    frame:SetBackdropBorderColor(border.r, border.g, border.b, border.a)
+    if frame.SetBackdropBorderColor and borderTexture then
+        local border = skin.border.color
+        frame:SetBackdropBorderColor(border.r or 0.6, border.g or 0.6, border.b or 0.6, border.a or 1)
+    end
 end
 
 --- Register a frame to automatically receive skin updates
 -- @param frame Frame - The frame to register
 function AppearanceMixin:RegisterFrame(frame)
-    if not frame then return end
+    if not IsFrameValid(frame) then
+        error("LoolibAppearance: RegisterFrame: frame must be a valid frame object", 2)
+    end
     self.registeredFrames[frame] = true
     self:ApplyToFrame(frame)
 end
@@ -382,12 +540,24 @@ function AppearanceMixin:UnregisterFrame(frame)
 end
 
 --- Update all registered frames with current skin
+-- FIX(AP-01): Validate each frame is still alive before calling methods.
+-- Collect stale references in a separate pass to avoid modifying the table
+-- during iteration.
 function AppearanceMixin:UpdateRegisteredFrames()
+    local stale  -- INTERNAL: lazily allocated list of dead frame refs
     for frame in pairs(self.registeredFrames) do
-        if frame and frame.SetBackdrop then
+        if IsFrameValid(frame) and frame.SetBackdrop then
             self:ApplyToFrame(frame)
         else
-            self.registeredFrames[frame] = nil
+            -- Collect stale refs for removal after iteration
+            if not stale then stale = {} end
+            stale[#stale + 1] = frame
+        end
+    end
+    -- Remove stale references
+    if stale then
+        for i = 1, #stale do
+            self.registeredFrames[stale[i]] = nil
         end
     end
 end
@@ -636,6 +806,9 @@ end
 --- Add a custom background texture to the available list
 -- @param texture string - Texture path
 function AppearanceMixin:AddBackgroundTexture(texture)
+    if type(texture) ~= "string" then
+        error("LoolibAppearance: AddBackgroundTexture: texture must be a string", 2)
+    end
     if not TableUtil.Contains(AVAILABLE_BACKGROUND_TEXTURES, texture) then
         AVAILABLE_BACKGROUND_TEXTURES[#AVAILABLE_BACKGROUND_TEXTURES + 1] = texture
     end
@@ -644,6 +817,9 @@ end
 --- Add a custom border texture to the available list
 -- @param texture string - Texture path
 function AppearanceMixin:AddBorderTexture(texture)
+    if type(texture) ~= "string" then
+        error("LoolibAppearance: AddBorderTexture: texture must be a string", 2)
+    end
     if not TableUtil.Contains(AVAILABLE_BORDER_TEXTURES, texture) then
         AVAILABLE_BORDER_TEXTURES[#AVAILABLE_BORDER_TEXTURES + 1] = texture
     end
@@ -663,7 +839,13 @@ local function CreateAppearance(savedData)
 end
 
 --[[--------------------------------------------------------------------
-    Singleton Instance (optional convenience)
+    Singleton Instance
+
+    FIX(AP-04): The singleton is safe to create at file-load time because
+    the assert guards at the top of this file ensure CallbackRegistryMixin
+    and all other dependencies are present before we reach this point.
+    If any dependency is missing, execution halts at the assert, never
+    reaching singleton creation.
 ----------------------------------------------------------------------]]
 
 -- Create a default singleton instance
@@ -677,12 +859,14 @@ AppearanceModule.Mixin = AppearanceMixin
 AppearanceModule.Create = CreateAppearance
 AppearanceModule.Instance = appearanceManager
 
-    -- Default skin reference
+-- Default skin reference
 AppearanceModule.DEFAULT_SKIN = DEFAULT_SKIN
 AppearanceModule.AVAILABLE_BACKGROUND_TEXTURES = AVAILABLE_BACKGROUND_TEXTURES
 AppearanceModule.AVAILABLE_BORDER_TEXTURES = AVAILABLE_BORDER_TEXTURES
 
-    -- Convenience functions from singleton
+-- Convenience functions from singleton
+-- Note: These are free-function wrappers. The vararg correctly forwards
+-- all arguments because the singleton methods use explicit self (colon syntax).
 AppearanceModule.GetCurrentSkin = function() return appearanceManager:GetCurrentSkin() end
 AppearanceModule.SetCurrentSkin = function(...) return appearanceManager:SetCurrentSkin(...) end
 AppearanceModule.GetSkinList = function() return appearanceManager:GetSkinList() end

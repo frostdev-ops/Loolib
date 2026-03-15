@@ -17,6 +17,18 @@ local Loolib = LibStub("Loolib")
 local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
 local WindowUtil = UI.WindowUtil or Loolib:GetModule("UI.WindowUtil") or {}
 
+-- Cache globals
+local error = error
+local math_max = math.max
+local math_min = math.min
+local pairs = pairs
+local type = type
+
+-- Cache WoW APIs
+local IsAltKeyDown = IsAltKeyDown
+local IsControlKeyDown = IsControlKeyDown
+local UIParent = UIParent
+
 -- Default configuration names
 local DEFAULT_KEYS = {
     point = "point",
@@ -29,6 +41,19 @@ local DEFAULT_KEYS = {
 
 -- Track registered frames for cleanup
 local registeredFrames = {}
+
+--[[--------------------------------------------------------------------
+    Internal Helpers
+----------------------------------------------------------------------]]
+
+--- Validate that a value is a valid frame -- INTERNAL
+-- @param frame any - The value to check
+-- @param caller string - Calling function name for error messages
+local function ValidateFrame(frame, caller)
+    if not frame or type(frame) ~= "table" or not frame.GetObjectType then
+        error("LoolibWindowUtil." .. caller .. ": frame must be a valid frame", 2)
+    end
+end
 
 --[[--------------------------------------------------------------------
     Position Saving and Restoration
@@ -47,9 +72,7 @@ local registeredFrames = {}
 -- - yOffset: Vertical offset in pixels
 -- - scale: Frame scale (1.0 = 100%)
 function WindowUtil.RegisterConfig(frame, storage, names)
-    if not frame or type(frame) ~= "table" or not frame.GetObjectType then
-        error("LoolibWindowUtil.RegisterConfig: frame must be a valid frame", 2)
-    end
+    ValidateFrame(frame, "RegisterConfig")
 
     if not storage or type(storage) ~= "table" then
         error("LoolibWindowUtil.RegisterConfig: storage must be a table", 2)
@@ -98,22 +121,25 @@ function WindowUtil.SavePosition(frame)
         local right = frame:GetRight()
         local top = frame:GetTop()
 
-        if left and bottom then
+        if left and bottom and right and top then
             -- Convert to screen coordinates
             local screenWidth = UIParent:GetWidth()
             local screenHeight = UIParent:GetHeight()
             local scale = frame:GetScale()
 
-            -- Calculate center-based position
-            local centerX = (left + right) / 2 / scale
-            local centerY = (bottom + top) / 2 / scale
+            -- Guard against zero scale
+            if scale and scale > 0 then
+                -- Calculate center-based position
+                local centerX = (left + right) / 2 / scale
+                local centerY = (bottom + top) / 2 / scale
 
-            -- Convert to offset from screen center
-            xOffset = centerX - (screenWidth / 2)
-            yOffset = centerY - (screenHeight / 2)
-            point = "CENTER"
-            relativePoint = "CENTER"
-            relativeTo = nil
+                -- Convert to offset from screen center
+                xOffset = centerX - (screenWidth / 2)
+                yOffset = centerY - (screenHeight / 2)
+                point = "CENTER"
+                relativePoint = "CENTER"
+                relativeTo = nil
+            end
         end
     end
 
@@ -185,6 +211,11 @@ function WindowUtil.ClampToScreen(frame)
     local screenHeight = UIParent:GetHeight()
     local scale = frame:GetScale()
 
+    -- Guard against zero or invalid scale
+    if not scale or scale <= 0 then
+        scale = 1
+    end
+
     -- Check if frame is off-screen
     local offScreen = false
 
@@ -214,12 +245,14 @@ end
 -- @param frame Frame - The frame to scale
 -- @param scale number - Scale value (0.5 - 2.0 typical range)
 function WindowUtil.SetScale(frame, scale)
-    if not frame then
-        return
+    ValidateFrame(frame, "SetScale")
+
+    if type(scale) ~= "number" then
+        error("LoolibWindowUtil.SetScale: scale must be a number", 2)
     end
 
     -- Clamp scale to reasonable values
-    scale = math.max(0.5, math.min(2.0, scale))
+    scale = math_max(0.5, math_min(2.0, scale))
 
     -- Store center position before scaling
     local centerX, centerY = frame:GetCenter()
@@ -254,11 +287,14 @@ end
 -- @param frame Frame - The frame to make draggable
 -- @param dragHandle Frame|nil - Optional drag handle (defaults to frame itself)
 function WindowUtil.MakeDraggable(frame, dragHandle)
-    if not frame then
-        return
-    end
+    ValidateFrame(frame, "MakeDraggable")
 
     dragHandle = dragHandle or frame
+
+    -- Validate drag handle has required methods
+    if not dragHandle.EnableMouse then
+        error("LoolibWindowUtil.MakeDraggable: dragHandle must be a valid frame", 2)
+    end
 
     -- Set up dragging
     frame:SetMovable(true)
@@ -293,9 +329,7 @@ end
 --- Enable Ctrl+MouseWheel scaling with auto-save
 -- @param frame Frame - The frame to enable scaling on
 function WindowUtil.EnableMouseWheelScaling(frame)
-    if not frame then
-        return
-    end
+    ValidateFrame(frame, "EnableMouseWheelScaling")
 
     frame:EnableMouseWheel(true)
 
@@ -321,9 +355,7 @@ end
 -- Useful for click-through overlay frames
 -- @param frame Frame - The frame to modify
 function WindowUtil.EnableMouseOnAlt(frame)
-    if not frame then
-        return
-    end
+    ValidateFrame(frame, "EnableMouseOnAlt")
 
     -- Store whether frame is currently mouse-enabled
     frame.windowAltMode = true
@@ -417,7 +449,7 @@ end
 -- Useful for addon shutdown or profile switching
 function WindowUtil.SaveAllPositions()
     for frame in pairs(registeredFrames) do
-        if frame:IsShown() then
+        if frame.IsShown and frame:IsShown() then
             WindowUtil.SavePosition(frame)
         end
     end

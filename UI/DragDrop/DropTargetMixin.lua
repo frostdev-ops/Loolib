@@ -12,6 +12,12 @@
 
 local Loolib = LibStub("Loolib")
 
+-- Local references to globals
+local type = type
+local error = error
+local next = next
+local select = select
+
 --[[--------------------------------------------------------------------
     LoolibDropTargetMixin
 
@@ -38,15 +44,17 @@ local Loolib = LibStub("Loolib")
 ---@field invalidColor table Invalid drop highlight color {r, g, b, a}
 ---@field acceptedTypes table<string, boolean> Optional type-based filtering
 ---@field _isHovered boolean Internal hover state
----@field _highlightTexture Texture Internal highlight texture
+---@field _highlightTexture Texture? Internal highlight texture
+---@field _dropEnabled boolean Guard flag for HookScript idempotency
 local LoolibDropTargetMixin = {}
 
 --[[--------------------------------------------------------------------
     INITIALIZATION
 ----------------------------------------------------------------------]]
 
---- Initialize the drop target
--- Must be called after frame creation and before use
+--- Initialize the drop target.
+--- Idempotent: safe to call multiple times.
+---@return nil
 function LoolibDropTargetMixin:InitDropTarget()
     -- Public configuration
     self.dropEnabled = false
@@ -64,6 +72,7 @@ function LoolibDropTargetMixin:InitDropTarget()
     -- Internal state
     self._isHovered = false
     self._highlightTexture = nil
+    self._dropEnabled = false
 end
 
 --[[--------------------------------------------------------------------
@@ -71,16 +80,22 @@ end
 ----------------------------------------------------------------------]]
 
 --- Enable or disable drop target functionality
--- When enabled, registers with DragContext to receive drag events
--- When disabled, unregisters from DragContext
--- @param enabled boolean - True to enable drops
--- @return self
+--- When enabled, registers with DragContext to receive drag events.
+--- When disabled, unregisters from DragContext.
+--- DD-03: Uses DragContext:RegisterDropTarget instead of SetScript("OnReceiveDrag")
+--- to avoid overwriting existing handlers.
+---@param enabled boolean True to enable drops
+---@return LoolibDropTargetMixin self
 function LoolibDropTargetMixin:SetDropEnabled(enabled)
+    if type(enabled) ~= "boolean" then
+        error("LoolibDropTargetMixin: SetDropEnabled: 'enabled' must be a boolean", 2)
+    end
+
     self.dropEnabled = enabled
 
-    local DragContext = Loolib:GetModule("DragContext")
+    local DragContext = Loolib:GetModule("DragDrop.DragContext")
     if not DragContext then
-        error("LoolibDropTargetMixin requires DragContext module")
+        error("LoolibDropTargetMixin: SetDropEnabled: DragContext module is required", 2)
     end
 
     if enabled then
@@ -104,13 +119,13 @@ function LoolibDropTargetMixin:SetDropEnabled(enabled)
 end
 
 --- Set custom validator function
--- The validator receives dragData and returns true/false to accept/reject
--- Called before OnDragEnter to determine if drop is valid
--- @param validator function - Function(dragData) -> boolean
--- @return self
+--- The validator receives dragData and returns true/false to accept/reject.
+--- Called before OnDragEnter to determine if drop is valid.
+---@param validator function? Function(dragData) -> boolean
+---@return LoolibDropTargetMixin self
 function LoolibDropTargetMixin:SetDropValidator(validator)
     if validator ~= nil and type(validator) ~= "function" then
-        error("SetDropValidator requires a function or nil")
+        error("LoolibDropTargetMixin: SetDropValidator: 'validator' must be a function or nil", 2)
     end
 
     self.dropValidator = validator
@@ -118,16 +133,20 @@ function LoolibDropTargetMixin:SetDropValidator(validator)
 end
 
 --- Set drop priority for overlapping targets
--- Higher priority targets are checked first when multiple targets overlap
--- Useful for nested frames where child should receive drop instead of parent
--- @param priority number - Priority value (default 0)
--- @return self
+--- Higher priority targets are checked first when multiple targets overlap.
+--- Useful for nested frames where child should receive drop instead of parent.
+---@param priority number Priority value (default 0)
+---@return LoolibDropTargetMixin self
 function LoolibDropTargetMixin:SetDropPriority(priority)
+    if type(priority) ~= "number" then
+        error("LoolibDropTargetMixin: SetDropPriority: 'priority' must be a number", 2)
+    end
+
     self.dropPriority = priority
 
     -- Re-register with new priority if currently enabled
     if self.dropEnabled then
-        local DragContext = Loolib:GetModule("DragContext")
+        local DragContext = Loolib:GetModule("DragDrop.DragContext")
         if DragContext then
             DragContext:RegisterDropTarget(self, function(dragData)
                 return self:_ValidateDrop(dragData)
@@ -139,9 +158,9 @@ function LoolibDropTargetMixin:SetDropPriority(priority)
 end
 
 --- Enable/disable hover highlight effect
--- When enabled, shows colored overlay when dragged item hovers
--- @param enabled boolean - True to show highlights
--- @return self
+--- When enabled, shows colored overlay when dragged item hovers.
+---@param enabled boolean True to show highlights
+---@return LoolibDropTargetMixin self
 function LoolibDropTargetMixin:SetHighlightOnHover(enabled)
     self.highlightOnHover = enabled
 
@@ -154,9 +173,9 @@ function LoolibDropTargetMixin:SetHighlightOnHover(enabled)
 end
 
 --- Set highlight colors for valid and invalid drops
--- @param validColor table - {r, g, b, a} for valid drops (green by default)
--- @param invalidColor table? - {r, g, b, a} for invalid drops (red by default)
--- @return self
+---@param validColor table? {r, g, b, a} for valid drops (green by default)
+---@param invalidColor table? {r, g, b, a} for invalid drops (red by default)
+---@return LoolibDropTargetMixin self
 function LoolibDropTargetMixin:SetHighlightColors(validColor, invalidColor)
     if validColor then
         self.highlightColor = validColor
@@ -168,14 +187,17 @@ function LoolibDropTargetMixin:SetHighlightColors(validColor, invalidColor)
 end
 
 --- Set accepted drag data types (for type-based filtering)
--- If types are specified, only dragData with matching type will be accepted
--- Leave empty to accept all types
--- @param ... string - Type names to accept
--- @return self
+--- If types are specified, only dragData with matching type will be accepted.
+--- Leave empty to accept all types.
+---@param ... string Type names to accept
+---@return LoolibDropTargetMixin self
 function LoolibDropTargetMixin:SetAcceptedTypes(...)
     self.acceptedTypes = {}
     for i = 1, select("#", ...) do
         local typeName = select(i, ...)
+        if type(typeName) ~= "string" then
+            error("LoolibDropTargetMixin: SetAcceptedTypes: all arguments must be strings", 2)
+        end
         self.acceptedTypes[typeName] = true
     end
     return self
@@ -185,10 +207,10 @@ end
     INTERNAL VALIDATION
 ----------------------------------------------------------------------]]
 
---- Internal validation logic
--- Checks enabled state, type filtering, and custom validator
--- @param dragData any - The data being dragged
--- @return boolean - True if drop is valid
+--- Internal validation logic -- INTERNAL
+--- Checks enabled state, type filtering, and custom validator.
+---@param dragData any The data being dragged
+---@return boolean valid True if drop is valid
 function LoolibDropTargetMixin:_ValidateDrop(dragData)
     -- Check if drop is enabled
     if not self.dropEnabled then
@@ -216,9 +238,9 @@ end
     VISUAL FEEDBACK
 ----------------------------------------------------------------------]]
 
---- Create or get the highlight texture
--- Lazy creation on first use
--- @return Texture
+--- Create or get the highlight texture -- INTERNAL
+--- Lazy creation on first use.
+---@return Texture
 function LoolibDropTargetMixin:_CreateHighlight()
     if self._highlightTexture then
         return self._highlightTexture
@@ -234,8 +256,8 @@ function LoolibDropTargetMixin:_CreateHighlight()
     return highlight
 end
 
---- Show highlight overlay
--- @param isValid boolean - True for valid drop color, false for invalid
+--- Show highlight overlay -- INTERNAL
+---@param isValid boolean True for valid drop color, false for invalid
 function LoolibDropTargetMixin:_ShowHighlight(isValid)
     if not self.highlightOnHover then
         return
@@ -247,7 +269,7 @@ function LoolibDropTargetMixin:_ShowHighlight(isValid)
     highlight:Show()
 end
 
---- Hide highlight overlay
+--- Hide highlight overlay -- INTERNAL
 function LoolibDropTargetMixin:_HideHighlight()
     if self._highlightTexture then
         self._highlightTexture:Hide()
@@ -262,8 +284,9 @@ end
 ----------------------------------------------------------------------]]
 
 --- Called when a dragged item enters this target
--- Shows highlight and calls custom OnDropTargetEnter if defined
--- @param dragData any - The data being dragged
+--- Shows highlight and calls custom OnDropTargetEnter if defined.
+---@param dragData any The data being dragged
+---@return nil
 function LoolibDropTargetMixin:OnDragEnter(dragData)
     self._isHovered = true
 
@@ -278,8 +301,9 @@ function LoolibDropTargetMixin:OnDragEnter(dragData)
 end
 
 --- Called when a dragged item leaves this target
--- Hides highlight and calls custom OnDropTargetLeave if defined
--- @param dragData any - The data being dragged
+--- Hides highlight and calls custom OnDropTargetLeave if defined.
+---@param dragData any The data being dragged
+---@return nil
 function LoolibDropTargetMixin:OnDragLeave(dragData)
     self._isHovered = false
     self:_HideHighlight()
@@ -291,10 +315,10 @@ function LoolibDropTargetMixin:OnDragLeave(dragData)
 end
 
 --- Called when an item is dropped on this target
--- Validates drop, hides highlight, and calls custom OnDropReceived if defined
--- @param dragData any - The dropped data
--- @param sourceFrame Frame - The frame that was dragged
--- @return boolean - True if drop was accepted
+--- Validates drop, hides highlight, and calls custom OnDropReceived if defined.
+---@param dragData any The dropped data
+---@param sourceFrame Frame The frame that was dragged
+---@return boolean accepted True if drop was accepted
 function LoolibDropTargetMixin:OnDrop(dragData, sourceFrame)
     self:_HideHighlight()
     self._isHovered = false
@@ -319,22 +343,37 @@ end
 ----------------------------------------------------------------------]]
 
 --- Check if this frame is a drop target
--- @return boolean
+---@return boolean
 function LoolibDropTargetMixin:IsDropTarget()
     return self.dropEnabled
 end
 
 --- Check if a dragged item is currently hovering
--- @return boolean
+---@return boolean
 function LoolibDropTargetMixin:IsHoveredByDrag()
     return self._isHovered
 end
 
 --- Check if this target can accept specific drag data
--- @param dragData any - The data to test
--- @return boolean
+---@param dragData any The data to test
+---@return boolean
 function LoolibDropTargetMixin:CanAcceptDrop(dragData)
     return self:_ValidateDrop(dragData)
+end
+
+--[[--------------------------------------------------------------------
+    CLEANUP
+----------------------------------------------------------------------]]
+
+--- Disable drop target and unregister from DragContext.
+--- Call this when the frame is being destroyed or permanently hidden.
+---@return nil
+function LoolibDropTargetMixin:DestroyDropTarget()
+    if self.dropEnabled then
+        self:SetDropEnabled(false)
+    end
+    self._isHovered = false
+    self._highlightTexture = nil
 end
 
 --[[--------------------------------------------------------------------

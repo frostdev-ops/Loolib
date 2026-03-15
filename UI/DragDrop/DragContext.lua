@@ -6,6 +6,10 @@
     drag state, registered drop targets, and coordinates between draggable
     frames and drop zones.
 
+    Design constraint: Only one drag operation may be active at a time.
+    Attempting to start a second drag while one is in progress will cancel
+    the first. This is enforced by assertion in StartDrag.
+
     Usage:
         -- Register a drop target
         LoolibDragContext:RegisterDropTarget(frame, function(dragData)
@@ -32,15 +36,15 @@ local Loolib = LibStub("Loolib")
 local LoolibCreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required for DragContext")
 local LoolibCallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib.CallbackRegistryMixin is required for DragContext")
 
--- Verify dependencies are loaded
-assert(LoolibCreateFromMixins, "Loolib/Core/Mixin.lua must be loaded before DragContext")
-assert(LoolibCallbackRegistryMixin, "Loolib/Events/CallbackRegistry.lua must be loaded before DragContext")
-
---[[--------------------------------------------------------------------
-    LoolibDragContextClass
-
-    Singleton that manages global drag-and-drop state
-----------------------------------------------------------------------]]
+-- Local references to globals
+local type = type
+local error = error
+local pairs = pairs
+local pcall = pcall
+local ipairs = ipairs
+local table_insert = table.insert
+local table_sort = table.sort
+local math_sqrt = math.sqrt
 
 ---@diagnostic disable: undefined-field, undefined-doc-name
 
@@ -59,6 +63,7 @@ assert(LoolibCallbackRegistryMixin, "Loolib/Events/CallbackRegistry.lua must be 
 ---@field startY number
 ---@field updateFrame Frame?
 ---@field callbacks LoolibCallbackRegistryMixin
+---@field _initialized boolean
 local LoolibDragContext = {}
 
 --[[--------------------------------------------------------------------
@@ -66,7 +71,13 @@ local LoolibDragContext = {}
 ----------------------------------------------------------------------]]
 
 --- Initialize the singleton state
+--- Idempotent: safe to call multiple times.
+---@return nil
 function LoolibDragContext:Initialize()
+    if self._initialized then
+        return
+    end
+
     self.isDragging = false
     self.dragData = nil
     self.sourceFrame = nil
@@ -87,6 +98,8 @@ function LoolibDragContext:Initialize()
         "OnDropTargetEnter", -- (targetFrame, dragData)
         "OnDropTargetLeave", -- (targetFrame, dragData)
     })
+
+    self._initialized = true
 end
 
 --[[--------------------------------------------------------------------
@@ -94,12 +107,19 @@ end
 ----------------------------------------------------------------------]]
 
 --- Register a frame as a valid drop target
--- @param frame Frame - The frame that can receive drops
--- @param validator function? - Optional function(dragData) -> boolean to validate drops
--- @param priority number? - Higher priority targets are checked first (default 0)
+---@param frame Frame The frame that can receive drops
+---@param validator function? Optional function(dragData) -> boolean to validate drops
+---@param priority number? Higher priority targets are checked first (default 0)
+---@return nil
 function LoolibDragContext:RegisterDropTarget(frame, validator, priority)
     if type(frame) ~= "table" or not frame.GetObjectType then
-        error("LoolibDragContext:RegisterDropTarget 'frame' must be a Frame object", 2)
+        error("LoolibDragContext: RegisterDropTarget: 'frame' must be a Frame object", 2)
+    end
+    if validator ~= nil and type(validator) ~= "function" then
+        error("LoolibDragContext: RegisterDropTarget: 'validator' must be a function or nil", 2)
+    end
+    if priority ~= nil and type(priority) ~= "number" then
+        error("LoolibDragContext: RegisterDropTarget: 'priority' must be a number or nil", 2)
     end
 
     self.dropTargets[frame] = {
@@ -109,7 +129,8 @@ function LoolibDragContext:RegisterDropTarget(frame, validator, priority)
 end
 
 --- Unregister a drop target
--- @param frame Frame - The frame to unregister
+---@param frame Frame The frame to unregister
+---@return nil
 function LoolibDragContext:UnregisterDropTarget(frame)
     self.dropTargets[frame] = nil
 
@@ -126,8 +147,8 @@ function LoolibDragContext:UnregisterDropTarget(frame)
 end
 
 --- Check if a frame is a registered drop target
--- @param frame Frame
--- @return boolean
+---@param frame Frame
+---@return boolean
 function LoolibDragContext:IsDropTarget(frame)
     return self.dropTargets[frame] ~= nil
 end
@@ -137,15 +158,18 @@ end
 ----------------------------------------------------------------------]]
 
 --- Start a drag operation
--- @param sourceFrame Frame - The frame being dragged
--- @param dragData any - Data to transfer on drop
--- @param ghostFrame Frame? - Optional ghost/preview frame to show at cursor
+--- Only one drag may be active at a time (DD-04). If a drag is already in
+--- progress, it is cancelled before starting the new one.
+---@param sourceFrame Frame The frame being dragged
+---@param dragData any Data to transfer on drop
+---@param ghostFrame Frame? Optional ghost/preview frame to show at cursor
+---@return nil
 function LoolibDragContext:StartDrag(sourceFrame, dragData, ghostFrame)
     if type(sourceFrame) ~= "table" or not sourceFrame.GetObjectType then
-        error("LoolibDragContext:StartDrag 'sourceFrame' must be a Frame object", 2)
+        error("LoolibDragContext: StartDrag: 'sourceFrame' must be a Frame object", 2)
     end
 
-    -- Cancel any existing drag
+    -- DD-04: Single-drag constraint. Cancel any existing drag first.
     if self.isDragging then
         self:CancelDrag()
     end
@@ -171,17 +195,17 @@ function LoolibDragContext:StartDrag(sourceFrame, dragData, ghostFrame)
     end
 
     -- Start update loop to track cursor and detect targets
-    self:StartUpdateLoop()
+    self:_StartUpdateLoop()
 
     -- Fire drag start event
     self.callbacks:TriggerEvent("OnDragStart", sourceFrame, dragData)
 end
 
---- Update drag position and detect hovered targets
--- Called every frame during drag operation
--- @param x number - Cursor X position (scaled)
--- @param y number - Cursor Y position (scaled)
-function LoolibDragContext:UpdateDrag(x, y)
+--- Update drag position and detect hovered targets -- INTERNAL
+--- Called every frame during drag operation.
+---@param x number Cursor X position (scaled)
+---@param y number Cursor Y position (scaled)
+function LoolibDragContext:_UpdateDrag(x, y)
     if not self.isDragging then return end
 
     -- Update ghost frame position
@@ -191,7 +215,7 @@ function LoolibDragContext:UpdateDrag(x, y)
     end
 
     -- Find which drop target (if any) is hovered
-    local newTarget = self:GetHoveredTarget(x, y)
+    local newTarget = self:_GetHoveredTarget(x, y)
 
     -- Handle target enter/leave transitions
     if newTarget ~= self.hoveredTarget then
@@ -222,40 +246,50 @@ function LoolibDragContext:UpdateDrag(x, y)
 end
 
 --- End drag operation (drop or release)
--- @param cancelled boolean? - If true, treated as cancel not drop
--- @return boolean - Whether drop was successful
+--- DD-07: Cleanup is wrapped in pcall to guarantee ghost hide and state reset
+--- even if a callback errors.
+---@param cancelled boolean? If true, treated as cancel not drop
+---@return boolean success Whether drop was successful
 function LoolibDragContext:EndDrag(cancelled)
     if not self.isDragging then return false end
 
     local success = false
     local target = self.hoveredTarget
 
-    if cancelled then
-        -- Fire cancel event
-        self.callbacks:TriggerEvent("OnDragCancel", self.sourceFrame, self.dragData)
-    else
-        -- Attempt drop on hovered target
-        if target then
-            local targetInfo = self.dropTargets[target]
-            if targetInfo and targetInfo.validator(self.dragData) then
-                -- Call frame's OnDrop handler if it exists
-                if target.OnDrop then
-                    target:OnDrop(self.dragData, self.sourceFrame)
+    -- DD-07: pcall the callback/event phase so cleanup always runs
+    local ok, err = pcall(function()
+        if cancelled then
+            -- Fire cancel event
+            self.callbacks:TriggerEvent("OnDragCancel", self.sourceFrame, self.dragData)
+        else
+            -- Attempt drop on hovered target
+            if target then
+                local targetInfo = self.dropTargets[target]
+                if targetInfo and targetInfo.validator(self.dragData) then
+                    -- Call frame's OnDrop handler if it exists
+                    if target.OnDrop then
+                        target:OnDrop(self.dragData, self.sourceFrame)
+                    end
+                    success = true
                 end
-                success = true
             end
+
+            -- Fire end event
+            self.callbacks:TriggerEvent("OnDragEnd", target, self.dragData, success)
         end
+    end)
 
-        -- Fire end event
-        self.callbacks:TriggerEvent("OnDragEnd", target, self.dragData, success)
-    end
-
-    -- Stop update loop
-    self:StopUpdateLoop()
+    -- Guaranteed cleanup regardless of callback errors
+    self:_StopUpdateLoop()
 
     -- Hide ghost frame
     if self.ghostFrame then
         self.ghostFrame:Hide()
+    end
+
+    -- Reset cursor if WoW API available
+    if ResetCursor then
+        ResetCursor()
     end
 
     -- Reset state
@@ -265,10 +299,16 @@ function LoolibDragContext:EndDrag(cancelled)
     self.ghostFrame = nil
     self.hoveredTarget = nil
 
+    -- Re-raise callback error after cleanup
+    if not ok then
+        error("LoolibDragContext: EndDrag: callback error: " .. tostring(err), 2)
+    end
+
     return success
 end
 
 --- Cancel current drag operation
+---@return nil
 function LoolibDragContext:CancelDrag()
     self:EndDrag(true)
 end
@@ -277,22 +317,22 @@ end
     TARGET DETECTION
 ----------------------------------------------------------------------]]
 
---- Find the drop target under cursor position
--- Sorts by priority (higher first) and returns the first valid target
--- @param x number - Cursor X position
--- @param y number - Cursor Y position
--- @return Frame? - The highest priority valid target under cursor
-function LoolibDragContext:GetHoveredTarget(_, _)
+--- Find the drop target under cursor position -- INTERNAL
+--- Sorts by priority (higher first) and returns the first valid target.
+---@param x number Cursor X position
+---@param y number Cursor Y position
+---@return Frame? target The highest priority valid target under cursor
+function LoolibDragContext:_GetHoveredTarget(x, y) -- luacheck: ignore 212
     -- Collect all visible targets that are under the cursor
     local sortedTargets = {}
     for frame, info in pairs(self.dropTargets) do
         if frame:IsVisible() and frame:IsMouseOver() then
-            table.insert(sortedTargets, {frame = frame, info = info})
+            table_insert(sortedTargets, {frame = frame, info = info})
         end
     end
 
     -- Sort by priority (higher first)
-    table.sort(sortedTargets, function(a, b)
+    table_sort(sortedTargets, function(a, b)
         return a.info.priority > b.info.priority
     end)
 
@@ -310,8 +350,8 @@ end
     UPDATE LOOP
 ----------------------------------------------------------------------]]
 
---- Start the OnUpdate loop for tracking cursor during drag
-function LoolibDragContext:StartUpdateLoop()
+--- Start the OnUpdate loop for tracking cursor during drag -- INTERNAL
+function LoolibDragContext:_StartUpdateLoop()
     -- Create update frame if needed
     if not self.updateFrame then
         self.updateFrame = CreateFrame("Frame")
@@ -323,7 +363,7 @@ function LoolibDragContext:StartUpdateLoop()
             -- Get cursor position (scaled)
             local x, y = GetCursorPosition()
             local scale = UIParent:GetEffectiveScale()
-            self:UpdateDrag(x / scale, y / scale)
+            self:_UpdateDrag(x / scale, y / scale)
 
             -- Right-click to cancel (standard UX pattern)
             if IsMouseButtonDown("RightButton") then
@@ -333,8 +373,8 @@ function LoolibDragContext:StartUpdateLoop()
     end)
 end
 
---- Stop the OnUpdate loop
-function LoolibDragContext:StopUpdateLoop()
+--- Stop the OnUpdate loop -- INTERNAL
+function LoolibDragContext:_StopUpdateLoop()
     if self.updateFrame then
         self.updateFrame:SetScript("OnUpdate", nil)
     end
@@ -345,24 +385,31 @@ end
 ----------------------------------------------------------------------]]
 
 --- Register a callback for drag events
--- @param event string - Event name (OnDragStart, OnDragEnd, etc.)
--- @param callback function - Callback function
--- @param owner any - Owner for unregistration
--- @return any - Owner (for later unregistration)
+---@param event string Event name (OnDragStart, OnDragEnd, etc.)
+---@param callback function Callback function
+---@param owner any Owner for unregistration
+---@return any owner Owner (for later unregistration)
 function LoolibDragContext:RegisterCallback(event, callback, owner)
+    if type(event) ~= "string" then
+        error("LoolibDragContext: RegisterCallback: 'event' must be a string", 2)
+    end
+    if type(callback) ~= "function" then
+        error("LoolibDragContext: RegisterCallback: 'callback' must be a function", 2)
+    end
     return self.callbacks:RegisterCallback(event, callback, owner)
 end
 
 --- Unregister a callback
--- @param event string - Event name
--- @param owner any - Owner that registered the callback
--- @return boolean - True if a callback was removed
+---@param event string Event name
+---@param owner any Owner that registered the callback
+---@return boolean removed True if a callback was removed
 function LoolibDragContext:UnregisterCallback(event, owner)
     return self.callbacks:UnregisterCallback(event, owner)
 end
 
 --- Unregister all callbacks for an owner
--- @param owner any - Owner to unregister
+---@param owner any Owner to unregister
+---@return nil
 function LoolibDragContext:UnregisterAllCallbacks(owner)
     return self.callbacks:UnregisterAllCallbacks(owner)
 end
@@ -372,37 +419,38 @@ end
 ----------------------------------------------------------------------]]
 
 --- Check if a drag operation is currently in progress
--- @return boolean
+---@return boolean
 function LoolibDragContext:IsDragging()
     return self.isDragging
 end
 
 --- Get the data being dragged
--- @return any - The drag data, or nil if not dragging
+---@return any dragData The drag data, or nil if not dragging
 function LoolibDragContext:GetDragData()
     return self.dragData
 end
 
 --- Get the source frame being dragged
--- @return Frame? - The source frame, or nil if not dragging
+---@return Frame? sourceFrame The source frame, or nil if not dragging
 function LoolibDragContext:GetSourceFrame()
     return self.sourceFrame
 end
 
 --- Get the currently hovered drop target
--- @return Frame? - The hovered target, or nil if none
+---@return Frame? hoveredTarget The hovered target, or nil if none
 function LoolibDragContext:GetHoveredDropTarget()
     return self.hoveredTarget
 end
 
 --- Get the starting cursor position when drag began
--- @return number, number - startX, startY (or 0, 0 if not dragging)
+---@return number startX
+---@return number startY
 function LoolibDragContext:GetStartPosition()
     return self.startX, self.startY
 end
 
 --- Get the distance the cursor has moved since drag started
--- @return number - Distance in pixels (or 0 if not dragging)
+---@return number distance Distance in pixels (or 0 if not dragging)
 function LoolibDragContext:GetDragDistance()
     if not self.isDragging then return 0 end
 
@@ -414,7 +462,7 @@ function LoolibDragContext:GetDragDistance()
     local dx = currentX - self.startX
     local dy = currentY - self.startY
 
-    return math.sqrt(dx * dx + dy * dy)
+    return math_sqrt(dx * dx + dy * dy)
 end
 
 --[[--------------------------------------------------------------------

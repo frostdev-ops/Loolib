@@ -385,6 +385,15 @@ Both widgets use WoW's native `ColorPickerFrame` for advanced color picking. The
 - Opacity slider (if `hasAlpha = true`)
 - Accept/Cancel buttons
 
+**API Compatibility (TP-04):** `OpenColorPicker()` detects the available API at runtime:
+1. Prefers `ColorPickerFrame:SetupColorPickerAndShow(info)` (WoW 10.0+ / modern Retail API)
+2. Falls back to the classic `OpenColorPicker(info)` global if the modern method is absent
+3. Logs an error via `Loolib:Error()` if neither API exists
+
+### Color Validation
+
+`SetColor()` coerces inputs to numbers and clamps values to the 0-1 range, preventing arithmetic errors from invalid or out-of-range inputs.
+
 ### Color Format
 
 All color values use WoW's standard format:

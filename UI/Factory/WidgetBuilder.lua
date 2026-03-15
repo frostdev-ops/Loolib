@@ -25,6 +25,17 @@ local ThemeManager = assert(Loolib.ThemeManager, "Loolib.ThemeManager is require
 local Factory = Loolib.Factory or Loolib:GetOrCreateModule("Factory")
 local WidgetBuilderModule = Factory.WidgetBuilder or Loolib:GetModule("Factory.WidgetBuilder") or {}
 
+-- Cache globals
+local error = error
+local ipairs = ipairs
+local pairs = pairs
+local select = select
+local type = type
+local unpack = unpack
+
+-- Cache WoW globals
+local CreateFrame = CreateFrame
+
 --[[--------------------------------------------------------------------
     LoolibWidgetBuilderMixin
 
@@ -36,6 +47,9 @@ local WidgetBuilderMixin = WidgetBuilderModule.Mixin or {}
 --- Initialize the widget builder
 -- @param parent Frame - Parent frame for the widget
 function WidgetBuilderMixin:Init(parent)
+    if parent == nil then
+        error("LoolibWidgetBuilder: Init: parent frame must not be nil", 2)
+    end
     self.parent = parent
     self.frameType = "Frame"
     self.template = nil
@@ -137,6 +151,12 @@ end
 -- @param height number - Height in pixels (defaults to width if not specified)
 -- @return self
 function WidgetBuilderMixin:Size(width, height)
+    if type(width) ~= "number" then
+        error("LoolibWidgetBuilder: Size: width must be a number", 2)
+    end
+    if height ~= nil and type(height) ~= "number" then
+        error("LoolibWidgetBuilder: Size: height must be a number or nil", 2)
+    end
     self.width = width
     self.height = height or width
     return self
@@ -146,6 +166,9 @@ end
 -- @param width number - Width in pixels
 -- @return self
 function WidgetBuilderMixin:Width(width)
+    if type(width) ~= "number" then
+        error("LoolibWidgetBuilder: Width: width must be a number", 2)
+    end
     self.width = width
     return self
 end
@@ -154,6 +177,9 @@ end
 -- @param height number - Height in pixels
 -- @return self
 function WidgetBuilderMixin:Height(height)
+    if type(height) ~= "number" then
+        error("LoolibWidgetBuilder: Height: height must be a number", 2)
+    end
     self.height = height
     return self
 end
@@ -166,6 +192,10 @@ end
 -- @param offsetY number - Y offset
 -- @return self
 function WidgetBuilderMixin:Point(point, relativeTo, relativePoint, offsetX, offsetY)
+    if type(point) ~= "string" then
+        error("LoolibWidgetBuilder: Point: point must be a string", 2)
+    end
+
     -- Handle simplified syntax: Point("CENTER") or Point("TOPLEFT", 10, -10)
     if type(relativeTo) == "number" then
         offsetY = relativePoint
@@ -457,10 +487,18 @@ end
     Event Handlers
 ----------------------------------------------------------------------]]
 
+--- Validate a script handler argument -- INTERNAL
+local function ValidateHandler(handler, methodName)
+    if type(handler) ~= "function" then
+        error("LoolibWidgetBuilder: " .. methodName .. ": handler must be a function", 3)
+    end
+end
+
 --- Set OnClick handler
 -- @param handler function - Click handler
 -- @return self
 function WidgetBuilderMixin:OnClick(handler)
+    ValidateHandler(handler, "OnClick")
     self.scripts.OnClick = handler
     return self
 end
@@ -469,6 +507,7 @@ end
 -- @param handler function - Enter handler
 -- @return self
 function WidgetBuilderMixin:OnEnter(handler)
+    ValidateHandler(handler, "OnEnter")
     self.scripts.OnEnter = handler
     return self
 end
@@ -477,6 +516,7 @@ end
 -- @param handler function - Leave handler
 -- @return self
 function WidgetBuilderMixin:OnLeave(handler)
+    ValidateHandler(handler, "OnLeave")
     self.scripts.OnLeave = handler
     return self
 end
@@ -485,6 +525,7 @@ end
 -- @param handler function - Show handler
 -- @return self
 function WidgetBuilderMixin:OnShow(handler)
+    ValidateHandler(handler, "OnShow")
     self.scripts.OnShow = handler
     return self
 end
@@ -493,6 +534,7 @@ end
 -- @param handler function - Hide handler
 -- @return self
 function WidgetBuilderMixin:OnHide(handler)
+    ValidateHandler(handler, "OnHide")
     self.scripts.OnHide = handler
     return self
 end
@@ -501,6 +543,7 @@ end
 -- @param handler function - Update handler
 -- @return self
 function WidgetBuilderMixin:OnUpdate(handler)
+    ValidateHandler(handler, "OnUpdate")
     self.scripts.OnUpdate = handler
     return self
 end
@@ -509,6 +552,7 @@ end
 -- @param handler function - Value changed handler
 -- @return self
 function WidgetBuilderMixin:OnValueChanged(handler)
+    ValidateHandler(handler, "OnValueChanged")
     self.scripts.OnValueChanged = handler
     return self
 end
@@ -517,6 +561,7 @@ end
 -- @param handler function - Text changed handler
 -- @return self
 function WidgetBuilderMixin:OnTextChanged(handler)
+    ValidateHandler(handler, "OnTextChanged")
     self.scripts.OnTextChanged = handler
     return self
 end
@@ -525,6 +570,7 @@ end
 -- @param handler function - Enter pressed handler
 -- @return self
 function WidgetBuilderMixin:OnEnterPressed(handler)
+    ValidateHandler(handler, "OnEnterPressed")
     self.scripts.OnEnterPressed = handler
     return self
 end
@@ -533,6 +579,7 @@ end
 -- @param handler function - Escape pressed handler
 -- @return self
 function WidgetBuilderMixin:OnEscapePressed(handler)
+    ValidateHandler(handler, "OnEscapePressed")
     self.scripts.OnEscapePressed = handler
     return self
 end
@@ -541,6 +588,7 @@ end
 -- @param handler function - Mouse down handler
 -- @return self
 function WidgetBuilderMixin:OnMouseDown(handler)
+    ValidateHandler(handler, "OnMouseDown")
     self.scripts.OnMouseDown = handler
     return self
 end
@@ -549,6 +597,7 @@ end
 -- @param handler function - Mouse up handler
 -- @return self
 function WidgetBuilderMixin:OnMouseUp(handler)
+    ValidateHandler(handler, "OnMouseUp")
     self.scripts.OnMouseUp = handler
     return self
 end
@@ -557,6 +606,7 @@ end
 -- @param handler function - Mouse wheel handler
 -- @return self
 function WidgetBuilderMixin:OnMouseWheel(handler)
+    ValidateHandler(handler, "OnMouseWheel")
     self.scripts.OnMouseWheel = handler
     self.properties.enableMouseWheel = true
     return self
@@ -566,6 +616,7 @@ end
 -- @param handler function - Drag start handler
 -- @return self
 function WidgetBuilderMixin:OnDragStart(handler)
+    ValidateHandler(handler, "OnDragStart")
     self.scripts.OnDragStart = handler
     return self
 end
@@ -574,6 +625,7 @@ end
 -- @param handler function - Drag stop handler
 -- @return self
 function WidgetBuilderMixin:OnDragStop(handler)
+    ValidateHandler(handler, "OnDragStop")
     self.scripts.OnDragStop = handler
     return self
 end
@@ -583,11 +635,19 @@ end
 ----------------------------------------------------------------------]]
 
 --- Apply mixins to the frame
--- @param ... - Mixins to apply
+-- @param ... - Mixins to apply (each must be a table)
 -- @return self
 function WidgetBuilderMixin:Mixin(...)
-    for i = 1, select("#", ...) do
-        self.mixins[#self.mixins + 1] = select(i, ...)
+    local count = select("#", ...)
+    if count == 0 then
+        error("LoolibWidgetBuilder: Mixin: at least one mixin table must be provided", 2)
+    end
+    for i = 1, count do
+        local m = select(i, ...)
+        if type(m) ~= "table" then
+            error("LoolibWidgetBuilder: Mixin: argument " .. i .. " must be a table", 2)
+        end
+        self.mixins[#self.mixins + 1] = m
     end
     return self
 end
@@ -596,6 +656,9 @@ end
 -- @param template string - Template name
 -- @return self
 function WidgetBuilderMixin:Template(template)
+    if type(template) ~= "string" or template == "" then
+        error("LoolibWidgetBuilder: Template: template must be a non-empty string", 2)
+    end
     self.template = template
     return self
 end
@@ -604,14 +667,20 @@ end
 -- @param name string - Global frame name
 -- @return self
 function WidgetBuilderMixin:Name(name)
+    if type(name) ~= "string" or name == "" then
+        error("LoolibWidgetBuilder: Name: name must be a non-empty string", 2)
+    end
     self.name = name
     return self
 end
 
 --- Use object pooling
--- @param resetFunc function - Reset function for pool
+-- @param resetFunc function - Optional reset function for pool
 -- @return self
 function WidgetBuilderMixin:Pooled(resetFunc)
+    if resetFunc ~= nil and type(resetFunc) ~= "function" then
+        error("LoolibWidgetBuilder: Pooled: resetFunc must be a function or nil", 2)
+    end
     self.pooled = true
     self.resetFunc = resetFunc
     return self
@@ -630,6 +699,9 @@ end
 -- @param value any - Property value
 -- @return self
 function WidgetBuilderMixin:Set(key, value)
+    if type(key) ~= "string" or key == "" then
+        error("LoolibWidgetBuilder: Set: key must be a non-empty string", 2)
+    end
     self.properties[key] = value
     return self
 end
@@ -701,10 +773,10 @@ function WidgetBuilderMixin:Build()
     -- Apply properties
     self:ApplyProperties(frame)
 
-    -- Apply scripts
+    -- Apply scripts (FA-02 fix: use HookScript to preserve template scripts)
     for scriptName, handler in pairs(self.scripts) do
         if frame:HasScript(scriptName) then
-            frame:SetScript(scriptName, handler)
+            frame:HookScript(scriptName, handler)
         end
     end
 
@@ -735,6 +807,7 @@ end
     Internal: Apply Properties
 ----------------------------------------------------------------------]]
 
+--- Apply all accumulated properties to the built frame -- INTERNAL
 function WidgetBuilderMixin:ApplyProperties(frame)
     local props = self.properties
 
@@ -809,6 +882,11 @@ function WidgetBuilderMixin:ApplyProperties(frame)
     end
 end
 
+--- Apply button-specific properties to a frame -- INTERNAL
+-- NOTE (FA-05): FontString is created on the "OVERLAY" draw layer. If this
+-- button is placed inside a scroll child, the text will not clip to the scroll
+-- region because OVERLAY is drawn above the scroll mask. Use a template-based
+-- button or manually set the layer to work around this limitation.
 function WidgetBuilderMixin:ApplyButtonProperties(frame)
     local props = self.properties
 
@@ -835,6 +913,7 @@ function WidgetBuilderMixin:ApplyButtonProperties(frame)
     end
 end
 
+--- Apply editbox-specific properties to a frame -- INTERNAL
 function WidgetBuilderMixin:ApplyEditBoxProperties(frame)
     local props = self.properties
 
@@ -871,6 +950,7 @@ function WidgetBuilderMixin:ApplyEditBoxProperties(frame)
     end
 end
 
+--- Apply slider-specific properties to a frame -- INTERNAL
 function WidgetBuilderMixin:ApplySliderProperties(frame)
     local props = self.properties
 
@@ -884,6 +964,7 @@ function WidgetBuilderMixin:ApplySliderProperties(frame)
     end
 end
 
+--- Apply status-bar-specific properties to a frame -- INTERNAL
 function WidgetBuilderMixin:ApplyStatusBarProperties(frame)
     local props = self.properties
 
@@ -898,6 +979,11 @@ function WidgetBuilderMixin:ApplyStatusBarProperties(frame)
     end
 end
 
+--- Apply check-button-specific properties to a frame -- INTERNAL
+-- NOTE (FA-05): FontString is created on the "OVERLAY" draw layer. If this
+-- check button is placed inside a scroll child, the label text will not clip
+-- to the scroll region. Use a template-based check button or manually set
+-- the layer to work around this limitation.
 function WidgetBuilderMixin:ApplyCheckButtonProperties(frame)
     local props = self.properties
 
@@ -922,6 +1008,9 @@ end
 -- @param parent Frame - Parent frame
 -- @return LoolibWidgetBuilderMixin - A new builder instance
 local function CreateWidgetBuilder(parent)
+    if parent == nil then
+        error("LoolibWidgetBuilder: CreateWidgetBuilder: parent frame must not be nil", 2)
+    end
     local builder = CreateFromMixins(WidgetBuilderMixin)
     builder:Init(parent)
     return builder

@@ -26,6 +26,16 @@ local LOOLIB_VERSION = 1
 local Loolib = LibStub and LibStub("Loolib", true)
 if not Loolib then return end
 
+-- Cached globals
+local type = type
+local error = error
+local pairs = pairs
+local ipairs = ipairs
+local math_max = math.max
+local math_min = math.min
+local math_abs = math.abs
+local string_gsub = string.gsub
+
 -------------------------------------------------------------------------------
 -- LoolibCanvasTextMixin
 -------------------------------------------------------------------------------
@@ -161,6 +171,13 @@ end
 -------------------------------------------------------------------------------
 function LoolibCanvasTextMixin:AddText(x, y, text, size, color, group)
 	if not text or text == "" then return nil end
+	if type(x) ~= "number" or type(y) ~= "number" then
+		error("LoolibCanvasText: AddText: x and y must be numbers", 2)
+	end
+
+	-- CV-13: Escape WoW markup pipe characters to prevent
+	-- user text with |c or |T being interpreted as color/texture codes
+	text = string_gsub(text, "|", "||")
 
 	local index = #self._text_X + 1
 
@@ -506,6 +523,13 @@ end
 -------------------------------------------------------------------------------
 -- Module Registration
 -------------------------------------------------------------------------------
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasText", {
+	Mixin = LoolibCanvasTextMixin,
+	Create = LoolibCreateCanvasText,
+})
+
+-- Backward-compat alias
 Loolib:RegisterModule("CanvasText", {
 	Mixin = LoolibCanvasTextMixin,
 	Create = LoolibCreateCanvasText,

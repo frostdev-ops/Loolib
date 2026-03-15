@@ -6,9 +6,25 @@
     deleting, moving, and modifying elements (dots, shapes, text, icons,
     images). Supports batching multiple operations and snapshotting for
     complex undo operations like clear all.
+
+    CV-01/CV-02 FIX: History uses a command pattern where each action
+    stores closures/data that map to ACTUAL element manager methods,
+    not assumed CanvasFrame methods. Undo/redo operate directly on
+    the element managers.
+
+    CV-18 FIX: Configurable max history size (default 50), evicts oldest.
 ----------------------------------------------------------------------]]
 
 local Loolib = LibStub("Loolib")
+
+-- Cached globals
+local type = type
+local error = error
+local pairs = pairs
+local ipairs = ipairs
+local pcall = pcall
+local table_insert = table.insert
+local table_remove = table.remove
 
 --[[--------------------------------------------------------------------
     Canvas Action Type Constants
@@ -47,7 +63,7 @@ local LOOLIB_CANVAS_ACTION_TYPES = {
     Provides undo/redo functionality for canvas operations.
 
     Features:
-    - Unlimited undo/redo with configurable history size limit
+    - Configurable max history size (default 50) -- CV-18
     - Batch operations to group multiple actions
     - Snapshot support for complex undo operations
     - Event triggers for UI updates
@@ -58,39 +74,20 @@ local LOOLIB_CANVAS_ACTION_TYPES = {
     - OnUndo: When an undo operation completes
     - OnRedo: When a redo operation completes
     - OnHistoryCleared: When history is cleared
-
-    Usage:
-        local history = LoolibCreateCanvasHistory()
-        history:SetElementManagers(brush, shape, text, icon, image)
-
-        -- Record an action
-        history:PushAction(LOOLIB_CANVAS_ACTION_TYPES.ADD_ICON, {
-            x = 100, y = 100, iconType = 1, size = 32
-        }, {
-            index = 1  -- undoData
-        })
-
-        -- Batch multiple actions
-        history:BeginBatch("Draw Stroke")
-        -- ... multiple PushAction calls ...
-        history:EndBatch()
-
-        -- Undo/redo
-        if history:CanUndo() then
-            history:Undo()
-        end
 ----------------------------------------------------------------------]]
 
+---@class LoolibCanvasHistoryMixin
 local LoolibCanvasHistoryMixin = {}
 
 --- Initialize the history system
+---@return LoolibCanvasHistoryMixin self
 function LoolibCanvasHistoryMixin:OnLoad()
     -- History stacks
     self._undoStack = {}
     self._redoStack = {}
 
-    -- Configuration
-    self._maxHistorySize = 100
+    -- CV-18: Configurable max history size (default 50)
+    self._maxHistorySize = 50
 
     -- Recording state
     self._isRecording = true
@@ -102,6 +99,7 @@ function LoolibCanvasHistoryMixin:OnLoad()
     self._textManager = nil
     self._iconManager = nil
     self._imageManager = nil
+    return self
 end
 
 --[[--------------------------------------------------------------------
@@ -109,12 +107,12 @@ end
 ----------------------------------------------------------------------]]
 
 --- Set element managers for undo/redo operations
---- @param brush table Brush manager (LoolibCanvasBrushMixin)
---- @param shape table Shape manager (LoolibCanvasShapeMixin)
---- @param text table Text manager (LoolibCanvasTextMixin)
---- @param icon table Icon manager (LoolibCanvasIconMixin)
---- @param image table Image manager (LoolibCanvasImageMixin)
---- @return table self for chaining
+---@param brush table Brush manager (LoolibCanvasBrushMixin)
+---@param shape table Shape manager (LoolibCanvasShapeMixin)
+---@param text table Text manager (LoolibCanvasTextMixin)
+---@param icon table Icon manager (LoolibCanvasIconMixin)
+---@param image table Image manager (LoolibCanvasImageMixin)
+---@return LoolibCanvasHistoryMixin self for chaining
 function LoolibCanvasHistoryMixin:SetElementManagers(brush, shape, text, icon, image)
     self._brushManager = brush
     self._shapeManager = shape
@@ -125,11 +123,25 @@ function LoolibCanvasHistoryMixin:SetElementManagers(brush, shape, text, icon, i
 end
 
 --- Set maximum history size (number of undo steps to keep)
---- @param size number Maximum number of actions to store
---- @return table self for chaining
+--- CV-18: Enforced limit prevents unbounded memory growth
+---@param size number Maximum number of actions to store (minimum 1)
+---@return LoolibCanvasHistoryMixin self for chaining
 function LoolibCanvasHistoryMixin:SetMaxHistorySize(size)
+    if type(size) ~= "number" or size < 1 then
+        error("LoolibCanvasHistory: SetMaxHistorySize: size must be a positive number", 2)
+    end
     self._maxHistorySize = size
+    -- Trim if current stack exceeds new limit
+    while #self._undoStack > self._maxHistorySize do
+        table_remove(self._undoStack, 1)
+    end
     return self
+end
+
+--- Get the current max history size
+---@return number size Max history size
+function LoolibCanvasHistoryMixin:GetMaxHistorySize()
+    return self._maxHistorySize
 end
 
 --[[--------------------------------------------------------------------
@@ -139,15 +151,15 @@ end
 --- Enable or disable history recording
 --- Useful to prevent circular history entries when programmatically
 --- modifying canvas during undo/redo operations.
---- @param enabled boolean True to enable recording
---- @return table self for chaining
+---@param enabled boolean True to enable recording
+---@return LoolibCanvasHistoryMixin self for chaining
 function LoolibCanvasHistoryMixin:SetRecording(enabled)
     self._isRecording = enabled
     return self
 end
 
 --- Check if history recording is enabled
---- @return boolean True if recording
+---@return boolean recording True if recording
 function LoolibCanvasHistoryMixin:IsRecording()
     return self._isRecording
 end
@@ -157,10 +169,10 @@ end
 ----------------------------------------------------------------------]]
 
 --- Push an action to the history stack
---- @param actionType string Action type from LOOLIB_CANVAS_ACTION_TYPES
---- @param data table Action data (parameters for redo)
---- @param undoData table Optional undo-specific data (parameters for undo)
---- @return table self for chaining
+---@param actionType string Action type from LOOLIB_CANVAS_ACTION_TYPES
+---@param data table Action data (parameters for redo)
+---@param undoData table|nil Optional undo-specific data (parameters for undo)
+---@return LoolibCanvasHistoryMixin self for chaining
 function LoolibCanvasHistoryMixin:PushAction(actionType, data, undoData)
     if not self._isRecording then return self end
 
@@ -173,17 +185,17 @@ function LoolibCanvasHistoryMixin:PushAction(actionType, data, undoData)
 
     if self._batchAction then
         -- Add to current batch
-        table.insert(self._batchAction.actions, action)
+        table_insert(self._batchAction.actions, action)
     else
         -- Add as standalone action
-        table.insert(self._undoStack, action)
+        table_insert(self._undoStack, action)
 
         -- Clear redo stack on new action (branching timeline)
         self._redoStack = {}
 
-        -- Limit history size
+        -- CV-18: Limit history size
         while #self._undoStack > self._maxHistorySize do
-            table.remove(self._undoStack, 1)
+            table_remove(self._undoStack, 1)
         end
     end
 
@@ -201,8 +213,8 @@ end
 --- Begin a batch operation
 --- All actions pushed until EndBatch() are grouped together and
 --- undone/redone as a single unit.
---- @param batchName string Optional name for the batch
---- @return table self for chaining
+---@param batchName string|nil Optional name for the batch
+---@return LoolibCanvasHistoryMixin self for chaining
 function LoolibCanvasHistoryMixin:BeginBatch(batchName)
     if self._batchAction then return self end  -- Already in batch
 
@@ -216,18 +228,18 @@ function LoolibCanvasHistoryMixin:BeginBatch(batchName)
 end
 
 --- End the current batch operation
---- @return table self for chaining
+---@return LoolibCanvasHistoryMixin self for chaining
 function LoolibCanvasHistoryMixin:EndBatch()
     if not self._batchAction then return self end
 
     -- Only add batch if it contains actions
     if #self._batchAction.actions > 0 then
-        table.insert(self._undoStack, self._batchAction)
+        table_insert(self._undoStack, self._batchAction)
         self._redoStack = {}
 
-        -- Limit history size
+        -- CV-18: Limit history size
         while #self._undoStack > self._maxHistorySize do
-            table.remove(self._undoStack, 1)
+            table_remove(self._undoStack, 1)
         end
     end
 
@@ -242,7 +254,7 @@ end
 
 --- Cancel the current batch operation
 --- Undoes all actions in the current batch and discards it.
---- @return table self for chaining
+---@return LoolibCanvasHistoryMixin self for chaining
 function LoolibCanvasHistoryMixin:CancelBatch()
     if self._batchAction then
         -- Undo all actions in current batch
@@ -256,21 +268,28 @@ end
 
 --[[--------------------------------------------------------------------
     Undo/Redo Operations
+    CV-01/CV-02 FIX: These now call actual element manager methods
+    instead of non-existent CanvasFrame methods.
 ----------------------------------------------------------------------]]
 
 --- Undo the last action
---- @return table self for chaining
+---@return LoolibCanvasHistoryMixin self for chaining
 function LoolibCanvasHistoryMixin:Undo()
     if not self:CanUndo() then return self end
 
-    local action = table.remove(self._undoStack)
+    local action = table_remove(self._undoStack)
 
     -- Disable recording during undo to prevent circular history
     self._isRecording = false
-    self:_UndoAction(action)
+    local ok, err = pcall(self._UndoAction, self, action)
     self._isRecording = true
 
-    table.insert(self._redoStack, action)
+    if not ok then
+        table_insert(self._undoStack, action)
+        error(err, 0)
+    end
+
+    table_insert(self._redoStack, action)
 
     if self.TriggerEvent then
         self:TriggerEvent("OnUndo", action.type)
@@ -281,18 +300,23 @@ function LoolibCanvasHistoryMixin:Undo()
 end
 
 --- Redo the last undone action
---- @return table self for chaining
+---@return LoolibCanvasHistoryMixin self for chaining
 function LoolibCanvasHistoryMixin:Redo()
     if not self:CanRedo() then return self end
 
-    local action = table.remove(self._redoStack)
+    local action = table_remove(self._redoStack)
 
     -- Disable recording during redo to prevent circular history
     self._isRecording = false
-    self:_RedoAction(action)
+    local ok, err = pcall(self._RedoAction, self, action)
     self._isRecording = true
 
-    table.insert(self._undoStack, action)
+    if not ok then
+        table_insert(self._redoStack, action)
+        error(err, 0)
+    end
+
+    table_insert(self._undoStack, action)
 
     if self.TriggerEvent then
         self:TriggerEvent("OnRedo", action.type)
@@ -304,10 +328,14 @@ end
 
 --[[--------------------------------------------------------------------
     Internal Action Handlers
+    CV-01/CV-02 FIX: _UndoAction and _RedoAction now operate directly
+    on element managers using their actual API methods (DeleteIcon,
+    AddIcon, DeleteShape, AddShape, etc.) instead of non-existent
+    CanvasFrame methods like RemoveElement/AddElement.
 ----------------------------------------------------------------------]]
 
---- Internal: Undo a single action
---- @param action table Action to undo
+--- INTERNAL: Undo a single action
+---@param action table Action to undo
 function LoolibCanvasHistoryMixin:_UndoAction(action)
     if action.type == "batch" then
         -- Undo batch in reverse order
@@ -365,14 +393,7 @@ function LoolibCanvasHistoryMixin:_UndoAction(action)
 
     elseif action.type == LOOLIB_CANVAS_ACTION_TYPES.UPDATE_SHAPE then
         if self._shapeManager and data.oldShape then
-            -- Restore old shape properties
-            local shape = self._shapeManager:GetShape(data.index)
-            if shape then
-                for k, v in pairs(data.oldShape) do
-                    shape[k] = v
-                end
-                self._shapeManager:UpdateShape(data.index)
-            end
+            self._shapeManager:UpdateShape(data.index, data.oldShape)
         end
 
     -- Image actions
@@ -388,14 +409,10 @@ function LoolibCanvasHistoryMixin:_UndoAction(action)
         end
 
     elseif action.type == LOOLIB_CANVAS_ACTION_TYPES.UPDATE_IMAGE then
-        if self._imageManager and data.oldImage then
-            -- Restore old image properties
-            local image = self._imageManager:GetImage(data.index)
-            if image then
-                for k, v in pairs(data.oldImage) do
-                    image[k] = v
-                end
-                self._imageManager:UpdateImage(data.index)
+        if self._imageManager and data.oldPath then
+            self._imageManager:SetImagePath(data.index, data.oldPath)
+            if data.oldAlpha then
+                self._imageManager:SetImageAlpha(data.index, data.oldAlpha)
             end
         end
 
@@ -414,7 +431,7 @@ function LoolibCanvasHistoryMixin:_UndoAction(action)
 
     -- Selection and group actions
     elseif action.type == LOOLIB_CANVAS_ACTION_TYPES.MOVE_SELECTION then
-        -- Move selection back
+        -- Move selection back by reversing delta
         if data.elements then
             for _, elem in ipairs(data.elements) do
                 self:_MoveElement(elem.type, elem.index, -data.deltaX, -data.deltaY)
@@ -442,7 +459,7 @@ function LoolibCanvasHistoryMixin:_UndoAction(action)
         -- Remove group assignments
         if data.elements then
             for _, elem in ipairs(data.elements) do
-                self:_SetElementGroup(elem.type, elem.index, nil)
+                self:_SetElementGroup(elem.type, elem.index, 0)
             end
         end
 
@@ -455,8 +472,8 @@ function LoolibCanvasHistoryMixin:_UndoAction(action)
     end
 end
 
---- Internal: Redo a single action
---- @param action table Action to redo
+--- INTERNAL: Redo a single action
+---@param action table Action to redo
 function LoolibCanvasHistoryMixin:_RedoAction(action)
     if action.type == "batch" then
         -- Redo batch in forward order
@@ -514,13 +531,7 @@ function LoolibCanvasHistoryMixin:_RedoAction(action)
 
     elseif action.type == LOOLIB_CANVAS_ACTION_TYPES.UPDATE_SHAPE then
         if self._shapeManager and data.newShape then
-            local shape = self._shapeManager:GetShape(data.index)
-            if shape then
-                for k, v in pairs(data.newShape) do
-                    shape[k] = v
-                end
-                self._shapeManager:UpdateShape(data.index)
-            end
+            self._shapeManager:UpdateShape(data.index, data.newShape)
         end
 
     -- Image actions
@@ -536,26 +547,22 @@ function LoolibCanvasHistoryMixin:_RedoAction(action)
         end
 
     elseif action.type == LOOLIB_CANVAS_ACTION_TYPES.UPDATE_IMAGE then
-        if self._imageManager and data.newImage then
-            local image = self._imageManager:GetImage(data.index)
-            if image then
-                for k, v in pairs(data.newImage) do
-                    image[k] = v
-                end
-                self._imageManager:UpdateImage(data.index)
+        if self._imageManager and data.newPath then
+            self._imageManager:SetImagePath(data.index, data.newPath)
+            if data.newAlpha then
+                self._imageManager:SetImageAlpha(data.index, data.newAlpha)
             end
         end
 
     -- Brush/dot actions
     elseif action.type == LOOLIB_CANVAS_ACTION_TYPES.ADD_DOTS then
-        if self._brushManager and data.dots then
-            -- no-op: Re-add dots (complex, would need brush API support)
-            -- For now, assume brush manager tracks indices
+        if self._brushManager and data.dotsSnapshot then
+            self._brushManager:DeserializeDots(data.dotsSnapshot)
         end
 
     elseif action.type == LOOLIB_CANVAS_ACTION_TYPES.DELETE_DOTS then
-        if self._brushManager and data.indices then
-            -- no-op: Re-delete dots
+        if self._brushManager and data.resultSnapshot then
+            self._brushManager:DeserializeDots(data.resultSnapshot)
         end
 
     -- Selection and group actions
@@ -596,12 +603,12 @@ function LoolibCanvasHistoryMixin:_RedoAction(action)
 
     -- Clear all
     elseif action.type == LOOLIB_CANVAS_ACTION_TYPES.CLEAR_ALL then
-        -- Clear all elements (already done, snapshot is for undo)
-        if self._brushManager then self._brushManager:ClearAllDots() end
-        if self._shapeManager then self._shapeManager:ClearAllShapes() end
-        if self._textManager then self._textManager:ClearAllTexts() end
-        if self._iconManager then self._iconManager:ClearAllIcons() end
-        if self._imageManager then self._imageManager:ClearAllImages() end
+        -- Clear all elements via actual manager API
+        if self._brushManager then self._brushManager:ClearDots() end
+        if self._shapeManager then self._shapeManager:ClearShapes() end
+        if self._textManager then self._textManager:ClearTexts() end
+        if self._iconManager then self._iconManager:ClearIcons() end
+        if self._imageManager then self._imageManager:ClearImages() end
     end
 end
 
@@ -609,11 +616,11 @@ end
     Internal Helper Methods
 ----------------------------------------------------------------------]]
 
---- Helper: Move an element by delta
---- @param elementType string Element type ("icon", "text", "image", "shape")
---- @param index number Element index
---- @param dx number X delta
---- @param dy number Y delta
+--- INTERNAL: Move an element by delta
+---@param elementType string Element type ("icon", "text", "image", "shape")
+---@param index number Element index
+---@param dx number X delta
+---@param dy number Y delta
 function LoolibCanvasHistoryMixin:_MoveElement(elementType, index, dx, dy)
     if elementType == "icon" and self._iconManager then
         local icon = self._iconManager:GetIcon(index)
@@ -628,17 +635,13 @@ function LoolibCanvasHistoryMixin:_MoveElement(elementType, index, dx, dy)
     elseif elementType == "image" and self._imageManager then
         self._imageManager:MoveImage(index, dx, dy)
     elseif elementType == "shape" and self._shapeManager then
-        local shape = self._shapeManager:GetShape(index)
-        if shape then
-            self._shapeManager:MoveShape(index, shape.x1 + dx, shape.y1 + dy,
-                shape.x2 + dx, shape.y2 + dy)
-        end
+        self._shapeManager:MoveShape(index, dx, dy)
     end
 end
 
---- Helper: Delete an element
---- @param elementType string Element type ("icon", "text", "image", "shape")
---- @param index number Element index
+--- INTERNAL: Delete an element
+---@param elementType string Element type ("icon", "text", "image", "shape")
+---@param index number Element index
 function LoolibCanvasHistoryMixin:_DeleteElement(elementType, index)
     if elementType == "icon" and self._iconManager then
         self._iconManager:DeleteIcon(index)
@@ -651,38 +654,22 @@ function LoolibCanvasHistoryMixin:_DeleteElement(elementType, index)
     end
 end
 
---- Helper: Set element group
---- @param elementType string Element type ("icon", "text", "image", "shape")
---- @param index number Element index
---- @param groupId number|nil Group ID or nil to ungroup
+--- INTERNAL: Set element group via actual manager API
+---@param elementType string Element type ("icon", "text", "image", "shape")
+---@param index number Element index
+---@param groupId number|nil Group ID or 0 to ungroup
 function LoolibCanvasHistoryMixin:_SetElementGroup(elementType, index, groupId)
-    -- This would require API support in element managers
-    -- For now, placeholder for future implementation
     if elementType == "icon" and self._iconManager then
-        local icon = self._iconManager:GetIcon(index)
-        if icon then
-            icon.group = groupId
-        end
-    elseif elementType == "text" and self._textManager then
-        local text = self._textManager:GetText(index)
-        if text then
-            text.group = groupId
-        end
-    elseif elementType == "image" and self._imageManager then
-        local image = self._imageManager:GetImage(index)
-        if image then
-            image.group = groupId
-        end
+        self._iconManager:UpdateIcon(index, { group = groupId or 0 })
     elseif elementType == "shape" and self._shapeManager then
-        local shape = self._shapeManager:GetShape(index)
-        if shape then
-            shape.group = groupId
-        end
+        self._shapeManager:SetShapeGroup(index, groupId or 0)
     end
+    -- text and image managers do not expose group setters yet;
+    -- this is a known limitation documented in compatibility notes
 end
 
---- Helper: Create snapshot of all canvas elements
---- @return table Snapshot data
+--- Create snapshot of all canvas elements
+---@return table snapshot Snapshot data
 function LoolibCanvasHistoryMixin:CreateSnapshot()
     return {
         dots = self._brushManager and self._brushManager:SerializeDots() or {},
@@ -693,8 +680,8 @@ function LoolibCanvasHistoryMixin:CreateSnapshot()
     }
 end
 
---- Helper: Restore snapshot of all canvas elements
---- @param snapshot table Snapshot data from CreateSnapshot()
+--- INTERNAL: Restore snapshot of all canvas elements
+---@param snapshot table Snapshot data from CreateSnapshot()
 function LoolibCanvasHistoryMixin:_RestoreSnapshot(snapshot)
     if self._brushManager then self._brushManager:DeserializeDots(snapshot.dots) end
     if self._shapeManager then self._shapeManager:DeserializeShapes(snapshot.shapes) end
@@ -708,31 +695,31 @@ end
 ----------------------------------------------------------------------]]
 
 --- Check if undo is available
---- @return boolean True if can undo
+---@return boolean canUndo True if can undo
 function LoolibCanvasHistoryMixin:CanUndo()
     return #self._undoStack > 0
 end
 
 --- Check if redo is available
---- @return boolean True if can redo
+---@return boolean canRedo True if can redo
 function LoolibCanvasHistoryMixin:CanRedo()
     return #self._redoStack > 0
 end
 
 --- Get number of undo steps available
---- @return number Undo count
+---@return number count Undo count
 function LoolibCanvasHistoryMixin:GetUndoCount()
     return #self._undoStack
 end
 
 --- Get number of redo steps available
---- @return number Redo count
+---@return number count Redo count
 function LoolibCanvasHistoryMixin:GetRedoCount()
     return #self._redoStack
 end
 
 --- Get the type of the last action
---- @return string|nil Action type or nil if no history
+---@return string|nil actionType Action type or nil if no history
 function LoolibCanvasHistoryMixin:GetLastActionType()
     if #self._undoStack > 0 then
         local action = self._undoStack[#self._undoStack]
@@ -742,7 +729,7 @@ function LoolibCanvasHistoryMixin:GetLastActionType()
 end
 
 --- Clear all history (both undo and redo stacks)
---- @return table self for chaining
+---@return LoolibCanvasHistoryMixin self for chaining
 function LoolibCanvasHistoryMixin:ClearHistory()
     self._undoStack = {}
     self._redoStack = {}
@@ -760,7 +747,8 @@ end
 ----------------------------------------------------------------------]]
 
 --- Create a new canvas history instance
---- @return table Canvas history object
+--- INTERNAL
+---@return LoolibCanvasHistoryMixin history Canvas history object
 local function LoolibCreateCanvasHistory()
     local history = {}
     Loolib.Mixin(history, LoolibCanvasHistoryMixin)
@@ -768,7 +756,14 @@ local function LoolibCreateCanvasHistory()
     return history
 end
 
--- Register module with Loolib
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasHistory", {
+    Mixin = LoolibCanvasHistoryMixin,
+    ACTIONS = LOOLIB_CANVAS_ACTION_TYPES,
+    Create = LoolibCreateCanvasHistory,
+})
+
+-- Backward-compat alias
 Loolib:RegisterModule("CanvasHistory", {
     Mixin = LoolibCanvasHistoryMixin,
     ACTIONS = LOOLIB_CANVAS_ACTION_TYPES,

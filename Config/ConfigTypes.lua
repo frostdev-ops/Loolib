@@ -45,7 +45,7 @@ Loolib.Config.Types.types = {
     input = {
         description = "Text input field",
         properties = {
-            multiline = "boolean",
+            multiline = "boolean|number", -- true = 4 lines, number = that many lines
             pattern = "string",
             usage = "string",
         },

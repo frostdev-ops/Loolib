@@ -401,7 +401,9 @@ end)
 
 #### Tooltip
 
-Add tooltip to widget:
+Add tooltip to widget. Uses `HookScript` internally so it does not clobber
+existing `OnEnter`/`OnLeave` handlers. Calling `:Tooltip()` multiple times
+safely updates the tooltip text without re-hooking.
 
 ```lua
 -- Simple tooltip

@@ -18,11 +18,16 @@ local LoolibCallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib
 -- Verify dependencies are loaded
 assert(Loolib.Mixin, "Loolib/Core/Mixin.lua must be loaded before CanvasBrush")
 
--- Local math references for performance
+-- Cached globals
+local type = type
+local error = error
+local ipairs = ipairs
+local pairs = pairs
 local sqrt = math.sqrt
 local floor = math.floor
 local max = math.max
 local min = math.min
+local GetTime = GetTime
 
 --[[--------------------------------------------------------------------
     Event Names
@@ -70,6 +75,7 @@ function LoolibCanvasBrushMixin:OnLoad()
     self._dots_SYNC = {}     -- Sync IDs for network
 
     self._nextSyncId = 1     -- Next sync ID to assign
+    self._lastStrokeTime = 0  -- CV-09: Throttle timestamp
 end
 
 --[[--------------------------------------------------------------------
@@ -135,12 +141,21 @@ function LoolibCanvasBrushMixin:StartStroke(x, y)
 end
 
 --- Continue the current stroke to a new position
--- Interpolates dots between the last position and the current position
--- @param x number - Current X coordinate
--- @param y number - Current Y coordinate
--- @return self - For method chaining
+--- Interpolates dots between the last position and the current position
+--- CV-09 FIX: Throttles to ~60fps using GetTime() delta to prevent
+--- creating hundreds of tiny segment tables during rapid mouse movement.
+---@param x number Current X coordinate
+---@param y number Current Y coordinate
+---@return LoolibCanvasBrushMixin self For method chaining
 function LoolibCanvasBrushMixin:ContinueStroke(x, y)
     if not self._isDrawing then return self end
+
+    -- CV-09: Throttle updates to ~60fps (16.67ms)
+    local now = GetTime()
+    if self._lastStrokeTime and (now - self._lastStrokeTime) < 0.016 then
+        return self
+    end
+    self._lastStrokeTime = now
 
     -- Interpolate between last point and current point for smooth lines
     self:_InterpolateDots(self._lastX, self._lastY, x, y)
@@ -408,4 +423,8 @@ local CanvasBrushModule = {
     Create = LoolibCreateCanvasBrush,
 }
 
+-- R4: Fully qualified name
+Loolib:RegisterModule("Canvas.CanvasBrush", CanvasBrushModule)
+
+-- Backward-compat alias
 Loolib:RegisterModule("CanvasBrush", CanvasBrushModule)

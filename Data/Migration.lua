@@ -43,6 +43,7 @@ local time = time
 local tostring = tostring
 local type = type
 local sort = table.sort
+local format = string.format
 local match = string.match
 local wipe = wipe
 
@@ -55,7 +56,8 @@ local function GetRequiredModule(name)
 end
 
 local CallbackRegistryMixin = GetRequiredModule("CallbackRegistry").Mixin
-local CreateFromMixins = GetRequiredModule("Mixin").CreateFromMixins
+-- FIX(critical-01): Use Loolib.CreateFromMixins directly instead of unstable "Mixin" module lookup
+local CreateFromMixins = assert(Loolib.CreateFromMixins, "Loolib.CreateFromMixins is required")
 
 local Data = Loolib.Data or Loolib:GetOrCreateModule("Data")
 Loolib.Data = Data
@@ -69,8 +71,9 @@ Loolib.Data.Migration = MigrationModule
     Supports versions like: "1.0.0", "2.3.1", "1.0.0-beta", "3.0.0-rc1"
 ----------------------------------------------------------------------]]
 
+-- INTERNAL: Parse a version string into its component parts.
 local function ParseVersion(versionStr)
-    if not versionStr or versionStr == "" then
+    if type(versionStr) ~= "string" or versionStr == "" then
         return nil
     end
 
@@ -121,7 +124,7 @@ local function CompareVersions(a, b)
     return 0
 end
 
---- Check if version A is less than version B
+-- INTERNAL: Check if version A is less than version B
 -- @param a string - First version
 -- @param b string - Second version
 -- @return boolean
@@ -130,7 +133,7 @@ local function IsVersionLessThan(a, b)
     return result == -1
 end
 
---- Check if version A is less than or equal to version B
+-- INTERNAL: Check if version A is less than or equal to version B
 -- @param a string - First version
 -- @param b string - Second version
 -- @return boolean
@@ -139,7 +142,7 @@ local function IsVersionLessThanOrEqual(a, b)
     return result == -1 or result == 0
 end
 
---- Check if version A is greater than version B
+-- INTERNAL: Check if version A is greater than version B
 -- @param a string - First version
 -- @param b string - Second version
 -- @return boolean
@@ -171,6 +174,10 @@ local MIGRATION_EVENTS = {
 --   - logErrors: boolean - Log errors to chat (default: true)
 --   - historyKey: string - Key in db to store history (default: "_migrationHistory")
 function MigrationMixin:Init(options)
+    if options ~= nil and type(options) ~= "table" then
+        error("LoolibMigration: options must be a table or nil", 2)
+    end
+
     CallbackRegistryMixin.OnLoad(self)
     self:GenerateCallbackEvents(MIGRATION_EVENTS)
 
@@ -199,18 +206,26 @@ end
 --   - scope: string - "global" or "profile" (default: both)
 function MigrationMixin:RegisterMigration(version, migrationFunc, options)
     if type(version) ~= "string" or version == "" then
-        error("Migration version must be a non-empty string", 2)
+        error("LoolibMigration: migration version must be a non-empty string", 2)
     end
 
     if type(migrationFunc) ~= "function" then
-        error("Migration function must be a function", 2)
+        error("LoolibMigration: migration function must be a function", 2)
     end
 
     if not ParseVersion(version) then
-        error("Migration version '" .. version .. "' is not a valid semantic version", 2)
+        error(format("LoolibMigration: version '%s' is not a valid semantic version", version), 2)
+    end
+
+    if options ~= nil and type(options) ~= "table" then
+        error("LoolibMigration: migration options must be a table or nil", 2)
     end
 
     options = options or {}
+
+    if options.scope ~= nil and options.scope ~= "global" and options.scope ~= "profile" then
+        error(format("LoolibMigration: invalid scope '%s', must be 'global', 'profile', or nil", tostring(options.scope)), 2)
+    end
 
     self.migrations[version] = {
         version = version,
@@ -224,6 +239,10 @@ end
 -- @param version string - The version to unregister
 -- @return boolean - True if migration was removed
 function MigrationMixin:UnregisterMigration(version)
+    if type(version) ~= "string" then
+        error("LoolibMigration: version must be a string", 2)
+    end
+
     if self.migrations[version] then
         self.migrations[version] = nil
         return true
@@ -256,7 +275,7 @@ end
     Migration Execution
 ----------------------------------------------------------------------]]
 
---- Get migration history from database
+-- INTERNAL: Get migration history from database
 -- @param db table - The database to check
 -- @return table - Migration history { version -> timestamp }
 function MigrationMixin:GetMigrationHistory(db)
@@ -264,15 +283,16 @@ function MigrationMixin:GetMigrationHistory(db)
         return {}
     end
 
-    local history = db[self.options.historyKey]
-    if not history then
+    local historyKey = self.options.historyKey
+    local history = db[historyKey]
+    if type(history) ~= "table" then
         return {}
     end
 
     return history
 end
 
---- Record a migration in history
+-- INTERNAL: Record a migration in history
 -- @param db table - The database
 -- @param version string - The migration version
 function MigrationMixin:RecordMigration(db, version)
@@ -280,11 +300,12 @@ function MigrationMixin:RecordMigration(db, version)
         return
     end
 
-    if not db[self.options.historyKey] then
-        db[self.options.historyKey] = {}
+    local historyKey = self.options.historyKey
+    if type(db[historyKey]) ~= "table" then
+        db[historyKey] = {}
     end
 
-    db[self.options.historyKey][version] = time()
+    db[historyKey][version] = time()
 end
 
 --- Check if a migration has been executed
@@ -306,6 +327,22 @@ end
 -- @param fromVersion string - Optional previous version (from db)
 -- @return table - Array of migration entries to execute, in order
 function MigrationMixin:GetPendingMigrations(db, currentVersion, fromVersion)
+    if type(db) ~= "table" then
+        error("LoolibMigration: db must be a table", 2)
+    end
+
+    if type(currentVersion) ~= "string" or currentVersion == "" then
+        error("LoolibMigration: currentVersion must be a non-empty string", 2)
+    end
+
+    if not ParseVersion(currentVersion) then
+        error(format("LoolibMigration: currentVersion '%s' is not a valid semantic version", currentVersion), 2)
+    end
+
+    if fromVersion ~= nil and type(fromVersion) ~= "string" then
+        error("LoolibMigration: fromVersion must be a string or nil", 2)
+    end
+
     local pending = {}
     local history = self:GetMigrationHistory(db)
 
@@ -324,7 +361,7 @@ function MigrationMixin:GetPendingMigrations(db, currentVersion, fromVersion)
                 shouldRun = true
             end
 
-            -- Don't re-run migrations already in history
+            -- Don't re-run migrations already in history (idempotency guard)
             if shouldRun and history[version] then
                 shouldRun = false
             end
@@ -350,12 +387,20 @@ end
 -- @return boolean - True if all migrations succeeded
 -- @return table - Array of error messages (if any)
 function MigrationMixin:RunMigrations(db, currentVersion, fromVersion)
-    if not db then
-        error("Database cannot be nil", 2)
+    if type(db) ~= "table" then
+        error("LoolibMigration: db must be a table", 2)
     end
 
-    if not currentVersion or currentVersion == "" then
-        error("Current version must be provided", 2)
+    if type(currentVersion) ~= "string" or currentVersion == "" then
+        error("LoolibMigration: currentVersion must be a non-empty string", 2)
+    end
+
+    if not ParseVersion(currentVersion) then
+        error(format("LoolibMigration: currentVersion '%s' is not a valid semantic version", currentVersion), 2)
+    end
+
+    if fromVersion ~= nil and type(fromVersion) ~= "string" then
+        error("LoolibMigration: fromVersion must be a string or nil", 2)
     end
 
     -- Get pending migrations
@@ -372,7 +417,7 @@ function MigrationMixin:RunMigrations(db, currentVersion, fromVersion)
     local errors = {}
     local successCount = 0
 
-    for i, migration in ipairs(pending) do
+    for _, migration in ipairs(pending) do
         local success, err = self:ExecuteMigration(migration, db, fromVersion, currentVersion)
 
         if success then
@@ -416,7 +461,7 @@ function MigrationMixin:RunMigrations(db, currentVersion, fromVersion)
     return allSucceeded, errors
 end
 
---- Execute a single migration
+-- INTERNAL: Execute a single migration with pcall protection
 -- @param migration table - Migration entry
 -- @param db table - Database
 -- @param fromVersion string - Previous version
@@ -424,6 +469,10 @@ end
 -- @return boolean - Success
 -- @return string - Error message if failed
 function MigrationMixin:ExecuteMigration(migration, db, fromVersion, toVersion)
+    if type(migration) ~= "table" or type(migration.func) ~= "function" then
+        return false, "LoolibMigration: invalid migration entry (missing func)"
+    end
+
     local success, err = pcall(migration.func, db, fromVersion, toVersion)
 
     if not success then
@@ -440,13 +489,21 @@ end
 -- @return boolean - Success
 -- @return string - Error message if failed
 function MigrationMixin:RunMigration(db, version, force)
+    if type(db) ~= "table" then
+        error("LoolibMigration: db must be a table", 2)
+    end
+
+    if type(version) ~= "string" or version == "" then
+        error("LoolibMigration: version must be a non-empty string", 2)
+    end
+
     local migration = self.migrations[version]
 
     if not migration then
         return false, "Migration '" .. version .. "' not found"
     end
 
-    -- Check if already executed
+    -- Check if already executed (idempotency guard)
     if not force and self:IsMigrationExecuted(db, version) then
         return false, "Migration already executed (use force=true to re-run)"
     end
@@ -472,6 +529,10 @@ end
 -- @param db table - The database
 -- @return table - Array of { version, timestamp, name } sorted by timestamp
 function MigrationMixin:GetHistory(db)
+    if type(db) ~= "table" then
+        error("LoolibMigration: db must be a table", 2)
+    end
+
     local history = self:GetMigrationHistory(db)
     local result = {}
 
@@ -496,18 +557,26 @@ end
 -- @param db table - The database
 -- @param version string - Optional specific version to clear (clears all if nil)
 function MigrationMixin:ClearHistory(db, version)
-    if not db or not self.options.trackHistory then
+    if type(db) ~= "table" then
+        error("LoolibMigration: db must be a table", 2)
+    end
+
+    if not self.options.trackHistory then
         return
     end
 
-    if not db[self.options.historyKey] then
+    local historyKey = self.options.historyKey
+    if type(db[historyKey]) ~= "table" then
         return
     end
 
     if version then
-        db[self.options.historyKey][version] = nil
+        if type(version) ~= "string" then
+            error("LoolibMigration: version must be a string", 2)
+        end
+        db[historyKey][version] = nil
     else
-        db[self.options.historyKey] = {}
+        wipe(db[historyKey])
     end
 end
 
@@ -515,6 +584,10 @@ end
 -- WARNING: This will cause all migrations to re-run on next RunMigrations call
 -- @param db table - The database
 function MigrationMixin:ResetHistory(db)
+    if type(db) ~= "table" then
+        error("LoolibMigration: db must be a table", 2)
+    end
+
     self:ClearHistory(db)
     wipe(self.executedMigrations)
 end
@@ -527,6 +600,10 @@ end
 -- @param version string - The migration version
 -- @return table - Migration info { version, name, scope, registered }
 function MigrationMixin:GetMigrationInfo(version)
+    if type(version) ~= "string" then
+        error("LoolibMigration: version must be a string", 2)
+    end
+
     local migration = self.migrations[version]
 
     if not migration then

@@ -20,6 +20,23 @@ local LoolibCallbackRegistryMixin = assert(Loolib.CallbackRegistryMixin, "Loolib
 local LoolibMixin = assert(Loolib.Mixin, "Loolib.Mixin is required for Dropdown")
 local LoolibTemplates = assert(Loolib.Templates or (Loolib.UI and Loolib.UI.Templates), "Loolib.Templates is required for Dropdown")
 
+-- Cache globals
+local error = error
+local ipairs = ipairs
+local math_min = math.min
+local pairs = pairs
+local select = select
+local type = type
+local wipe = wipe
+
+-- Cache WoW globals
+local CreateFrame = CreateFrame
+local GameTooltip = GameTooltip
+local InCombatLockdown = InCombatLockdown
+local IsMouseButtonDown = IsMouseButtonDown
+local MouseIsOver = MouseIsOver
+local UIParent = UIParent
+
 --[[--------------------------------------------------------------------
     Dropdown Menu Frame (Shared)
 ----------------------------------------------------------------------]]
@@ -28,6 +45,66 @@ local dropdownMenu = nil
 local submenuFrame = nil
 local currentDropdown = nil
 local activeSubmenu = nil
+
+-- INTERNAL: Item pools for menu frames to avoid creating/orphaning frames on every Open (TP-03)
+local menuItemPools = {}
+
+-- INTERNAL: Get or create a frame pool for a given menu container
+local function GetMenuItemPool(menu)
+    if not menuItemPools[menu] then
+        local pool = {
+            buttons = {},   -- Array of reusable Button items
+            frames = {},    -- Array of reusable Frame items (separators)
+            buttonIdx = 0,
+            frameIdx = 0,
+        }
+        menuItemPools[menu] = pool
+    end
+    return menuItemPools[menu]
+end
+
+-- INTERNAL: Reset pool indices before building (items remain parented, just hidden)
+local function ResetMenuItemPool(pool)
+    -- Hide all previously used buttons
+    for i = 1, pool.buttonIdx do
+        pool.buttons[i]:Hide()
+        pool.buttons[i]:SetParent(nil)
+    end
+    for i = 1, pool.frameIdx do
+        pool.frames[i]:Hide()
+        pool.frames[i]:SetParent(nil)
+    end
+    pool.buttonIdx = 0
+    pool.frameIdx = 0
+end
+
+-- INTERNAL: Acquire a Button from pool
+local function AcquireMenuButton(pool, parent)
+    pool.buttonIdx = pool.buttonIdx + 1
+    local btn = pool.buttons[pool.buttonIdx]
+    if not btn then
+        btn = CreateFrame("Button", nil, parent)
+        pool.buttons[pool.buttonIdx] = btn
+    else
+        btn:SetParent(parent)
+    end
+    btn:ClearAllPoints()
+    return btn
+end
+
+-- INTERNAL: Acquire a Frame (separator) from pool
+local function AcquireMenuFrame(pool, parent)
+    pool.frameIdx = pool.frameIdx + 1
+    local f = pool.frames[pool.frameIdx]
+    if not f then
+        f = CreateFrame("Frame", nil, parent)
+        pool.frames[pool.frameIdx] = f
+    else
+        f:SetParent(parent)
+    end
+    f:ClearAllPoints()
+    return f
+end
 
 local function GetDropdownMenu()
     if not dropdownMenu then
@@ -129,6 +206,9 @@ end
 --   - tooltipTitle: string|nil - Tooltip title
 --   - tooltipText: string|nil - Tooltip body text
 function LoolibDropdownMixin:SetOptions(options)
+    if options ~= nil and type(options) ~= "table" then
+        error("LoolibDropdown: SetOptions: 'options' must be a table or nil", 2)
+    end
     self.options = options or {}
 end
 
@@ -246,7 +326,7 @@ function LoolibDropdownMixin:OpenMenu()
     menu:SetPoint("TOPLEFT", self, "BOTTOMLEFT", 0, -2)
 
     -- Size menu
-    local numVisible = math.min(#self.options, self.maxVisibleItems)
+    local numVisible = math_min(#self.options, self.maxVisibleItems)
     local menuHeight = numVisible * self.itemHeight + 8
     menu:SetSize(self:GetWidth(), menuHeight)
 
@@ -280,6 +360,7 @@ function LoolibDropdownMixin:CloseMenu()
 end
 
 --- Build the menu content
+-- FIX(TP-03): Reuse pooled item frames instead of creating/orphaning on every open.
 -- @param menu Frame - The menu frame to populate
 -- @param options table - The options to display
 -- @param parentItem Frame|nil - The parent menu item (for submenus)
@@ -291,12 +372,9 @@ function LoolibDropdownMixin:BuildMenu(menu, options, parentItem)
         return
     end
 
-    -- Clear existing items
-    for i = content:GetNumChildren(), 1, -1 do
-        local child = select(i, content:GetChildren())
-        child:Hide()
-        child:SetParent(nil)
-    end
+    -- Reset the pool for this menu (hides all previously-acquired items)
+    local pool = GetMenuItemPool(menu)
+    ResetMenuItemPool(pool)
 
     -- Create items
     for i, option in ipairs(options) do
@@ -304,21 +382,30 @@ function LoolibDropdownMixin:BuildMenu(menu, options, parentItem)
 
         -- Handle separators
         if option.isSeparator then
-            item = CreateFrame("Frame", nil, content)
+            item = AcquireMenuFrame(pool, content)
             item:SetSize(content:GetWidth(), self.itemHeight / 2)
             item:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -((i - 1) * self.itemHeight))
 
-            -- Create separator line
-            local line = item:CreateTexture(nil, "ARTWORK")
-            line:SetHeight(1)
-            line:SetPoint("LEFT", item, "LEFT", 4, 0)
-            line:SetPoint("RIGHT", item, "RIGHT", -4, 0)
-            line:SetColorTexture(0.5, 0.5, 0.5, 0.5)
+            -- Create separator line (only once per pooled frame)
+            if not item._separatorLine then
+                local line = item:CreateTexture(nil, "ARTWORK")
+                line:SetHeight(1)
+                line:SetPoint("LEFT", item, "LEFT", 4, 0)
+                line:SetPoint("RIGHT", item, "RIGHT", -4, 0)
+                item._separatorLine = line
+            end
+            item._separatorLine:SetColorTexture(0.5, 0.5, 0.5, 0.5)
 
             item:Show()
         else
-            item = CreateFrame("Button", nil, content)
-            LoolibTemplates.InitDropdownMenuItem(item)
+            item = AcquireMenuButton(pool, content)
+
+            -- Re-initialize item template (idempotent; reuses existing child regions)
+            if not item._initialized then
+                LoolibTemplates.InitDropdownMenuItem(item)
+                item._initialized = true
+            end
+
             item:SetSize(content:GetWidth(), self.itemHeight)
             item:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -((i - 1) * self.itemHeight))
 
@@ -329,6 +416,10 @@ function LoolibDropdownMixin:BuildMenu(menu, options, parentItem)
                     displayText = option.colorCode .. displayText .. "|r"
                 end
                 item.Text:SetText(displayText)
+                -- Reset text anchor to default (may have been shifted by check)
+                item.Text:ClearAllPoints()
+                item.Text:SetPoint("LEFT", 8, 0)
+                item.Text:SetPoint("RIGHT", -8, 0)
             end
 
             -- Checkmark or radio button for selected/checked items
@@ -338,6 +429,7 @@ function LoolibDropdownMixin:BuildMenu(menu, options, parentItem)
                     if option.isNotRadio then
                         -- Checkmark
                         item.Check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+                        item.Check:SetTexCoord(0, 1, 0, 1)
                     else
                         -- Radio button
                         item.Check:SetTexture("Interface\\Buttons\\UI-RadioButton")
@@ -345,7 +437,9 @@ function LoolibDropdownMixin:BuildMenu(menu, options, parentItem)
                     end
                     item.Check:Show()
                     if item.Text then
+                        item.Text:ClearAllPoints()
                         item.Text:SetPoint("LEFT", item.Check, "RIGHT", 2, 0)
+                        item.Text:SetPoint("RIGHT", -8, 0)
                     end
                 else
                     item.Check:Hide()
@@ -380,8 +474,8 @@ function LoolibDropdownMixin:BuildMenu(menu, options, parentItem)
 
             -- Tooltip
             if option.tooltipTitle or option.tooltipText then
-                item:SetScript("OnEnter", function(self)
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                item:SetScript("OnEnter", function(itemFrame)
+                    GameTooltip:SetOwner(itemFrame, "ANCHOR_RIGHT")
                     if option.tooltipTitle then
                         GameTooltip:SetText(option.tooltipTitle, 1, 1, 1)
                     end
@@ -393,6 +487,10 @@ function LoolibDropdownMixin:BuildMenu(menu, options, parentItem)
                 item:SetScript("OnLeave", function()
                     GameTooltip:Hide()
                 end)
+            else
+                -- Clear stale tooltip scripts from a previous pool cycle
+                item:SetScript("OnEnter", nil)
+                item:SetScript("OnLeave", nil)
             end
 
             -- Click handler or submenu opener
