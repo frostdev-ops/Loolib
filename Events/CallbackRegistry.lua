@@ -16,7 +16,7 @@ local Loolib = LibStub("Loolib")
 local Events = Loolib.Events or Loolib:GetOrCreateModule("Events")
 Loolib.Events = Events
 
--- FIX(critical-01): Use Loolib.CreateFromMixins directly instead of unstable "Mixin" module lookup
+-- Use Loolib.CreateFromMixins directly (module aliases can shift during load order)
 local FunctionUtil = Loolib.FunctionUtil or Loolib:GetModule("Core.FunctionUtil") or Loolib:GetModule("FunctionUtil")
 
 assert(Loolib.CreateFromMixins, "Loolib/Core/Mixin.lua must be loaded before CallbackRegistry")
@@ -109,6 +109,9 @@ function CallbackRegistryMixin:GetOrCreateCallbacksByEvent(callbackType, event)
     return callbackTable[event]
 end
 
+-- Iterator safety: during TriggerEvent dispatch, new registrations go
+-- into a deferred table to avoid invalidating the active pairs() loop.
+-- They are merged back in ReconcileDeferredCallbacks after dispatch.
 -- INTERNAL: Get mutable callback table, deferring writes during event dispatch
 function CallbackRegistryMixin:GetMutableCallbacksByEvent(callbackType, event)
     -- If we're currently executing this event, use deferred callbacks

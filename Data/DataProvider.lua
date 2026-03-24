@@ -30,7 +30,7 @@ local function GetRequiredModule(name)
 end
 
 local CallbackRegistryMixin = GetRequiredModule("CallbackRegistry").Mixin
--- FIX(critical-01): Use Loolib.CreateFromMixins directly instead of unstable "Mixin" module lookup
+-- Use Loolib.CreateFromMixins directly (module aliases can shift during load order)
 local CreateFromMixins = assert(Loolib.CreateFromMixins, "LoolibDataProvider: Loolib.CreateFromMixins is required")
 
 local Data = Loolib.Data or Loolib:GetOrCreateModule("Data")

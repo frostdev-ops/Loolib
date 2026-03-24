@@ -18,7 +18,7 @@ local table = table
 local type = type
 
 local Loolib = LibStub("Loolib")
--- FIX(critical-01): Use Loolib.Mixin/CreateFromMixins directly instead of unstable module lookup
+-- Use Loolib.Mixin/CreateFromMixins directly (module aliases can shift during load order)
 local ApplyMixins = assert(Loolib.Mixin,
     "Loolib.Mixin must be loaded before Comm/Compressor.lua")
 local CreateFromMixins = assert(Loolib.CreateFromMixins,
@@ -44,7 +44,7 @@ local rshift = bit.rshift
 
 local CompressorMixin = {}
 
--- DEFLATE constants
+-- DEFLATE fixed Huffman tables (RFC 1951, Section 3.2.6)
 local MAX_WINDOW_SIZE = 32768  -- 32KB sliding window
 local MAX_MATCH_LENGTH = 258
 local MIN_MATCH_LENGTH = 3

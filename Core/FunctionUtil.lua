@@ -23,6 +23,9 @@ local FunctionUtil = Loolib.FunctionUtil or {}
 
     Create closures that capture arguments at creation time.
 ----------------------------------------------------------------------]]
+-- Performance: common cases (0-3 captured args) use dedicated branches
+-- to avoid table allocation. The fallback (4+ args) creates temporary
+-- tables. This matters in hot paths (event dispatch, callback creation).
 
 --- Generate a closure that prepends captured arguments
 -- @param func function - The function to wrap

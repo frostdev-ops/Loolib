@@ -10,6 +10,24 @@
     - Events/CallbackRegistry.lua (LoolibCallbackRegistryMixin)
     - Config/ConfigRegistry.lua (ConfigRegistry for options access)
     - Config/ConfigTypes.lua (ConfigTypes for type info)
+
+    Table of Contents:
+      Constants .................... ~37
+      ConfigDialogMixin ............ ~63
+      Initialization ............... ~78
+      Widget Pooling ............... ~264
+      Dialog Management ............ ~353
+      Dialog Creation .............. ~480
+      Filter Bar Creation .......... ~602
+      Layout Creation .............. ~824
+      Content Rendering ............ ~966
+      Options Rendering ............ ~1278
+      Widget Rendering ............. ~1582
+      Simple Input Widgets ......... ~1695
+      Selection Widgets ............ ~1990
+      Action & Special Widgets ..... ~2316
+      Blizzard Settings ............ ~2755
+      Factory and Singleton ........ ~2830
 ----------------------------------------------------------------------]]
 
 local CreateFrame = CreateFrame
@@ -1675,6 +1693,10 @@ function ConfigDialogMixin:RenderDescription(parent, option, name, yOffset, cont
     return yOffset
 end
 
+--[[--------------------------------------------------------------------
+    Simple Input Widgets (Toggle, Input, Range)
+----------------------------------------------------------------------]]
+
 --- Render toggle (checkbox)
 function ConfigDialogMixin:RenderToggle(parent, option, name, desc, registry, info, disabled, yOffset)
     local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
@@ -1961,6 +1983,10 @@ function ConfigDialogMixin:RenderRange(parent, option, name, desc, registry, inf
 
     return yOffset - 44
 end
+
+--[[--------------------------------------------------------------------
+    Selection Widgets (Select, MultiSelect, Color)
+----------------------------------------------------------------------]]
 
 --- Render select (dropdown)
 function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
@@ -2284,6 +2310,10 @@ function ConfigDialogMixin:RenderColor(parent, option, name, desc, registry, inf
 
     return yOffset - 32
 end
+
+--[[--------------------------------------------------------------------
+    Action & Special Widgets (Execute, Keybinding, Texture, Font)
+----------------------------------------------------------------------]]
 
 --- Render execute button
 function ConfigDialogMixin:RenderExecute(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
@@ -2828,5 +2858,5 @@ Loolib.Config.CreateDialog = CreateConfigDialog
 Loolib.Config.Dialog = ConfigDialog
 
 Loolib:RegisterModule("ConfigDialog", ConfigDialogModule)
--- FIX(Area3-1): Also register under dotted path so Loolib:GetModule("Config.Dialog") works
+-- Also register under dotted path so Loolib:GetModule("Config.Dialog") works
 Loolib:RegisterModule("Config.Dialog", ConfigDialogModule)

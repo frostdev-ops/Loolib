@@ -38,7 +38,7 @@ local type = type
 local wipe = wipe
 
 local Loolib = LibStub("Loolib")
--- FIX(critical-01): Use Loolib.Mixin/CreateFromMixins directly instead of unstable module lookup
+-- Use Loolib.Mixin/CreateFromMixins directly (module aliases can shift during load order)
 local ApplyMixins = assert(Loolib.Mixin,
     "Loolib.Mixin must be loaded before Comm/AddonMessage.lua")
 local CreateFromMixins = assert(Loolib.CreateFromMixins,

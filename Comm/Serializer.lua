@@ -27,7 +27,7 @@ local unpack = unpack or rawget(table, "unpack")
 local wipe = wipe
 
 local Loolib = LibStub("Loolib")
--- FIX(critical-01): Use Loolib.Mixin/CreateFromMixins directly instead of unstable module lookup
+-- Use Loolib.Mixin/CreateFromMixins directly (module aliases can shift during load order)
 local ApplyMixins = assert(Loolib.Mixin,
     "Loolib.Mixin must be loaded before Comm/Serializer.lua")
 local CreateFromMixins = assert(Loolib.CreateFromMixins,

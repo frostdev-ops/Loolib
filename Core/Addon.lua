@@ -15,8 +15,7 @@ local Loolib = LibStub("Loolib")
 
 local AddonModule = Loolib.Addon or {}
 local AddonMixin = AddonModule.Mixin or {}
--- FIX(critical-01): Resolve Loolib.Mixin as the raw apply function directly,
--- not as a module table. After Timer.Mixin registers, "Mixin" is no longer a stable leaf alias.
+-- Resolve Loolib.Mixin as the raw apply function (module aliases can shift during load order)
 local ApplyMixins = assert(Loolib.Mixin, "Loolib.Mixin must be loaded before Core/Addon.lua")
 
 local CreateFrame = CreateFrame

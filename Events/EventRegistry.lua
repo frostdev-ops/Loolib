@@ -12,7 +12,7 @@ local Loolib = LibStub("Loolib")
 local Events = Loolib.Events or Loolib:GetOrCreateModule("Events")
 Loolib.Events = Events
 
--- FIX(critical-01): Use Loolib.CreateFromMixins directly instead of unstable "Mixin" module lookup
+-- Use Loolib.CreateFromMixins directly (module aliases can shift during load order)
 local CallbackRegistryModule = Events.CallbackRegistry
     or Loolib:GetModule("Events.CallbackRegistry")
     or Loolib:GetModule("CallbackRegistry")
@@ -83,7 +83,7 @@ function EventRegistryMixin:RegisterEventCallback(event, callback, owner, ...)
         error("LoolibEventRegistry: RegisterEventCallback 'callback' must be a function", 2)
     end
 
-    -- FIX(Area5-1): RegisterCallback internally calls UnregisterCallback first for the
+    -- RegisterCallback internally calls UnregisterCallback first for the
     -- same (event, owner). Only increment the ref count when this is a genuinely new
     -- registration, not a replacement, to prevent count inflation that leaks WoW events.
     local isReplacement = false

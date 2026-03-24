@@ -12,7 +12,7 @@ local Loolib = LibStub("Loolib")
 local Events = Loolib.Events or Loolib:GetOrCreateModule("Events")
 Loolib.Events = Events
 
--- FIX(critical-01): Use Loolib.CreateFromMixins directly instead of unstable "Mixin" module lookup
+-- Use Loolib.CreateFromMixins directly (module aliases can shift during load order)
 local TimerModule = Loolib.Timer or Loolib:GetModule("Timer")
 local EventRegistryModule = Events.EventRegistry
     or Loolib:GetModule("Events.EventRegistry")
