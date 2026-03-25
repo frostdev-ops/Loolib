@@ -232,6 +232,20 @@ end
 -- @param warningType number - Warning type ID
 -- @param warningMessage string - The warning message
 function LoolibErrorHandlerMixin:OnLuaWarning(warningType, warningMessage)
+    -- Rate-limit: LUA_WARNING can fire hundreds of times per frame during
+    -- combat taint cascades, and debugstack + string processing is expensive.
+    -- Allow at most 5 warnings per second to avoid exceeding the execution limit.
+    local now = GetTime()
+    if now == self._lastWarningTime then
+        self._warningCount = (self._warningCount or 0) + 1
+        if self._warningCount > 5 then
+            return
+        end
+    else
+        self._lastWarningTime = now
+        self._warningCount = 1
+    end
+
     -- LUA_WARNING fires synchronously — the original call stack IS preserved.
     -- However, Loolib's event dispatch frames are always on top of the stack:
     --   Loolib/Debug/ErrorHandler.lua  (this handler + anonymous closure)
