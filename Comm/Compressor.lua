@@ -624,6 +624,9 @@ local function InflateBlockHuffman(reader, litTable, distTable, output)
         else
             -- Length/distance pair
             local lengthIdx = symbol - 256
+            if lengthIdx < 1 or lengthIdx > #LENGTH_BASE then
+                return false, "Invalid length code: " .. symbol
+            end
             local length = LENGTH_BASE[lengthIdx]
             local extraBits = LENGTH_EXTRA_BITS[lengthIdx]
             if extraBits > 0 then
@@ -633,6 +636,9 @@ local function InflateBlockHuffman(reader, litTable, distTable, output)
             local distSymbol = DecodeSymbol(reader, distTable, MAX_BITS)
             if distSymbol == nil then
                 return false, "Failed to decode distance symbol"
+            end
+            if distSymbol < 0 or distSymbol >= DISTANCE_COUNT then
+                return false, "Invalid distance code: " .. distSymbol
             end
 
             local distance = DISTANCE_BASE[distSymbol + 1]
