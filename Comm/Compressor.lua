@@ -586,8 +586,14 @@ end
 local function InflateBlockStored(reader, output)
     reader:AlignToByte()
 
-    local len = bor(reader:ReadBits(8), lshift(reader:ReadBits(8), 8))
-    local nlen = bor(reader:ReadBits(8), lshift(reader:ReadBits(8), 8))
+    local l0, l1 = reader:ReadBits(8), reader:ReadBits(8)
+    local n0, n1 = reader:ReadBits(8), reader:ReadBits(8)
+    if l0 == nil or l1 == nil or n0 == nil or n1 == nil then
+        return false, "Unexpected end of stored block header"
+    end
+
+    local len = bor(l0, lshift(l1, 8))
+    local nlen = bor(n0, lshift(n1, 8))
 
     if bxor(len, nlen) ~= 0xFFFF then
         return false, "Invalid stored block length"
@@ -630,7 +636,11 @@ local function InflateBlockHuffman(reader, litTable, distTable, output)
             local length = LENGTH_BASE[lengthIdx]
             local extraBits = LENGTH_EXTRA_BITS[lengthIdx]
             if extraBits > 0 then
-                length = length + reader:ReadBits(extraBits)
+                local extra = reader:ReadBits(extraBits)
+                if extra == nil then
+                    return false, "Unexpected end of data in length extra bits"
+                end
+                length = length + extra
             end
 
             local distSymbol = DecodeSymbol(reader, distTable, MAX_BITS)
@@ -644,7 +654,16 @@ local function InflateBlockHuffman(reader, litTable, distTable, output)
             local distance = DISTANCE_BASE[distSymbol + 1]
             local distExtraBits = DISTANCE_EXTRA_BITS[distSymbol + 1]
             if distExtraBits > 0 then
-                distance = distance + reader:ReadBits(distExtraBits)
+                local extra = reader:ReadBits(distExtraBits)
+                if extra == nil then
+                    return false, "Unexpected end of data in distance extra bits"
+                end
+                distance = distance + extra
+            end
+
+            -- Validate back-reference distance against current output size
+            if distance < 1 or distance > outLen then
+                return false, "Invalid back-reference distance: " .. distance .. " (output size: " .. outLen .. ")"
             end
 
             -- Copy from output buffer using direct table indexing
@@ -661,9 +680,16 @@ local function InflateBlockHuffman(reader, litTable, distTable, output)
 end
 
 local function ReadDynamicTables(reader)
-    local hlit = reader:ReadBits(5) + 257
-    local hdist = reader:ReadBits(5) + 1
-    local hclen = reader:ReadBits(4) + 4
+    local rawHlit = reader:ReadBits(5)
+    local rawHdist = reader:ReadBits(5)
+    local rawHclen = reader:ReadBits(4)
+    if rawHlit == nil or rawHdist == nil or rawHclen == nil then
+        return nil, nil, "Unexpected end of dynamic block header"
+    end
+
+    local hlit = rawHlit + 257
+    local hdist = rawHdist + 1
+    local hclen = rawHclen + 4
 
     -- Read code length code lengths
     local codeLengthLengths = {}
@@ -672,7 +698,11 @@ local function ReadDynamicTables(reader)
     end
 
     for i = 1, hclen do
-        codeLengthLengths[CODE_LENGTH_ORDER[i]] = reader:ReadBits(3)
+        local bits = reader:ReadBits(3)
+        if bits == nil then
+            return nil, nil, "Unexpected end of code length table"
+        end
+        codeLengthLengths[CODE_LENGTH_ORDER[i]] = bits
     end
 
     local codeLengthTable = BuildDecodeTable(codeLengthLengths, 19)
@@ -692,20 +722,32 @@ local function ReadDynamicTables(reader)
             allLengths[i] = symbol
             i = i + 1
         elseif symbol == 16 then
-            local repeatCount = reader:ReadBits(2) + 3
+            local rawRepeat = reader:ReadBits(2)
+            if rawRepeat == nil then
+                return nil, nil, "Unexpected end of data in code length repeat"
+            end
+            local repeatCount = rawRepeat + 3
             local repeatValue = allLengths[i - 1] or 0
             for j = 1, repeatCount do
                 allLengths[i] = repeatValue
                 i = i + 1
             end
         elseif symbol == 17 then
-            local repeatCount = reader:ReadBits(3) + 3
+            local rawRepeat = reader:ReadBits(3)
+            if rawRepeat == nil then
+                return nil, nil, "Unexpected end of data in code length repeat"
+            end
+            local repeatCount = rawRepeat + 3
             for j = 1, repeatCount do
                 allLengths[i] = 0
                 i = i + 1
             end
         elseif symbol == 18 then
-            local repeatCount = reader:ReadBits(7) + 11
+            local rawRepeat = reader:ReadBits(7)
+            if rawRepeat == nil then
+                return nil, nil, "Unexpected end of data in code length repeat"
+            end
+            local repeatCount = rawRepeat + 11
             for j = 1, repeatCount do
                 allLengths[i] = 0
                 i = i + 1
