@@ -87,6 +87,17 @@ local ONUPDATE_INTERVAL = 0.08      -- 80 ms minimum between ProcessSendQueue ru
 
 -- Pending message cleanup
 local CLEANUP_INTERVAL  = 30        -- Seconds between cleanup sweeps
+
+-- Human-readable names for SendAddonMessageResult enum values (WoW 12.0 PTR)
+local RESULT_NAMES = {
+    [0]  = "Success",              [1]  = "InvalidPrefix",
+    [2]  = "InvalidMessage",       [3]  = "AddonMessageThrottle",
+    [4]  = "InvalidChatType",      [5]  = "NotInGroup",
+    [6]  = "TargetRequired",       [7]  = "InvalidChannel",
+    [8]  = "ChannelThrottle",      [9]  = "GeneralError",
+    [10] = "NotInGuild",           [11] = "AddOnMessageLockdown",
+    [12] = "TargetOffline",
+}
 local PENDING_MAX_AGE   = 60        -- Default max age for incomplete multi-part messages
 
 -- Message ID counter — randomized at load to reduce post-reload ID correlation
@@ -377,6 +388,10 @@ local function ProcessSendQueue()
     -- Respect throttle pause (WoW told us we're sending too fast)
     if now < throttlePauseUntil then return end
 
+    -- WoW 12.0+: all addon messages are blocked during combat lockdown.
+    -- Don't attempt sends — messages stay queued for post-combat drain.
+    if InCombatLockdown() then return end
+
     if totalQueued == 0 then
         if commFrame then commFrame:Hide() end
         return
@@ -400,24 +415,51 @@ local function ProcessSendQueue()
             queue:Pop()
             totalQueued = totalQueued - 1
 
-            -- Attempt send and detect throttle result
+            -- Attempt send and check result
             ourOwnSend = true
             local ok, result = pcall(C_ChatInfo.SendAddonMessage,
                 item.prefix, item.text, item.distribution, item.target)
             ourOwnSend = false
 
-            local isThrottled = ok and
-                (result == Enum.SendAddonMessageResult.AddonMessageThrottle)
-
-            if not ok or isThrottled then
-                -- Re-queue for retry and pause
+            if not ok then
+                -- Lua error calling the API — re-queue and pause
                 queue:Push(item)
                 totalQueued = totalQueued + 1
                 throttlePauseUntil = now + THROTTLE_PAUSE_DURATION
-                if not ok then
-                    Loolib:Error("AddonMessage: SendAddonMessage error:", result)
-                end
+                Loolib:Error("AddonMessage: SendAddonMessage pcall error:", result)
                 return
+            end
+
+            -- Check all non-success results from C_ChatInfo.SendAddonMessage.
+            -- WoW 12.0 returns Enum.SendAddonMessageResult; older builds may return nil/true.
+            local SendResult = Enum and Enum.SendAddonMessageResult
+            local isSuccess = (result == nil)
+                or (result == true)
+                or (SendResult and result == SendResult.Success)
+
+            if not isSuccess then
+                local isThrottled = SendResult
+                    and result == SendResult.AddonMessageThrottle
+                local isLockdown = SendResult
+                    and result == SendResult.AddOnMessageLockdown
+
+                if isThrottled or isLockdown then
+                    -- Re-queue for retry after a pause
+                    queue:Push(item)
+                    totalQueued = totalQueued + 1
+                    throttlePauseUntil = now + THROTTLE_PAUSE_DURATION
+                    return
+                end
+
+                -- Non-recoverable error (InvalidPrefix, NotInGroup, etc.)
+                -- Log and discard — re-queuing won't help
+                local resultName = RESULT_NAMES[result] or "Unknown"
+                Loolib:Error("AddonMessage: SendAddonMessage failed —",
+                    "prefix=" .. tostring(item.prefix),
+                    "dist=" .. tostring(item.distribution),
+                    "target=" .. tostring(item.target),
+                    "result=" .. tostring(result) .. " (" .. resultName .. ")")
+                -- fall through to consume and continue
             end
 
             ConsumeThrottle(effectLen)
