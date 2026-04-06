@@ -72,6 +72,23 @@ Core\Locale.lua
 Core\WindowManager.lua
 
 # ============================================================
+# UI Theme - Shared theme and media tokens
+# ============================================================
+UI\Theme\ThemeManager.lua
+UI\Theme\ThemeDefault.lua
+UI\Theme\ThemeDark.lua
+UI\Theme\ThemeMinimal.lua
+
+# ============================================================
+# UI Core - Common frame, region, and styling helpers
+# ============================================================
+UI\Core\AnchorUtil.lua
+UI\Core\FrameUtil.lua
+UI\Core\RegionUtil.lua
+UI\Core\StyleUtil.lua
+UI\Core\WindowUtil.lua
+
+# ============================================================
 # Utils - Utility modules
 # ============================================================
 Utils\SecretUtil.lua

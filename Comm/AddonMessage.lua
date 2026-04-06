@@ -388,9 +388,8 @@ local function ProcessSendQueue()
     -- Respect throttle pause (WoW told us we're sending too fast)
     if now < throttlePauseUntil then return end
 
-    -- WoW 12.0+: all addon messages are blocked during combat lockdown.
-    -- Don't attempt sends — messages stay queued for post-combat drain.
-    if InCombatLockdown() then return end
+    -- Note: combat lockdown does NOT block addon messages (only encounter/challenge
+    -- restrictions do). ProcessSendQueue runs freely during combat.
 
     if totalQueued == 0 then
         if commFrame then commFrame:Hide() end

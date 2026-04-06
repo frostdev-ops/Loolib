@@ -167,17 +167,31 @@ local ThemeDefault = {
         Fonts
     ------------------------------------------------------------------]]
     fonts = {
-        title = "GameFontNormalLarge",
-        titleHuge = "GameFontNormalHuge",
-        header = "GameFontNormal",
-        body = "GameFontNormal",
-        bodySmall = "GameFontNormalSmall",
-        highlight = "GameFontHighlight",
-        highlightSmall = "GameFontHighlightSmall",
-        disabled = "GameFontDisable",
-        white = "GameFontWhite",
-        number = "NumberFontNormal",
-        numberLarge = "NumberFontNormalLarge",
+        title = { object = "GameFontNormalLarge" },
+        titleHuge = { object = "GameFontNormalHuge" },
+        header = { object = "GameFontNormal" },
+        body = { object = "GameFontNormal" },
+        bodySmall = { object = "GameFontNormalSmall" },
+        highlight = { object = "GameFontHighlight" },
+        highlightSmall = { object = "GameFontHighlightSmall" },
+        disabled = { object = "GameFontDisable" },
+        white = { object = "GameFontWhite" },
+        number = { object = "NumberFontNormal" },
+        numberLarge = { object = "NumberFontNormalLarge" },
+    },
+
+    --[[----------------------------------------------------------------
+        Textures / Images
+    ------------------------------------------------------------------]]
+    textures = {
+        blank = "Interface\\Buttons\\WHITE8x8",
+        headerGlow = "Interface\\Buttons\\WHITE8x8",
+        softHighlight = "Interface\\Buttons\\WHITE8x8",
+        noise = "Interface\\Tooltips\\UI-Tooltip-Background",
+        buttonPanelNormal = "Interface\\Buttons\\UI-Panel-Button-Up",
+        buttonPanelPushed = "Interface\\Buttons\\UI-Panel-Button-Down",
+        buttonPanelHighlight = "Interface\\Buttons\\UI-Panel-Button-Highlight",
+        buttonPanelDisabled = "Interface\\Buttons\\UI-Panel-Button-Disabled",
     },
 
     --[[----------------------------------------------------------------
@@ -194,6 +208,13 @@ local ThemeDefault = {
         huge = 32,
     },
 
+    spacingSets = {
+        panelInsets = { left = 12, right = 12, top = 12, bottom = 12 },
+        contentInsets = { left = 16, right = 16, top = 16, bottom = 16 },
+        compactCell = { x = 4, y = 2 },
+        standardCell = { x = 8, y = 4 },
+    },
+
     --[[----------------------------------------------------------------
         Component Configurations
     ------------------------------------------------------------------]]
@@ -207,6 +228,12 @@ local ThemeDefault = {
             borderColor = "border",
             textColor = "text",
             font = "GameFontNormal",
+            textureSet = {
+                normal = "buttonPanelNormal",
+                pushed = "buttonPanelPushed",
+                highlight = { texture = "buttonPanelHighlight", blendMode = "ADD" },
+                disabled = "buttonPanelDisabled",
+            },
         },
 
         -- EditBox

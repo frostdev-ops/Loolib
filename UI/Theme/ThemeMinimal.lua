@@ -186,6 +186,12 @@ local ThemeMinimal = {
             textColor = "text",
             font = "GameFontNormal",
             cornerRadius = 0,  -- Sharp corners (for custom rendering)
+            textureSet = {
+                normal = "buttonPanelNormal",
+                pushed = "buttonPanelPushed",
+                highlight = { texture = "buttonPanelHighlight", blendMode = "ADD" },
+                disabled = "buttonPanelDisabled",
+            },
         },
 
         EditBox = {

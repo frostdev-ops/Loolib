@@ -38,6 +38,7 @@ local string_sub = string.sub
 -- INTERNAL: Static fallback constants to avoid per-call allocation
 local FALLBACK_COLOR = {1, 1, 1, 1}
 local FALLBACK_FONT = "GameFontNormal"
+local FALLBACK_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 local FALLBACK_SPACING = 8
 
 -- INTERNAL: Required top-level keys for a valid theme data table
@@ -61,6 +62,14 @@ function ThemeManagerMixin:Init()
     self.activeThemeName = nil
     self.activeTheme = nil
     self.callbacks = {}
+    self.media = {
+        font = {},
+        texture = {},
+        image = {},
+        background = {},
+        border = {},
+        statusbar = {},
+    }
     self._settingTheme = false  -- TH-02: reentrancy guard
     self._initialized = true
 end
@@ -114,6 +123,102 @@ local function IsValidColorTable(color)
         return false
     end
     return true
+end
+
+-- INTERNAL: Validate a theme font entry
+-- @param font any
+-- @return boolean
+local function IsValidFontEntry(font)
+    if type(font) == "string" then
+        return font ~= ""
+    end
+    if type(font) ~= "table" then
+        return false
+    end
+    if font.object ~= nil and type(font.object) ~= "string" then
+        return false
+    end
+    if font.path ~= nil and type(font.path) ~= "string" then
+        return false
+    end
+    if font.media ~= nil and type(font.media) ~= "string" then
+        return false
+    end
+    if font.size ~= nil and type(font.size) ~= "number" then
+        return false
+    end
+    if font.flags ~= nil and type(font.flags) ~= "string" then
+        return false
+    end
+    return font.object ~= nil or font.path ~= nil or font.media ~= nil
+end
+
+-- INTERNAL: Validate a spacing-set table
+-- @param spacingSet any
+-- @return boolean
+local function IsValidSpacingSet(spacingSet)
+    if type(spacingSet) ~= "table" then
+        return false
+    end
+    for _, value in pairs(spacingSet) do
+        if type(value) ~= "number" then
+            return false
+        end
+    end
+    return true
+end
+
+-- INTERNAL: Normalize a font entry into a predictable table shape
+-- @param font any
+-- @param fallback any
+-- @return table
+local function NormalizeFontEntry(font, fallback)
+    if type(font) == "string" and font ~= "" then
+        return { object = font }
+    end
+
+    if type(font) == "table" then
+        local normalized = {}
+        if type(font.object) == "string" and font.object ~= "" then
+            normalized.object = font.object
+        end
+        if type(font.path) == "string" and font.path ~= "" then
+            normalized.path = font.path
+        end
+        if type(font.media) == "string" and font.media ~= "" then
+            normalized.media = font.media
+        end
+        if type(font.size) == "number" then
+            normalized.size = font.size
+        end
+        if type(font.flags) == "string" then
+            normalized.flags = font.flags
+        end
+        if next(normalized) then
+            return normalized
+        end
+    end
+
+    if fallback ~= nil then
+        return NormalizeFontEntry(fallback, nil)
+    end
+
+    return { object = FALLBACK_FONT }
+end
+
+-- INTERNAL: Best-effort LibSharedMedia lookup.
+-- ThemeManager works without LSM; this just expands media support when present.
+local function GetSharedMedia()
+    if type(LibStub) ~= "table" and type(LibStub) ~= "function" then
+        return nil
+    end
+
+    local ok, media = pcall(LibStub, "LibSharedMedia-3.0", true)
+    if ok then
+        return media
+    end
+
+    return nil
 end
 
 --[[--------------------------------------------------------------------
@@ -285,14 +390,146 @@ end
 
 --- Get a font from the active theme
 -- @param fontName string - Font name
--- @param fallback string - Fallback font object name (default: "GameFontNormal")
--- @return string - Font object name
+-- @param fallback string|table - Fallback font object or font spec
+-- @return table - Normalized font spec
 function ThemeManagerMixin:GetFont(fontName, fallback)
     local font = self:GetValue("fonts", fontName, fallback or FALLBACK_FONT)
-    if type(font) ~= "string" then
-        return fallback or FALLBACK_FONT
+    if not IsValidFontEntry(font) then
+        return NormalizeFontEntry(fallback or FALLBACK_FONT)
     end
-    return font
+    return NormalizeFontEntry(font, fallback or FALLBACK_FONT)
+end
+
+--- Register a named media asset for later lookup.
+-- This complements LibSharedMedia and keeps asset resolution centralized.
+-- @param mediaType string - Media bucket (e.g. "font", "texture", "image")
+-- @param name string - Symbolic asset name
+-- @param value string|number|table - Asset path, fileID, or metadata table
+function ThemeManagerMixin:RegisterMedia(mediaType, name, value)
+    if type(mediaType) ~= "string" or mediaType == "" then
+        error("LoolibThemeManager: RegisterMedia: 'mediaType' must be a non-empty string", 2)
+    end
+    if type(name) ~= "string" or name == "" then
+        error("LoolibThemeManager: RegisterMedia: 'name' must be a non-empty string", 2)
+    end
+
+    local valueType = type(value)
+    if valueType ~= "string" and valueType ~= "number" and valueType ~= "table" then
+        error("LoolibThemeManager: RegisterMedia: 'value' must be a string, number, or table", 2)
+    end
+
+    self.media[mediaType] = self.media[mediaType] or {}
+    self.media[mediaType][name] = valueType == "table" and TableUtil.DeepCopy(value) or value
+end
+
+--- Get registered media, falling back to LibSharedMedia when available.
+-- @param mediaType string
+-- @param name string
+-- @param fallback any
+-- @return any
+function ThemeManagerMixin:GetMedia(mediaType, name, fallback)
+    if type(mediaType) ~= "string" or mediaType == "" then
+        return fallback
+    end
+    if type(name) ~= "string" or name == "" then
+        return fallback
+    end
+
+    local mediaBucket = self.media[mediaType]
+    if mediaBucket and mediaBucket[name] ~= nil then
+        return mediaBucket[name]
+    end
+
+    local lsm = GetSharedMedia()
+    if lsm and type(lsm.Fetch) == "function" then
+        local ok, result = pcall(lsm.Fetch, lsm, mediaType, name, true)
+        if ok and result ~= nil then
+            return result
+        end
+    end
+
+    return fallback
+end
+
+--- Get all registered media names for a media type, optionally merged with LibSharedMedia.
+-- @param mediaType string
+-- @return table
+function ThemeManagerMixin:GetMediaNames(mediaType)
+    if type(mediaType) ~= "string" or mediaType == "" then
+        return {}
+    end
+
+    local names = {}
+    local seen = {}
+    local mediaBucket = self.media[mediaType]
+    if mediaBucket then
+        for name in pairs(mediaBucket) do
+            if not seen[name] then
+                names[#names + 1] = name
+                seen[name] = true
+            end
+        end
+    end
+
+    local lsm = GetSharedMedia()
+    if lsm and type(lsm.HashTable) == "function" then
+        local ok, hash = pcall(lsm.HashTable, lsm, mediaType)
+        if ok and type(hash) == "table" then
+            for name in pairs(hash) do
+                if not seen[name] then
+                    names[#names + 1] = name
+                    seen[name] = true
+                end
+            end
+        end
+    end
+
+    table_sort(names)
+    return names
+end
+
+--- Resolve a media token into an actual asset path or fileID.
+-- @param mediaType string
+-- @param token any
+-- @param fallback any
+-- @return any
+function ThemeManagerMixin:ResolveMedia(mediaType, token, fallback)
+    if type(token) == "number" then
+        return token
+    end
+
+    if type(token) == "string" then
+        return self:GetMedia(mediaType, token, token)
+    end
+
+    if type(token) == "table" then
+        if type(token.path) == "string" and token.path ~= "" then
+            return token.path
+        end
+        if type(token.media) == "string" and token.media ~= "" then
+            return self:GetMedia(token.kind or mediaType, token.media, fallback)
+        end
+    end
+
+    return fallback
+end
+
+--- Get a theme texture or image path/fileID.
+-- @param textureName string - Texture key
+-- @param fallback string|number|nil
+-- @return string|number|nil
+function ThemeManagerMixin:GetTexture(textureName, fallback)
+    local token = self:GetValue("textures", textureName, nil)
+    if token == nil then
+        token = self:GetValue("images", textureName, fallback or FALLBACK_TEXTURE)
+    end
+    if token == nil and type(textureName) == "string" and textureName ~= "" then
+        token = self:GetMedia("texture", textureName, nil)
+    end
+    if token == nil and type(textureName) == "string" and textureName ~= "" then
+        token = self:GetMedia("image", textureName, fallback or FALLBACK_TEXTURE)
+    end
+    return self:ResolveMedia("texture", token, fallback or FALLBACK_TEXTURE)
 end
 
 --- Get a backdrop from the active theme
@@ -317,6 +554,21 @@ function ThemeManagerMixin:GetSpacing(spacingName, fallback)
         return fallback or FALLBACK_SPACING
     end
     return spacing
+end
+
+--- Get a spacing-set table from the active theme.
+-- @param spacingSetName string
+-- @param fallback table|nil
+-- @return table|nil
+function ThemeManagerMixin:GetSpacingSet(spacingSetName, fallback)
+    local spacingSet = self:GetValue("spacingSets", spacingSetName, fallback)
+    if spacingSet == nil then
+        return fallback
+    end
+    if not IsValidSpacingSet(spacingSet) then
+        return fallback
+    end
+    return TableUtil.DeepCopy(spacingSet)
 end
 
 --- Get component configuration from the active theme
@@ -385,13 +637,32 @@ end
 --- Apply theme font to a font string
 -- @param fontString FontString - The font string
 -- @param fontName string - Font name from theme
-function ThemeManagerMixin:ApplyFont(fontString, fontName)
+-- @param sizeOverride number|nil - Optional explicit font size
+-- @param flagsOverride string|nil - Optional explicit font flags
+function ThemeManagerMixin:ApplyFont(fontString, fontName, sizeOverride, flagsOverride)
     if type(fontString) ~= "table" or type(fontString.SetFontObject) ~= "function" then
         return
     end
+
     local font = self:GetFont(fontName)
-    if font then
-        fontString:SetFontObject(font)
+    local resolvedPath = self:ResolveMedia("font", font.path or font.media, nil)
+    local size = sizeOverride or font.size
+    local flags = flagsOverride or font.flags or ""
+
+    if resolvedPath and size and type(fontString.SetFont) == "function" then
+        fontString:SetFont(resolvedPath, size, flags)
+        return
+    end
+
+    if font.object then
+        fontString:SetFontObject(font.object)
+
+        if (sizeOverride or flagsOverride or font.size or font.flags) and type(fontString.GetFont) == "function" and type(fontString.SetFont) == "function" then
+            local currentPath, currentSize, currentFlags = fontString:GetFont()
+            if currentPath then
+                fontString:SetFont(currentPath, size or currentSize or 12, flags ~= "" and flags or (currentFlags or ""))
+            end
+        end
     end
 end
 
@@ -404,6 +675,20 @@ function ThemeManagerMixin:ApplyTextColor(fontString, colorName)
     end
     local color = self:GetColor(colorName)
     fontString:SetTextColor(color[1], color[2], color[3], color[4] or 1)
+end
+
+--- Apply a theme texture or image token to a texture region.
+-- @param textureRegion Texture
+-- @param textureName string
+-- @param fallback string|number|nil
+function ThemeManagerMixin:ApplyTexture(textureRegion, textureName, fallback)
+    if type(textureRegion) ~= "table" or type(textureRegion.SetTexture) ~= "function" then
+        return
+    end
+    local texture = self:GetTexture(textureName, fallback)
+    if texture ~= nil then
+        textureRegion:SetTexture(texture)
+    end
 end
 
 --- Apply full theme styling to a frame based on component type
@@ -594,10 +879,15 @@ ThemeManagerModule.Manager = ThemeManager
 ThemeManagerModule.GetValue = function(...) return ThemeManager:GetValue(...) end
 ThemeManagerModule.GetColor = function(...) return ThemeManager:GetColor(...) end
 ThemeManagerModule.GetFont = function(...) return ThemeManager:GetFont(...) end
+ThemeManagerModule.GetMedia = function(...) return ThemeManager:GetMedia(...) end
+ThemeManagerModule.GetMediaNames = function(...) return ThemeManager:GetMediaNames(...) end
+ThemeManagerModule.GetTexture = function(...) return ThemeManager:GetTexture(...) end
 ThemeManagerModule.GetBackdrop = function(...) return ThemeManager:GetBackdrop(...) end
 ThemeManagerModule.GetSpacing = function(...) return ThemeManager:GetSpacing(...) end
+ThemeManagerModule.GetSpacingSet = function(...) return ThemeManager:GetSpacingSet(...) end
 ThemeManagerModule.GetComponentConfig = function(...) return ThemeManager:GetComponentConfig(...) end
 ThemeManagerModule.SetActiveTheme = function(...) return ThemeManager:SetActiveTheme(...) end
+ThemeManagerModule.RegisterMedia = function(...) return ThemeManager:RegisterMedia(...) end
 ThemeManagerModule.RegisterTheme = function(...) return ThemeManager:RegisterTheme(...) end
 
 local UI = Loolib.UI or Loolib:GetOrCreateModule("UI")
@@ -607,5 +897,6 @@ UI.ThemeManager = ThemeManager
 Theme.Manager = ThemeManagerModule
 Loolib.ThemeManagerMixin = ThemeManagerMixin
 Loolib.ThemeManager = ThemeManager
+Loolib.Theme = ThemeManagerModule
 
 Loolib:RegisterModule("Theme.Manager", ThemeManagerModule)

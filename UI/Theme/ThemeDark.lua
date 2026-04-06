@@ -157,6 +157,12 @@ local ThemeDark = {
             borderColor = "border",
             textColor = "text",
             font = "GameFontNormal",
+            textureSet = {
+                normal = "buttonPanelNormal",
+                pushed = "buttonPanelPushed",
+                highlight = { texture = "buttonPanelHighlight", blendMode = "ADD" },
+                disabled = "buttonPanelDisabled",
+            },
         },
 
         EditBox = {
