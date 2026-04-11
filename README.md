@@ -2,7 +2,7 @@
 
 A comprehensive addon library for World of Warcraft 12.0+ (Midnight). Provides reusable UI components, event handling, data persistence, communication utilities, and more via the LibStub pattern.
 
-**Version**: 1.1.4 | **Interface**: 120000 | **License**: MIT
+**Version**: 2.1.0 | **Interface**: 120000 | **License**: MIT
 
 ---
 

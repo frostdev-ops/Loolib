@@ -595,7 +595,167 @@ InterfaceOptionsFrame_OpenToCategory("My Addon")
 
 ---
 
+## Theming the Dialog
+
+> Added in Loolib 2.1.0. Earlier consumers continue to render with the
+> built-in default theme; no migration is required.
+
+ConfigDialog ships with a sparse, layered theming system. Every color,
+backdrop, and font that the renderer applies is resolved through a
+`DialogTheme` table at render time. Consumers can:
+
+- Override appearance for a specific app via `RegisterAppTheme(appName, ...)`
+- Register named global themes via `RegisterDialogTheme(name, ...)`
+- Replace whole widget creators via the `widgetFactories` table
+- Post-style any created widget via the `afterCreateWidget` hook
+
+### Resolution order
+
+For any token (color, backdrop, font, layout), the resolver walks:
+
+1. **Per-app override** - whatever `RegisterAppTheme(appName, ...)` provided
+2. **Active global theme** - whatever `SetActiveDialogTheme(name)` selected
+3. **Built-in default** - the verbatim values from pre-2.1 ConfigDialog
+
+A theme table is sparse: missing keys fall through transparently. This
+means consumers can override one color and inherit the rest.
+
+### Theme table shape
+
+```lua
+{
+    colors = {
+        -- Surfaces
+        dialogBg, treeContainerBg, contentContainerBg, inlineGroupBg,
+        inputBg, inputBgDisabled, dropdownBg, dropdownBgDisabled,
+        dropdownMenuBg, filterButtonBg, filterMenuBg,
+        keyButtonBg, keyButtonBgDisabled, textureFrameBg, searchBoxBg,
+
+        -- Borders
+        treeContainerBorder, contentContainerBorder, inlineGroupBorder,
+
+        -- Tree / tab states
+        treeHoverBg, treeSelectionBg, treeTextSelected,
+        tabBgActive, tabBgInactive, tabActiveAccent,
+        tabTextActive, tabTextInactive,
+
+        -- Filter / dropdown highlights
+        filterButtonHover, dropdownItemHover, dropdownItemSelected,
+
+        -- Text
+        headerText, descriptionText, labelText, labelTextDisabled,
+        noResultsText, searchIcon,
+
+        -- Decorative
+        separator, textureMissing,
+    },
+
+    backdrops = {
+        dialog, container, input, popupMenu, inlineGroup, textureFrame,
+        -- Each is a Blizzard backdrop table:
+        -- { bgFile=..., edgeFile=..., tile=..., tileSize=..., edgeSize=..., insets={...} }
+    },
+
+    fonts = {
+        title, groupHeader, label, labelDisabled, description, treeNode,
+        -- Each is a font object name string (e.g. "GameFontNormal")
+    },
+
+    layout = {
+        dialogWidth, dialogHeight, treeWidth,
+        contentPadding, widgetSpacing, labelWidth,
+    },
+
+    -- Optional: replace the renderer's CreateFrame call for a widget type.
+    -- factory(dialog, parent, option, info) -> Frame
+    widgetFactories = {
+        toggle, range, input, select, multiselect, color,
+        execute, header, description, keybinding, texture, font,
+    },
+
+    -- Optional: post-style hook fired after every widget is created.
+    -- Receives (widgetType, widget, option, info). Use this to apply
+    -- a consistent skin without replacing widget creation.
+    afterCreateWidget = function(widgetType, widget, option, info) end,
+}
+```
+
+All keys are optional. The default theme provides values for everything.
+
+### End-to-end example: Loothing's amber accent theme
+
+This is the actual code Loothing uses to make its config dialog match
+the rest of the addon.
+
+```lua
+local Loolib = LibStub("Loolib")
+local Config = Loolib.Config
+local SkinningMixin = Loothing.SkinningMixin
+
+-- Helper that pulls a color from Loothing's existing palette
+local function GetSkinColor(key)
+    return SkinningMixin:GetColor(key)
+end
+
+local function RegisterTheme()
+    Config:RegisterAppTheme("Loothing", {
+        colors = {
+            dialogBg            = GetSkinColor("frame"),
+            treeContainerBg     = GetSkinColor("panelInset"),
+            treeContainerBorder = GetSkinColor("border"),
+            treeSelectionBg     = GetSkinColor("rowSelected"),
+            treeHoverBg         = GetSkinColor("rowHover"),
+            treeTextSelected    = GetSkinColor("accent"),
+            contentContainerBg  = GetSkinColor("panel"),
+            inlineGroupBg       = GetSkinColor("panelAlt"),
+            inputBg             = GetSkinColor("panelInset"),
+            dropdownBg          = GetSkinColor("panelInset"),
+            dropdownMenuBg      = GetSkinColor("panelInset"),
+            headerText          = GetSkinColor("accent"),
+            labelText           = GetSkinColor("text"),
+            descriptionText     = GetSkinColor("textMuted"),
+            labelTextDisabled   = GetSkinColor("textSubtle"),
+            tabActiveAccent     = GetSkinColor("accent"),
+            separator           = GetSkinColor("border"),
+        },
+
+        afterCreateWidget = function(widgetType, widget)
+            -- Apply Loothing's primary button style to every action button
+            if widgetType == "execute" then
+                SkinningMixin:StylePlainButton(widget, "primary")
+            end
+        end,
+    })
+end
+
+-- Register on init, and re-register when the user changes accent
+RegisterTheme()
+SkinningMixin:RegisterCallback("OnAccentChanged", RegisterTheme)
+```
+
+### Repainting an open dialog
+
+`RegisterAppTheme`, `RegisterDialogTheme`, and `SetActiveDialogTheme` all
+notify the dialog system. If a dialog for the affected app is currently
+open, it is refreshed in place — no need to close and reopen.
+
+### Public API summary
+
+```lua
+Config:RegisterAppTheme(appName, themeTable)        -- per-app override
+Config:RegisterDialogTheme(themeName, themeTable)   -- named global theme
+Config:SetActiveDialogTheme(themeName)              -- switch global default
+Config:GetDialogTheme(appName)                      -- resolved theme table
+```
+
+---
+
 ## Styling and Appearance
+
+> Note: as of Loolib 2.1.0, every value in this section is the
+> *default theme*. To override any of them, use the theming API
+> documented above. The hardcoded sections below remain for reference
+> on what the dialog looks like out of the box.
 
 ### Dialog Backdrop
 

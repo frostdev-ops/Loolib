@@ -2,7 +2,7 @@
 ## Title: Loolib
 ## Notes: Comprehensive addon library for WoW 12.0+ (Midnight expansion)
 ## Author: James Kueller
-## Version: 2.0.0
+## Version: 2.1.0
 ## X-Category: Library
 ## X-License: MIT
 
@@ -54,6 +54,7 @@ Config\ConfigTypes.lua
 Config\ConfigRegistry.lua
 Config\ConfigCmd.lua
 Config\ProfileOptions.lua
+Config\DialogTheme.lua
 Config\ConfigDialog.lua
 Config\Config.lua
 

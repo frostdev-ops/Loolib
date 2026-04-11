@@ -114,6 +114,7 @@ function Config:Initialize()
     self.Registry = self.Registry or Config.Registry
     self.Cmd = self.Cmd or Config.Cmd
     self.Dialog = self.Dialog or Config.Dialog
+    self.DialogTheme = self.DialogTheme or Config.DialogTheme
     self.ProfileOptions = self.ProfileOptions or Config.ProfileOptions
     self.Compat = self.Compat or Config.Compat
 end
@@ -225,6 +226,64 @@ end
 function Config:AddToBlizOptions(appName, name, parent)
     self:Initialize()
     return self.Dialog and self.Dialog:AddToBlizOptions(appName, name, parent)
+end
+
+--[[--------------------------------------------------------------------
+    Dialog Theming
+
+    Per-app and global theme overrides for ConfigDialog. Themes are
+    sparse tables; missing keys fall through:
+        per-app override -> active global theme -> built-in default
+
+    See Loolib/docs/ConfigDialog.md "Theming the dialog" for the full
+    list of supported keys (colors, backdrops, fonts, layout,
+    widgetFactories, afterCreateWidget) and an end-to-end example.
+----------------------------------------------------------------------]]
+
+--- Register a theme override for a specific appName.
+-- @param appName string - The registered app name (must match Open(appName))
+-- @param themeTable table|nil - Sparse theme table, or nil to clear
+-- @return boolean - True on success
+function Config:RegisterAppTheme(appName, themeTable)
+    self:Initialize()
+    if not self.DialogTheme then
+        return false
+    end
+    return self.DialogTheme:RegisterAppTheme(appName, themeTable)
+end
+
+--- Register a named global theme. Activate it via SetActiveDialogTheme.
+-- @param themeName string - The theme's identifier
+-- @param themeTable table|nil - Sparse theme table, or nil to delete
+-- @return boolean - True on success
+function Config:RegisterDialogTheme(themeName, themeTable)
+    self:Initialize()
+    if not self.DialogTheme then
+        return false
+    end
+    return self.DialogTheme:RegisterDialogTheme(themeName, themeTable)
+end
+
+--- Set the active global theme. Pass nil to revert to the built-in default.
+-- @param themeName string|nil
+-- @return boolean - True on success
+function Config:SetActiveDialogTheme(themeName)
+    self:Initialize()
+    if not self.DialogTheme then
+        return false
+    end
+    return self.DialogTheme:SetActiveDialogTheme(themeName)
+end
+
+--- Get the resolved theme that would apply to the given appName.
+-- @param appName string|nil - Optional appName for per-app resolution
+-- @return table|nil - Fully-resolved theme table
+function Config:GetDialogTheme(appName)
+    self:Initialize()
+    if not self.DialogTheme then
+        return nil
+    end
+    return self.DialogTheme:Resolve(appName)
 end
 
 --[[--------------------------------------------------------------------

@@ -47,10 +47,12 @@ local CreateFromMixins = Loolib.CreateFromMixins
 local CallbackRegistryModule = Loolib:GetModule("CallbackRegistry")
 local CallbackRegistryMixin = CallbackRegistryModule and CallbackRegistryModule.Mixin
 local ConfigTypes = Config.Types
+local DialogTheme = Config.DialogTheme
 
 assert(CreateFromMixins, "Loolib.Core.Mixin must be loaded before ConfigDialog")
 assert(CallbackRegistryMixin, "Loolib.CallbackRegistry must be loaded before ConfigDialog")
 assert(ConfigTypes, "Loolib.Config.Types must be loaded before ConfigDialog")
+assert(DialogTheme, "Loolib.Config.DialogTheme must be loaded before ConfigDialog")
 
 --[[--------------------------------------------------------------------
     Constants
@@ -77,6 +79,43 @@ local WIDTH_MULTIPLIERS = {
     double = 2.0,
     full = 3.0,
 }
+
+--[[--------------------------------------------------------------------
+    Theme Helpers
+
+    All ConfigDialog visual styling routes through these helpers so that
+    consuming addons can override appearance via DialogTheme. The current
+    rendering appName is stashed on the mixin instance during Open() /
+    RefreshContent() so widget renderers can resolve themes without
+    threading appName through every function signature.
+
+    Default theme matches the pre-theming hardcoded values verbatim, so
+    consumers that do not register an override see zero visual change.
+----------------------------------------------------------------------]]
+
+local function ThemeColor(self, key)
+    local theme = self:GetResolvedTheme()
+    local c = theme and theme.colors and theme.colors[key]
+    if not c then return 1, 1, 1, 1 end
+    return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
+end
+
+local function ThemeBackdrop(self, key)
+    local theme = self:GetResolvedTheme()
+    return theme and theme.backdrops and theme.backdrops[key]
+end
+
+local function ThemeFont(self, key)
+    local theme = self:GetResolvedTheme()
+    return theme and theme.fonts and theme.fonts[key]
+end
+
+local function ThemeLayout(self, key, fallback)
+    local theme = self:GetResolvedTheme()
+    local v = theme and theme.layout and theme.layout[key]
+    if v == nil then return fallback end
+    return v
+end
 
 --[[--------------------------------------------------------------------
     ConfigDialogMixin
@@ -110,6 +149,108 @@ function ConfigDialogMixin:Init()
     self.regionPools = {}      -- Pools for regions (FontString, Texture)
     self.filterStates = {}     -- appName -> { searchText, typeFilters, activeFilterCount }
     self.searchTimers = {}     -- appName -> debounce timer handle
+    self._themeCache = {}      -- appName -> resolved theme table
+end
+
+--[[--------------------------------------------------------------------
+    Theme Resolution
+
+    The dialog mixin caches resolved themes per appName. The "current"
+    appName is set during Open()/RefreshContent() so widget renderers
+    that don't have appName in scope can still resolve the active theme
+    via ThemeColor / ThemeBackdrop / ThemeFont module-level helpers.
+----------------------------------------------------------------------]]
+
+--- Get the resolved theme for the current rendering app, or for an
+--- explicit appName. Cached per appName until OnThemeChanged invalidates.
+-- @param appName string|nil - Optional explicit appName
+-- @return table - Fully-resolved theme table
+function ConfigDialogMixin:GetResolvedTheme(appName)
+    appName = appName or self._currentAppName
+    self._themeCache = self._themeCache or {}
+    local cacheKey = appName or "__global__"
+    if not self._themeCache[cacheKey] then
+        self._themeCache[cacheKey] = DialogTheme:Resolve(appName)
+    end
+    return self._themeCache[cacheKey]
+end
+
+--- Called by DialogTheme when a theme registration changes. Invalidates
+--- the cache for the affected app(s) and refreshes any open dialogs.
+-- @param appName string|nil - Affected app, or nil for all
+function ConfigDialogMixin:OnThemeChanged(appName)
+    self._themeCache = self._themeCache or {}
+    if appName then
+        self._themeCache[appName] = nil
+    else
+        wipe(self._themeCache)
+    end
+
+    -- Refresh any currently-open dialogs so the change is visible immediately.
+    for name, dialog in pairs(self.dialogs or {}) do
+        if (not appName or name == appName) and dialog and dialog:IsShown() then
+            self:RefreshContent(name)
+        end
+    end
+end
+
+--- Set the current rendering appName so module-level theme helpers
+--- (ThemeColor, ThemeBackdrop, ThemeFont) can resolve without an
+--- explicit appName argument. Intentionally NOT cleared after a render
+--- pass — closures created during rendering (OnClick, OnEnter, OnUpdate)
+--- fire later and need to resolve theme tokens at fire time. Reads of
+--- this field outside of a render context are still safe: the registry
+--- falls back through default theme tokens.
+-- @param appName string|nil
+function ConfigDialogMixin:_SetCurrentAppName(appName)
+    self._currentAppName = appName
+end
+
+--[[--------------------------------------------------------------------
+    Themed Widget Creation
+
+    CreateThemedWidget routes through the theme's widgetFactories table.
+    If a factory is registered for the given widgetType, it's used; else
+    the built-in CreateFrame fallback runs unchanged. After the widget
+    is created (regardless of which path), FireAfterCreateWidget invokes
+    the optional afterCreateWidget hook so consumers can apply post-style
+    without replacing the whole factory.
+----------------------------------------------------------------------]]
+
+--- Create a widget through the active theme's factory, falling back to
+--- the supplied built-in creator if no factory is registered.
+-- @param widgetType string - Logical widget type ("toggle", "range", ...)
+-- @param parent Frame - Parent frame
+-- @param option table - Options table entry
+-- @param info table|nil - Registry info table
+-- @param fallbackCreator function - function(parent, option, info) -> Frame
+-- @return Frame
+function ConfigDialogMixin:CreateThemedWidget(widgetType, parent, option, info, fallbackCreator)
+    local theme = self:GetResolvedTheme()
+    local factories = theme and theme.widgetFactories
+    local factory = factories and factories[widgetType]
+    local widget
+    if type(factory) == "function" then
+        widget = factory(self, parent, option, info)
+    end
+    if not widget and type(fallbackCreator) == "function" then
+        widget = fallbackCreator(parent, option, info)
+    end
+    return widget
+end
+
+--- Fire the active theme's afterCreateWidget hook (if any) for the
+--- given freshly-created widget.
+function ConfigDialogMixin:FireAfterCreateWidget(widgetType, widget, option, info)
+    if not widget then return end
+    local theme = self:GetResolvedTheme()
+    local hook = theme and theme.afterCreateWidget
+    if type(hook) == "function" then
+        local ok, err = pcall(hook, widgetType, widget, option, info)
+        if not ok then
+            Loolib:Error("DialogTheme afterCreateWidget hook failed: " .. tostring(err))
+        end
+    end
 end
 
 --- Get or initialize filter state for a dialog
@@ -506,6 +647,15 @@ end
 -- @return Frame - Dialog frame
 function ConfigDialogMixin:CreateDialog(appName, options, container)
     local registry = Config.Registry
+
+    -- Track the active rendering app on the mixin so module-level theme
+    -- helpers (ThemeColor, ThemeBackdrop, ThemeFont) can resolve without
+    -- threading appName through every renderer. We deliberately do NOT
+    -- restore a previous value at the end of this function: the value
+    -- needs to remain set so that OnClick / OnEnter closures created
+    -- during rendering can still resolve theme tokens at fire time.
+    self:_SetCurrentAppName(appName)
+
     -- Get size (supports configurable dimensions)
     local width, height = GetDialogDimensions(appName, self.defaultSizes)
 
@@ -517,12 +667,7 @@ function ConfigDialogMixin:CreateDialog(appName, options, container)
     dialog:SetFrameLevel(100)
 
     -- Apply backdrop
-    dialog:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true, tileSize = 32, edgeSize = 32,
-        insets = {left = 11, right = 12, top = 12, bottom = 11}
-    })
+    dialog:SetBackdrop(ThemeBackdrop(self, "dialog"))
 
     -- Make movable
     dialog:EnableMouse(true)
@@ -550,7 +695,7 @@ function ConfigDialogMixin:CreateDialog(appName, options, container)
     dialog.resizeGrip = resizeGrip
 
     -- Title bar
-    local title = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local title = dialog:CreateFontString(nil, "OVERLAY", ThemeFont(self, "title") or "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -16)
     local titleText = registry:ResolveValue(options.name, nil) or appName
     title:SetText(titleText)
@@ -643,14 +788,9 @@ function ConfigDialogMixin:CreateFilterBar(dialog)
     searchBox:SetPoint("LEFT", 8, 0)
     searchBox:SetFontObject("GameFontHighlight")
     searchBox:SetAutoFocus(false)
-    searchBox:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    searchBox:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-    searchBox:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    searchBox:SetBackdrop(ThemeBackdrop(self, "input"))
+    searchBox:SetBackdropColor(ThemeColor(self, "searchBoxBg"))
+    searchBox:SetBackdropBorderColor(ThemeColor(self, "treeContainerBorder"))
     searchBox:SetTextInsets(8, 20, 0, 0)
     dialog.searchBox = searchBox
 
@@ -659,7 +799,7 @@ function ConfigDialogMixin:CreateFilterBar(dialog)
     searchIcon:SetSize(14, 14)
     searchIcon:SetPoint("LEFT", 4, 0)
     searchIcon:SetTexture("Interface\\Common\\UI-Searchbox-Icon")
-    searchIcon:SetVertexColor(0.6, 0.6, 0.6)
+    searchIcon:SetVertexColor(ThemeColor(self, "searchIcon"))
 
     -- Placeholder text
     local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -716,14 +856,9 @@ function ConfigDialogMixin:CreateFilterBar(dialog)
     local typeFilterBtn = CreateFrame("Button", nil, filterBar, "BackdropTemplate")
     typeFilterBtn:SetSize(100, 22)
     typeFilterBtn:SetPoint("LEFT", searchBox, "RIGHT", 12, 0)
-    typeFilterBtn:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    typeFilterBtn:SetBackdropColor(0.15, 0.15, 0.2, 1)
-    typeFilterBtn:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    typeFilterBtn:SetBackdrop(ThemeBackdrop(self, "input"))
+    typeFilterBtn:SetBackdropColor(ThemeColor(self, "filterButtonBg"))
+    typeFilterBtn:SetBackdropBorderColor(ThemeColor(self, "treeContainerBorder"))
     dialog.typeFilterBtn = typeFilterBtn
 
     local typeFilterText = typeFilterBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -739,7 +874,7 @@ function ConfigDialogMixin:CreateFilterBar(dialog)
     -- Highlight
     local highlight = typeFilterBtn:CreateTexture(nil, "HIGHLIGHT")
     highlight:SetAllPoints()
-    highlight:SetColorTexture(0.3, 0.3, 0.5, 0.3)
+    highlight:SetColorTexture(ThemeColor(self, "filterButtonHover"))
 
     typeFilterBtn:SetScript("OnClick", function()
         dialogMixin:ShowTypeFilterMenu(dialog)
@@ -773,14 +908,9 @@ function ConfigDialogMixin:ShowTypeFilterMenu(dialog)
     local menu = CreateFrame("Frame", nil, dialog.typeFilterBtn, "BackdropTemplate")
     menu:SetFrameStrata("TOOLTIP")
     menu:SetPoint("TOPLEFT", dialog.typeFilterBtn, "BOTTOMLEFT", 0, -2)
-    menu:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    menu:SetBackdropColor(0.1, 0.1, 0.15, 1)
-    menu:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+    menu:SetBackdrop(ThemeBackdrop(self, "popupMenu"))
+    menu:SetBackdropColor(ThemeColor(self, "filterMenuBg"))
+    menu:SetBackdropBorderColor(ThemeColor(self, "treeContainerBorder"))
     dialog.typeFilterMenu = menu
 
     local yOffset = -6
@@ -852,14 +982,9 @@ function ConfigDialogMixin:CreateTreeLayout(dialog)
     treeContainer:SetPoint("TOPLEFT", 0, -FILTER_BAR_HEIGHT)
     treeContainer:SetPoint("BOTTOMLEFT", 0, 0)
     treeContainer:SetWidth(TREE_WIDTH)
-    treeContainer:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    treeContainer:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-    treeContainer:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    treeContainer:SetBackdrop(ThemeBackdrop(self, "container"))
+    treeContainer:SetBackdropColor(ThemeColor(self, "treeContainerBg"))
+    treeContainer:SetBackdropBorderColor(ThemeColor(self, "treeContainerBorder"))
 
     -- Tree scroll frame
     local treeScroll = CreateFrame("ScrollFrame", nil, treeContainer, "UIPanelScrollFrameTemplate")
@@ -878,14 +1003,9 @@ function ConfigDialogMixin:CreateTreeLayout(dialog)
     local optionsContainer = CreateFrame("Frame", nil, content, "BackdropTemplate")
     optionsContainer:SetPoint("TOPLEFT", treeContainer, "TOPRIGHT", 8, 0)
     optionsContainer:SetPoint("BOTTOMRIGHT", 0, 0)
-    optionsContainer:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    optionsContainer:SetBackdropColor(0.1, 0.1, 0.1, 0.6)
-    optionsContainer:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    optionsContainer:SetBackdrop(ThemeBackdrop(self, "container"))
+    optionsContainer:SetBackdropColor(ThemeColor(self, "contentContainerBg"))
+    optionsContainer:SetBackdropBorderColor(ThemeColor(self, "contentContainerBorder"))
 
     -- Options scroll frame
     local optionsScroll = CreateFrame("ScrollFrame", nil, optionsContainer, "UIPanelScrollFrameTemplate")
@@ -923,14 +1043,9 @@ function ConfigDialogMixin:CreateTabLayout(dialog)
     local optionsContainer = CreateFrame("Frame", nil, content, "BackdropTemplate")
     optionsContainer:SetPoint("TOPLEFT", tabBar, "BOTTOMLEFT", 0, -4)
     optionsContainer:SetPoint("BOTTOMRIGHT", 0, 0)
-    optionsContainer:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    optionsContainer:SetBackdropColor(0.1, 0.1, 0.1, 0.6)
-    optionsContainer:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    optionsContainer:SetBackdrop(ThemeBackdrop(self, "container"))
+    optionsContainer:SetBackdropColor(ThemeColor(self, "contentContainerBg"))
+    optionsContainer:SetBackdropBorderColor(ThemeColor(self, "contentContainerBorder"))
 
     -- Options scroll frame
     local optionsScroll = CreateFrame("ScrollFrame", nil, optionsContainer, "UIPanelScrollFrameTemplate")
@@ -956,14 +1071,9 @@ function ConfigDialogMixin:CreateSimpleLayout(dialog)
     local optionsContainer = CreateFrame("Frame", nil, content, "BackdropTemplate")
     optionsContainer:SetPoint("TOPLEFT", 0, -FILTER_BAR_HEIGHT)
     optionsContainer:SetPoint("BOTTOMRIGHT", 0, 0)
-    optionsContainer:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 16,
-        insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    optionsContainer:SetBackdropColor(0.1, 0.1, 0.1, 0.6)
-    optionsContainer:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    optionsContainer:SetBackdrop(ThemeBackdrop(self, "container"))
+    optionsContainer:SetBackdropColor(ThemeColor(self, "contentContainerBg"))
+    optionsContainer:SetBackdropBorderColor(ThemeColor(self, "contentContainerBorder"))
 
     -- Options scroll frame
     local optionsScroll = CreateFrame("ScrollFrame", nil, optionsContainer, "UIPanelScrollFrameTemplate")
@@ -995,6 +1105,12 @@ function ConfigDialogMixin:RefreshContent(appName)
 
     local options = dialog.options
     local registry = dialog.registry
+
+    -- Track the active rendering app for theme resolution. Like
+    -- CreateDialog above, we deliberately do not restore a prior value:
+    -- closures created during rendering must still resolve to this app
+    -- when they fire later (OnClick, OnEnter).
+    self:_SetCurrentAppName(appName)
 
     -- Rebuild tree/tabs if needed
     if dialog.layoutType == "tree" then
@@ -1069,13 +1185,13 @@ function ConfigDialogMixin:RenderTree(dialog, options, registry)
                     -- Highlight
                     local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
                     highlight:SetAllPoints()
-                    highlight:SetColorTexture(0.3, 0.4, 0.6, 0.4)
+                    highlight:SetColorTexture(ThemeColor(self, "treeHoverBg"))
 
                     -- Selection indicator
                     if isSelected then
                         local selected = btn:CreateTexture(nil, "BACKGROUND")
                         selected:SetAllPoints()
-                        selected:SetColorTexture(0.15, 0.35, 0.55, 0.9)
+                        selected:SetColorTexture(ThemeColor(self, "treeSelectionBg"))
                     end
 
                     -- Icon (if provided)
@@ -1101,7 +1217,7 @@ function ConfigDialogMixin:RenderTree(dialog, options, registry)
                     end
 
                     -- Text (always position consistently - icon visibility handled by texture load)
-                    local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    local text = btn:CreateFontString(nil, "OVERLAY", ThemeFont(self, "treeNode") or "GameFontNormalSmall")
                     -- Always position text based on whether icon element exists
                     if icon then
                         text:SetPoint("LEFT", icon, "RIGHT", 4, 0)
@@ -1110,7 +1226,7 @@ function ConfigDialogMixin:RenderTree(dialog, options, registry)
                     end
                     text:SetText(name)
                     if isSelected then
-                        text:SetTextColor(1, 1, 0)
+                        text:SetTextColor(ThemeColor(self, "treeTextSelected"))
                     end
 
                     -- Click handler
@@ -1207,9 +1323,9 @@ function ConfigDialogMixin:RenderTabs(dialog, options, registry)
                 local bg = tab:CreateTexture(nil, "BACKGROUND")
                 bg:SetAllPoints()
                 if isSelected then
-                    bg:SetColorTexture(0.12, 0.25, 0.45, 1)
+                    bg:SetColorTexture(ThemeColor(self, "tabBgActive"))
                 else
-                    bg:SetColorTexture(0.1, 0.1, 0.14, 1)
+                    bg:SetColorTexture(ThemeColor(self, "tabBgInactive"))
                 end
 
                 -- Gold bottom border on active tab
@@ -1218,13 +1334,13 @@ function ConfigDialogMixin:RenderTabs(dialog, options, registry)
                     activeLine:SetPoint("BOTTOMLEFT", 0, 0)
                     activeLine:SetPoint("BOTTOMRIGHT", 0, 0)
                     activeLine:SetHeight(2)
-                    activeLine:SetColorTexture(1, 0.82, 0, 1)
+                    activeLine:SetColorTexture(ThemeColor(self, "tabActiveAccent"))
                 end
 
                 -- Highlight
                 local highlight = tab:CreateTexture(nil, "HIGHLIGHT")
                 highlight:SetAllPoints()
-                highlight:SetColorTexture(0.3, 0.4, 0.6, 0.4)
+                highlight:SetColorTexture(ThemeColor(self, "treeHoverBg"))
 
                 -- Icon (if provided)
                 -- Validate icon path and coordinates before rendering
@@ -1264,9 +1380,9 @@ function ConfigDialogMixin:RenderTabs(dialog, options, registry)
                 text:SetText(name)
                 text:SetJustifyH("CENTER")
                 if isSelected then
-                    text:SetTextColor(1, 1, 1, 1)
+                    text:SetTextColor(ThemeColor(self, "tabTextActive"))
                 else
-                    text:SetTextColor(0.7, 0.7, 0.7, 1)
+                    text:SetTextColor(ThemeColor(self, "tabTextInactive"))
                 end
 
                 -- Truncate long text with ellipsis
@@ -1328,7 +1444,7 @@ function ConfigDialogMixin:RenderOptions(dialog, group, rootOptions, registry, p
         local header = optionsContent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         header:SetPoint("TOPLEFT", CONTENT_PADDING, yOffset)
         header:SetText(groupName)
-        header:SetTextColor(1, 0.82, 0)  -- Gold color for headers
+        header:SetTextColor(ThemeColor(self, "headerText"))
         -- Measure actual header height instead of hardcoding
         local headerHeight = header:GetStringHeight()
         yOffset = yOffset - headerHeight - 12  -- Header height + spacing below
@@ -1342,7 +1458,7 @@ function ConfigDialogMixin:RenderOptions(dialog, group, rootOptions, registry, p
         desc:SetWidth(contentWidth - CONTENT_PADDING * 2)
         desc:SetJustifyH("LEFT")
         desc:SetText(groupDesc)
-        desc:SetTextColor(0.8, 0.8, 0.8)
+        desc:SetTextColor(ThemeColor(self, "descriptionText"))
         yOffset = yOffset - desc:GetHeight() - 16
     end
 
@@ -1461,7 +1577,7 @@ function ConfigDialogMixin:RenderOptions(dialog, group, rootOptions, registry, p
         local noResults = optionsContent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         noResults:SetPoint("TOPLEFT", CONTENT_PADDING, yOffset)
         noResults:SetText("No options match the current filters.")
-        noResults:SetTextColor(0.6, 0.6, 0.6)
+        noResults:SetTextColor(ThemeColor(self, "noResultsText"))
         yOffset = yOffset - 24
     end
 
@@ -1480,14 +1596,9 @@ function ConfigDialogMixin:RenderInlineGroup(parent, group, rootOptions, registr
     local groupFrame = self:AcquireWidget("group_frame", parent, "BackdropTemplate")
     groupFrame:SetPoint("TOPLEFT", CONTENT_PADDING, yOffset)
     groupFrame:SetWidth(contentWidth - CONTENT_PADDING * 2)
-    groupFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = {left = 2, right = 2, top = 2, bottom = 2}
-    })
-    groupFrame:SetBackdropColor(0.08, 0.08, 0.1, 0.7)
-    groupFrame:SetBackdropBorderColor(0.6, 0.6, 0.6, 0.9)
+    groupFrame:SetBackdrop(ThemeBackdrop(self, "inlineGroup"))
+    groupFrame:SetBackdropColor(ThemeColor(self, "inlineGroupBg"))
+    groupFrame:SetBackdropBorderColor(ThemeColor(self, "inlineGroupBorder"))
 
     local innerOffset = -8
 
@@ -1642,17 +1753,18 @@ end
 
 --- Render header
 function ConfigDialogMixin:RenderHeader(parent, name, yOffset, contentWidth)
-    local header = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local header = parent:CreateFontString(nil, "OVERLAY", ThemeFont(self, "groupHeader") or "GameFontNormalLarge")
     header:SetPoint("TOPLEFT", 8, yOffset - 8)
     header:SetText(name)
-    header:SetTextColor(1, 0.82, 0)
+    header:SetTextColor(ThemeColor(self, "headerText"))
 
     -- Line under header
     local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetPoint("TOPLEFT", 8, yOffset - 28)
     line:SetSize(contentWidth - 16, 1)
-    line:SetColorTexture(0.5, 0.5, 0.5, 0.5)
+    line:SetColorTexture(ThemeColor(self, "separator"))
 
+    self:FireAfterCreateWidget("header", header, nil, nil)
     return yOffset - 36
 end
 
@@ -1685,8 +1797,9 @@ function ConfigDialogMixin:RenderDescription(parent, option, name, yOffset, cont
         text:SetWidth(contentWidth - 16)
         text:SetJustifyH("LEFT")
         text:SetText(name)
-        text:SetTextColor(0.9, 0.9, 0.9)
+        text:SetTextColor(ThemeColor(self, "labelText"))
 
+        self:FireAfterCreateWidget("description", text, option, nil)
         yOffset = yOffset - text:GetHeight() - WIDGET_SPACING
     end
 
@@ -1699,7 +1812,9 @@ end
 
 --- Render toggle (checkbox)
 function ConfigDialogMixin:RenderToggle(parent, option, name, desc, registry, info, disabled, yOffset)
-    local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+    local check = self:CreateThemedWidget("toggle", parent, option, info, function(p)
+        return CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
+    end)
     check:SetPoint("TOPLEFT", 8, yOffset + 4)
     check:SetSize(24, 24)
 
@@ -1717,7 +1832,7 @@ function ConfigDialogMixin:RenderToggle(parent, option, name, desc, registry, in
     end
 
     if disabled then
-        label:SetTextColor(0.5, 0.5, 0.5)
+        label:SetTextColor(ThemeColor(self, "labelTextDisabled"))
         check:Disable()
     end
 
@@ -1744,6 +1859,7 @@ function ConfigDialogMixin:RenderToggle(parent, option, name, desc, registry, in
         registry:SetValue(option, info, newValue)
     end)
 
+    self:FireAfterCreateWidget("toggle", check, option, info)
     return yOffset - 28
 end
 
@@ -1768,15 +1884,8 @@ function ConfigDialogMixin:RenderInput(parent, option, name, desc, registry, inf
     label:SetText(name)
 
     if disabled then
-        label:SetTextColor(0.5, 0.5, 0.5)
+        label:SetTextColor(ThemeColor(self, "labelTextDisabled"))
     end
-
-    local INPUT_BACKDROP = {
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = {left = 3, right = 3, top = 3, bottom = 3}
-    }
 
     local editBox
 
@@ -1785,9 +1894,9 @@ function ConfigDialogMixin:RenderInput(parent, option, name, desc, registry, inf
         local bg = CreateFrame("Frame", nil, container, "BackdropTemplate")
         bg:SetPoint("TOPLEFT", LABEL_WIDTH, 0)
         bg:SetSize(editWidth, editHeight)
-        bg:SetBackdrop(INPUT_BACKDROP)
-        bg:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-        bg:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+        bg:SetBackdrop(ThemeBackdrop(self, "input"))
+        bg:SetBackdropColor(ThemeColor(self, "inputBg"))
+        bg:SetBackdropBorderColor(ThemeColor(self, "treeContainerBorder"))
 
         -- Click anywhere in backdrop to focus the editbox
         bg:EnableMouse(true)
@@ -1810,7 +1919,7 @@ function ConfigDialogMixin:RenderInput(parent, option, name, desc, registry, inf
 
         if disabled then
             editBox:Disable()
-            bg:SetBackdropColor(0.2, 0.2, 0.2, 0.5)
+            bg:SetBackdropColor(ThemeColor(self, "inputBgDisabled"))
         end
     else
         editBox = CreateFrame("EditBox", nil, container, "BackdropTemplate")
@@ -1820,14 +1929,14 @@ function ConfigDialogMixin:RenderInput(parent, option, name, desc, registry, inf
         editBox:SetAutoFocus(false)
         editBox:SetMultiLine(false)
 
-        editBox:SetBackdrop(INPUT_BACKDROP)
-        editBox:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-        editBox:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+        editBox:SetBackdrop(ThemeBackdrop(self, "input"))
+        editBox:SetBackdropColor(ThemeColor(self, "inputBg"))
+        editBox:SetBackdropBorderColor(ThemeColor(self, "treeContainerBorder"))
         editBox:SetTextInsets(5, 5, 3, 3)
 
         if disabled then
             editBox:Disable()
-            editBox:SetBackdropColor(0.2, 0.2, 0.2, 0.5)
+            editBox:SetBackdropColor(ThemeColor(self, "inputBgDisabled"))
         end
 
         -- Tooltip
@@ -1877,6 +1986,7 @@ function ConfigDialogMixin:RenderInput(parent, option, name, desc, registry, inf
         end)
     end
 
+    self:FireAfterCreateWidget("input", editBox, option, info)
     return yOffset - containerHeight - WIDGET_SPACING
 end
 
@@ -1892,11 +2002,13 @@ function ConfigDialogMixin:RenderRange(parent, option, name, desc, registry, inf
     label:SetText(name)
 
     if disabled then
-        label:SetTextColor(0.5, 0.5, 0.5)
+        label:SetTextColor(ThemeColor(self, "labelTextDisabled"))
     end
 
     -- Slider
-    local slider = CreateFrame("Slider", nil, container, "OptionsSliderTemplate")
+    local slider = self:CreateThemedWidget("range", container, option, info, function(p)
+        return CreateFrame("Slider", nil, p, "OptionsSliderTemplate")
+    end)
     slider:SetPoint("TOPLEFT", LABEL_WIDTH, -5)
     slider:SetSize(LABEL_WIDTH * widthMod, 16)
     slider:SetOrientation("HORIZONTAL")
@@ -1981,6 +2093,7 @@ function ConfigDialogMixin:RenderRange(parent, option, name, desc, registry, inf
         end
     end
 
+    self:FireAfterCreateWidget("range", slider, option, info)
     return yOffset - 44
 end
 
@@ -2000,7 +2113,7 @@ function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, in
     label:SetText(name)
 
     if disabled then
-        label:SetTextColor(0.5, 0.5, 0.5)
+        label:SetTextColor(ThemeColor(self, "labelTextDisabled"))
     end
 
     -- Get values
@@ -2008,18 +2121,15 @@ function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, in
     local currentValue = registry:GetValue(option, info)
 
     -- Dropdown button
-    local dropdown = CreateFrame("Button", nil, container, "BackdropTemplate")
+    local dropdown = self:CreateThemedWidget("select", container, option, info, function(p)
+        return CreateFrame("Button", nil, p, "BackdropTemplate")
+    end)
     dropdown:SetPoint("TOPLEFT", LABEL_WIDTH, 2)
     dropdown:SetSize(LABEL_WIDTH * widthMod, 24)
 
-    dropdown:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    dropdown:SetBackdropColor(0.15, 0.15, 0.2, 1)
-    dropdown:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    dropdown:SetBackdrop(ThemeBackdrop(self, "input"))
+    dropdown:SetBackdropColor(ThemeColor(self, "dropdownBg"))
+    dropdown:SetBackdropBorderColor(ThemeColor(self, "treeContainerBorder"))
 
     -- Current value text
     local valueLabel = dropdown:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -2034,7 +2144,7 @@ function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, in
 
     if disabled then
         dropdown:Disable()
-        dropdown:SetBackdropColor(0.2, 0.2, 0.2, 0.5)
+        dropdown:SetBackdropColor(ThemeColor(self, "dropdownBgDisabled"))
     end
 
     -- Tooltip
@@ -2060,14 +2170,9 @@ function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, in
         menu:SetFrameStrata("TOOLTIP")
         menu:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -2)
 
-        menu:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true, tileSize = 16, edgeSize = 12,
-            insets = {left = 3, right = 3, top = 3, bottom = 3}
-        })
-        menu:SetBackdropColor(0.1, 0.1, 0.15, 1)
-        menu:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+        menu:SetBackdrop(ThemeBackdrop(self, "popupMenu"))
+        menu:SetBackdropColor(ThemeColor(self, "dropdownMenuBg"))
+        menu:SetBackdropBorderColor(ThemeColor(self, "inlineGroupBorder"))
 
         -- Build sorted list
         local sortedKeys = {}
@@ -2098,12 +2203,12 @@ function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, in
             itemText:SetText(itemLabel)
 
             if key == currentValue then
-                itemText:SetTextColor(1, 1, 0)
+                itemText:SetTextColor(ThemeColor(self, "dropdownItemSelected"))
             end
 
             local highlight = item:CreateTexture(nil, "HIGHLIGHT")
             highlight:SetAllPoints()
-            highlight:SetColorTexture(0.3, 0.3, 0.5, 0.5)
+            highlight:SetColorTexture(ThemeColor(self, "dropdownItemHover"))
 
             item:SetScript("OnClick", function()
                 registry:SetValue(option, info, key)
@@ -2142,6 +2247,7 @@ function ConfigDialogMixin:RenderSelect(parent, option, name, desc, registry, in
         end)
     end)
 
+    self:FireAfterCreateWidget("select", dropdown, option, info)
     return yOffset - 32
 end
 
@@ -2153,7 +2259,7 @@ function ConfigDialogMixin:RenderMultiSelect(parent, option, name, registry, inf
     header:SetText(name)
 
     if disabled then
-        header:SetTextColor(0.5, 0.5, 0.5)
+        header:SetTextColor(ThemeColor(self, "labelTextDisabled"))
     end
 
     yOffset = yOffset - 20
@@ -2190,7 +2296,7 @@ function ConfigDialogMixin:RenderMultiSelect(parent, option, name, registry, inf
 
         if disabled then
             check:Disable()
-            checkLabel:SetTextColor(0.5, 0.5, 0.5)
+            checkLabel:SetTextColor(ThemeColor(self, "labelTextDisabled"))
         end
 
         local itemKey = key
@@ -2211,6 +2317,7 @@ function ConfigDialogMixin:RenderMultiSelect(parent, option, name, registry, inf
         yOffset = yOffset - 24
     end
 
+    self:FireAfterCreateWidget("multiselect", parent, option, info)
     return yOffset - WIDGET_SPACING
 end
 
@@ -2226,7 +2333,7 @@ function ConfigDialogMixin:RenderColor(parent, option, name, desc, registry, inf
     label:SetText(name)
 
     if disabled then
-        label:SetTextColor(0.5, 0.5, 0.5)
+        label:SetTextColor(ThemeColor(self, "labelTextDisabled"))
     end
 
     -- Color swatch
@@ -2308,6 +2415,7 @@ function ConfigDialogMixin:RenderColor(parent, option, name, desc, registry, inf
         ColorPickerFrame:SetupColorPickerAndShow(colorInfo)
     end)
 
+    self:FireAfterCreateWidget("color", swatch, option, info)
     return yOffset - 32
 end
 
@@ -2317,7 +2425,13 @@ end
 
 --- Render execute button
 function ConfigDialogMixin:RenderExecute(parent, option, name, desc, registry, info, disabled, yOffset, widthMod)
-    local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    -- Themed widget creation: if the active theme registers an "execute"
+    -- factory it gets first crack; otherwise we fall back to the default
+    -- UIPanelButtonTemplate. The afterCreateWidget hook fires regardless
+    -- so consumers can apply post-styling without replacing the factory.
+    local btn = self:CreateThemedWidget("execute", parent, option, info, function(p)
+        return CreateFrame("Button", nil, p, "UIPanelButtonTemplate")
+    end)
     btn:SetPoint("TOPLEFT", 8, yOffset + 2)
     btn:SetSize(LABEL_WIDTH * widthMod, 24)
     btn:SetText(name)
@@ -2325,6 +2439,8 @@ function ConfigDialogMixin:RenderExecute(parent, option, name, desc, registry, i
     if disabled then
         btn:Disable()
     end
+
+    self:FireAfterCreateWidget("execute", btn, option, info)
 
     -- Tooltip
     if desc then
@@ -2373,7 +2489,7 @@ function ConfigDialogMixin:RenderKeybinding(parent, option, name, desc, registry
     label:SetText(name)
 
     if disabled then
-        label:SetTextColor(0.5, 0.5, 0.5)
+        label:SetTextColor(ThemeColor(self, "labelTextDisabled"))
     end
 
     -- Keybind button
@@ -2381,14 +2497,9 @@ function ConfigDialogMixin:RenderKeybinding(parent, option, name, desc, registry
     keyBtn:SetPoint("TOPLEFT", LABEL_WIDTH, 2)
     keyBtn:SetSize(100, 24)
 
-    keyBtn:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    keyBtn:SetBackdropColor(0.15, 0.15, 0.2, 1)
-    keyBtn:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    keyBtn:SetBackdrop(ThemeBackdrop(self, "input"))
+    keyBtn:SetBackdropColor(ThemeColor(self, "keyButtonBg"))
+    keyBtn:SetBackdropBorderColor(ThemeColor(self, "treeContainerBorder"))
 
     local keyText = keyBtn:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     keyText:SetPoint("CENTER")
@@ -2399,7 +2510,7 @@ function ConfigDialogMixin:RenderKeybinding(parent, option, name, desc, registry
 
     if disabled then
         keyBtn:Disable()
-        keyBtn:SetBackdropColor(0.2, 0.2, 0.2, 0.5)
+        keyBtn:SetBackdropColor(ThemeColor(self, "keyButtonBgDisabled"))
     end
 
     -- Tooltip
@@ -2450,10 +2561,11 @@ function ConfigDialogMixin:RenderKeybinding(parent, option, name, desc, registry
 
             isListening = false
             keyBtn:SetScript("OnKeyDown", nil)
-            keyBtn:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+            keyBtn:SetBackdropBorderColor(ThemeColor(self, "treeContainerBorder"))
         end)
     end)
 
+    self:FireAfterCreateWidget("keybinding", keyBtn, option, info)
     return yOffset - 32
 end
 
@@ -2472,21 +2584,16 @@ function ConfigDialogMixin:RenderTexture(parent, option, name, desc, registry, i
     label:SetText(name)
 
     if disabled then
-        label:SetTextColor(0.5, 0.5, 0.5)
+        label:SetTextColor(ThemeColor(self, "labelTextDisabled"))
     end
 
     -- Texture display
     local texFrame = CreateFrame("Frame", nil, container, "BackdropTemplate")
     texFrame:SetPoint("TOPLEFT", LABEL_WIDTH, 0)
     texFrame:SetSize(texWidth + 4, texHeight + 4)
-    texFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 8, edgeSize = 8,
-        insets = {left = 2, right = 2, top = 2, bottom = 2}
-    })
-    texFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-    texFrame:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    texFrame:SetBackdrop(ThemeBackdrop(self, "textureFrame"))
+    texFrame:SetBackdropColor(ThemeColor(self, "textureFrameBg"))
+    texFrame:SetBackdropBorderColor(ThemeColor(self, "treeContainerBorder"))
 
     local tex = texFrame:CreateTexture(nil, "ARTWORK")
     tex:SetPoint("CENTER")
@@ -2501,7 +2608,7 @@ function ConfigDialogMixin:RenderTexture(parent, option, name, desc, registry, i
             tex:SetTexCoord(coords[1] or 0, coords[2] or 1, coords[3] or 0, coords[4] or 1)
         end
     else
-        tex:SetColorTexture(0.3, 0.3, 0.3, 1)
+        tex:SetColorTexture(ThemeColor(self, "textureMissing"))
     end
 
     -- Tooltip
@@ -2549,6 +2656,7 @@ function ConfigDialogMixin:RenderTexture(parent, option, name, desc, registry, i
         end)
     end
 
+    self:FireAfterCreateWidget("texture", texFrame, option, info)
     return yOffset - container:GetHeight() - WIDGET_SPACING
 end
 
@@ -2564,7 +2672,7 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
     label:SetText(name)
 
     if disabled then
-        label:SetTextColor(0.5, 0.5, 0.5)
+        label:SetTextColor(ThemeColor(self, "labelTextDisabled"))
     end
 
     -- Get font values
@@ -2598,14 +2706,9 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
     dropdown:SetPoint("TOPLEFT", LABEL_WIDTH, 2)
     dropdown:SetSize(LABEL_WIDTH * widthMod, 24)
 
-    dropdown:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true, tileSize = 16, edgeSize = 12,
-        insets = {left = 3, right = 3, top = 3, bottom = 3}
-    })
-    dropdown:SetBackdropColor(0.15, 0.15, 0.2, 1)
-    dropdown:SetBackdropBorderColor(0.5, 0.5, 0.5, 1)
+    dropdown:SetBackdrop(ThemeBackdrop(self, "input"))
+    dropdown:SetBackdropColor(ThemeColor(self, "dropdownBg"))
+    dropdown:SetBackdropBorderColor(ThemeColor(self, "treeContainerBorder"))
 
     -- Current value text (show in the selected font if possible)
     local valueLabel = dropdown:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -2630,7 +2733,7 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
 
     if disabled then
         dropdown:Disable()
-        dropdown:SetBackdropColor(0.2, 0.2, 0.2, 0.5)
+        dropdown:SetBackdropColor(ThemeColor(self, "dropdownBgDisabled"))
     end
 
     -- Tooltip
@@ -2656,14 +2759,9 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
         menu:SetFrameStrata("TOOLTIP")
         menu:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -2)
 
-        menu:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true, tileSize = 16, edgeSize = 12,
-            insets = {left = 3, right = 3, top = 3, bottom = 3}
-        })
-        menu:SetBackdropColor(0.1, 0.1, 0.15, 1)
-        menu:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+        menu:SetBackdrop(ThemeBackdrop(self, "popupMenu"))
+        menu:SetBackdropColor(ThemeColor(self, "dropdownMenuBg"))
+        menu:SetBackdropBorderColor(ThemeColor(self, "inlineGroupBorder"))
 
         -- Build sorted list
         local sortedKeys = {}
@@ -2694,12 +2792,12 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
             end)
 
             if key == currentValue then
-                itemText:SetTextColor(1, 1, 0)
+                itemText:SetTextColor(ThemeColor(self, "dropdownItemSelected"))
             end
 
             local highlight = item:CreateTexture(nil, "HIGHLIGHT")
             highlight:SetAllPoints()
-            highlight:SetColorTexture(0.3, 0.3, 0.5, 0.5)
+            highlight:SetColorTexture(ThemeColor(self, "dropdownItemHover"))
 
             item:SetScript("OnClick", function()
                 registry:SetValue(option, info, key)
@@ -2748,6 +2846,7 @@ function ConfigDialogMixin:RenderFont(parent, option, name, desc, registry, info
         end)
     end)
 
+    self:FireAfterCreateWidget("font", dropdown, option, info)
     return yOffset - 32
 end
 
