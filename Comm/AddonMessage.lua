@@ -414,6 +414,43 @@ local function ProcessSendQueue()
             queue:Pop()
             totalQueued = totalQueued - 1
 
+            -- Pre-validate distribution vs current group state. Sending to a
+            -- group channel we're no longer in returns result=9 (GeneralError)
+            -- instead of a clean NotInGroup, which spams the error frame.
+            -- Drop silently: by the time the queue drains, if we've left the
+            -- raid the message is irrelevant anyway.
+            -- WHISPER/CHANNEL also require a non-empty target.
+            local dist = item.distribution
+            local distInvalid = false
+            if dist == "RAID" and not IsInRaid() then
+                distInvalid = true
+            elseif dist == "PARTY" and not IsInGroup() then
+                distInvalid = true
+            elseif dist == "INSTANCE_CHAT" and not IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+                distInvalid = true
+            elseif dist == "GUILD" and not IsInGuild() then
+                distInvalid = true
+            elseif (dist == "WHISPER" or dist == "CHANNEL")
+                and (not item.target or item.target == "") then
+                distInvalid = true
+            end
+
+            if distInvalid then
+                -- Drop without consuming throttle (no wire bytes sent) and
+                -- signal the caller with bytesSent=0 so any caller tracking
+                -- delivery for accounting/retry purposes can distinguish a
+                -- drop from a successful send.
+                if item.callback then
+                    pcall(item.callback, item.arg, 0)
+                end
+                drained = drained + 1
+                if maxMessages and drained >= maxMessages then
+                    return
+                end
+                -- Continue draining the queue. We did NOT call ConsumeThrottle
+                -- because no actual SendAddonMessage occurred.
+            else
+
             -- Attempt send and check result
             ourOwnSend = true
             local ok, result = pcall(C_ChatInfo.SendAddonMessage,
@@ -472,6 +509,7 @@ local function ProcessSendQueue()
             if maxMessages and drained >= maxMessages then
                 return
             end
+            end -- end else (valid distribution branch)
         end
     end
 
