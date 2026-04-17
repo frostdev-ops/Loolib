@@ -41,6 +41,14 @@ local CallbackType = {
     Function = 2,  -- Simple function callbacks
 }
 
+-- INTERNAL: Sentinel value marking a callback that was unregistered while
+-- its event was mid-dispatch. TriggerEvent's pairs() loop would otherwise
+-- see undefined behavior if we deleted arbitrary keys from the live
+-- callback table. Writing a non-nil sentinel to an existing key is
+-- well-defined; the sentinel is cleared after dispatch drains in
+-- ReconcileDeferredCallbacks.
+local TOMBSTONE = {}
+
 -- INTERNAL: Counter for generating unique owner IDs when none provided
 local ownerIDCounter = 0
 
@@ -132,8 +140,12 @@ end
 function CallbackRegistryMixin:HasRegistrantsForEvent(event)
     for _, callbackTable in pairs(self.callbackTables) do
         local callbacks = callbackTable[event]
-        if callbacks and next(callbacks) then
-            return true
+        if callbacks then
+            for _, val in pairs(callbacks) do
+                if val ~= TOMBSTONE then
+                    return true
+                end
+            end
         end
     end
     return false
@@ -209,20 +221,31 @@ function CallbackRegistryMixin:UnregisterCallback(event, owner)
     end
 
     local removed = false
+    local duringDispatch = self.executingEvents[event] ~= nil
 
     for _, callbackTable in pairs(self.callbackTables) do
         local callbacks = callbackTable[event]
-        if callbacks and callbacks[owner] then
-            callbacks[owner] = nil
-            removed = true
+        if callbacks then
+            local existing = callbacks[owner]
+            if existing ~= nil and existing ~= TOMBSTONE then
+                if duringDispatch then
+                    -- Tombstone instead of delete: TriggerEvent's pairs() loop
+                    -- is iterating this table right now.
+                    callbacks[owner] = TOMBSTONE
+                else
+                    callbacks[owner] = nil
+                end
+                removed = true
+            end
         end
     end
 
-    -- Also check deferred callbacks
+    -- Deferred additions are safe to delete: ReconcileDeferredCallbacks
+    -- reads them post-dispatch, and no loop iterates them during dispatch.
     local deferred = self.deferredCallbacks[event]
     if deferred then
         for _, callbacks in pairs(deferred) do
-            if callbacks[owner] then
+            if callbacks[owner] ~= nil then
                 callbacks[owner] = nil
                 removed = true
             end
@@ -240,8 +263,15 @@ function CallbackRegistryMixin:UnregisterAllCallbacks(owner)
     end
 
     for _, callbackTable in pairs(self.callbackTables) do
-        for _, callbacks in pairs(callbackTable) do
-            callbacks[owner] = nil
+        for event, callbacks in pairs(callbackTable) do
+            local existing = callbacks[owner]
+            if existing ~= nil and existing ~= TOMBSTONE then
+                if self.executingEvents[event] then
+                    callbacks[owner] = TOMBSTONE
+                else
+                    callbacks[owner] = nil
+                end
+            end
         end
     end
 
@@ -273,24 +303,29 @@ function CallbackRegistryMixin:TriggerEvent(event, ...)
     local count = (self.executingEvents[event] or 0) + 1
     self.executingEvents[event] = count
 
-    -- Call closure callbacks (owner already captured in closure)
+    -- Call closure callbacks (owner already captured in closure).
+    -- Skip tombstones — those entries were unregistered mid-dispatch.
     local closures = self:GetCallbacksByEvent(CallbackType.Closure, event)
     if closures then
         for _, closure in pairs(closures) do
-            local success, err = pcall(closure, ...)
-            if not success then
-                Loolib:Error("Callback error for event", event, ":", err)
+            if closure ~= TOMBSTONE then
+                local success, err = pcall(closure, ...)
+                if not success then
+                    Loolib:Error("Callback error for event", event, ":", err)
+                end
             end
         end
     end
 
-    -- Call function callbacks (pass owner as first arg)
+    -- Call function callbacks (pass owner as first arg). Skip tombstones.
     local funcs = self:GetCallbacksByEvent(CallbackType.Function, event)
     if funcs then
         for owner, func in pairs(funcs) do
-            local success, err = pcall(func, owner, ...)
-            if not success then
-                Loolib:Error("Callback error for event", event, ":", err)
+            if func ~= TOMBSTONE then
+                local success, err = pcall(func, owner, ...)
+                if not success then
+                    Loolib:Error("Callback error for event", event, ":", err)
+                end
             end
         end
     end
@@ -305,9 +340,24 @@ function CallbackRegistryMixin:TriggerEvent(event, ...)
     end
 end
 
---- INTERNAL: Merge deferred callbacks into main callback tables
+--- INTERNAL: Merge deferred callbacks into main callback tables and
+--- clear tombstones left by in-dispatch unregisters.
 -- @param event string - The event name
 function CallbackRegistryMixin:ReconcileDeferredCallbacks(event)
+    -- Step 1: sweep tombstones. Now that dispatch has fully drained it is
+    -- safe to delete these keys from the live callback tables.
+    for _, callbackTable in pairs(self.callbackTables) do
+        local callbacks = callbackTable[event]
+        if callbacks then
+            for owner, val in pairs(callbacks) do
+                if val == TOMBSTONE then
+                    callbacks[owner] = nil
+                end
+            end
+        end
+    end
+
+    -- Step 2: merge deferred additions into the live tables.
     local deferred = self.deferredCallbacks[event]
     if not deferred then
         return
@@ -358,8 +408,10 @@ function CallbackRegistryMixin:GetCallbackCount(event)
     for _, callbackTable in pairs(self.callbackTables) do
         local callbacks = callbackTable[event]
         if callbacks then
-            for _ in pairs(callbacks) do
-                count = count + 1
+            for _, val in pairs(callbacks) do
+                if val ~= TOMBSTONE then
+                    count = count + 1
+                end
             end
         end
     end

@@ -284,7 +284,10 @@ function FunctionUtil.Debounce(func, delay)
     local lastArgs = nil
 
     return function(...)
-        lastArgs = { ... }
+        -- Preserve the full argument count (including trailing nils) so that
+        -- debounced callers with varargs that may contain holes don't get
+        -- their args silently truncated by `{...}` + unconfigured `unpack`.
+        lastArgs = { n = select("#", ...), ... }
 
         if timer then
             timer:Cancel()
@@ -292,7 +295,13 @@ function FunctionUtil.Debounce(func, delay)
 
         timer = C_Timer.NewTimer(delay, function()
             timer = nil
-            func(unpack(lastArgs))
+            local args = lastArgs
+            lastArgs = nil
+            if args then
+                func(unpack(args, 1, args.n))
+            else
+                func()
+            end
         end)
     end
 end
@@ -308,6 +317,7 @@ end
 function FunctionUtil.ThrottleWithTrailing(func, interval)
     local lastCall = 0
     local trailingTimer = nil
+    local lastArgs = nil
 
     return function(...)
         local now = GetTime()
@@ -317,17 +327,29 @@ function FunctionUtil.ThrottleWithTrailing(func, interval)
                 trailingTimer:Cancel()
                 trailingTimer = nil
             end
+            lastArgs = nil
             lastCall = now
             return func(...)
         end
 
-        -- In cooldown: schedule exactly one trailing call (ignore extra calls)
+        -- In cooldown: record latest args (latest wins) and schedule exactly
+        -- one trailing call. Matches Debounce semantics — the trailing fire
+        -- carries the most recent call's arguments, not the first call's.
+        -- Preserve true arg count so trailing nils survive the round-trip.
+        lastArgs = { n = select("#", ...), ... }
+
         if not trailingTimer then
             local remaining = interval - (now - lastCall)
             trailingTimer = C_Timer.NewTimer(remaining, function()
                 trailingTimer = nil
                 lastCall = GetTime()
-                func()
+                local args = lastArgs
+                lastArgs = nil
+                if args then
+                    func(unpack(args, 1, args.n))
+                else
+                    func()
+                end
             end)
         end
     end

@@ -39,7 +39,10 @@ local TempTable = Core.TempTable or Loolib:GetModule("Core.TempTable") or {}
 
 -- Pool configuration
 local POOL_SIZE = 100
-local WARN_ON_LEAK = true
+-- Default off: debugstack(2) on every Acquire is expensive in hot paths
+-- (comm batching, event dispatch). Dev profiles can flip it on via
+-- TempTable:SetLeakWarnings(true).
+local WARN_ON_LEAK = false
 
 -- The pool of available tables
 local pool = {}
@@ -252,6 +255,15 @@ function TempTable:SetLeakWarnings(enabled)
         wipe(acquired)
         acquiredCount = 0
     end
+end
+
+--- Query whether leak warnings are currently enabled
+-- Callers (e.g. diagnostic panels) use this to distinguish "0 leaks" from
+-- "tracking off" so they can show a "disabled" indicator instead of a
+-- misleading zero.
+-- @return boolean
+function TempTable:AreLeakWarningsEnabled()
+    return WARN_ON_LEAK
 end
 
 --[[--------------------------------------------------------------------

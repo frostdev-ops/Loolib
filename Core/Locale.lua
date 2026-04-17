@@ -25,6 +25,19 @@ LocaleMixin.defaults = LocaleMixin.defaults or {}
 -- Per-application locale overrides (set before locale files load)
 LocaleMixin.overrides = LocaleMixin.overrides or {}
 
+-- Shared fallback table for GetLocale's no-locale / no-default paths.
+-- __index echoes the key back as a string so L["FOO"] returns "FOO" rather
+-- than nil, preventing string.format(L[...]) crashes when an application
+-- hasn't registered any locale (or its default locale).
+-- __newindex silently rejects writes to prevent a caller from mutating the
+-- fallback table's shared state (e.g. `L["X"] = "Y"` after GetLocale returned
+-- the fallback instead of a real locale table — that would leak a key into
+-- every subsequent caller that receives the same shared table).
+local emptyFallback = setmetatable({}, {
+    __index = function(_, key) return key end,
+    __newindex = function(_, _, _) end,
+})
+
 --- Get the effective locale for an application (override or game locale)
 -- @param application string|nil - Addon name, or nil for global
 -- @return string - Locale code
@@ -122,7 +135,7 @@ function LocaleMixin:GetLocale(application, silent)
             -- Warn that no locales registered for this application
             print(string_format("|cffff0000[Loolib Locale]|r No locales found for '%s'", application))
         end
-        return {}
+        return emptyFallback
     end
 
     local effectiveLocale = GetEffectiveLocale(self, application)
@@ -149,7 +162,7 @@ function LocaleMixin:GetLocale(application, silent)
     if not silent then
         print(string_format("|cffff0000[Loolib Locale]|r No default locale found for '%s'", application))
     end
-    return {}
+    return emptyFallback
 end
 
 --[[--------------------------------------------------------------------

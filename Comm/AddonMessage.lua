@@ -424,7 +424,9 @@ local function ProcessSendQueue()
             local distInvalid = false
             if dist == "RAID" and not IsInRaid() then
                 distInvalid = true
-            elseif dist == "PARTY" and not IsInGroup() then
+            elseif dist == "PARTY" and (not IsInGroup() or IsInRaid()) then
+                -- IsInGroup() is true for both party and raid; WoW rejects
+                -- PARTY-channel sends while in a raid with NotInGroup/GeneralError.
                 distInvalid = true
             elseif dist == "INSTANCE_CHAT" and not IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
                 distInvalid = true
@@ -541,6 +543,11 @@ local function OnUpdate(self, elapsed)
     end
 end
 
+-- Track whether the bypass-traffic secure hook has been installed.
+-- hooksecurefunc cannot be uninstalled, so we install it exactly once per
+-- Lua state regardless of how many Init/Shutdown cycles run.
+local sendHookInstalled = false
+
 local function InitializeCommFrame()
     if commFrame then return end
 
@@ -559,14 +566,19 @@ local function InitializeCommFrame()
     commFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
     -- Track bypass traffic from other addons; subtract from our budget so we
-    -- don't over-send when other addons are also using the channel.
-    hooksecurefunc(C_ChatInfo, "SendAddonMessage", function(_, message, _, _)
-        if not ourOwnSend then
-            -- Another addon sent a message; reduce our available budget.
-            throttleAvailable = math.max(0,
-                throttleAvailable - (#message + MSG_OVERHEAD))
-        end
-    end)
+    -- don't over-send when other addons are also using the channel. Install
+    -- exactly once per Lua state — hooksecurefunc has no uninstall API, so
+    -- doing this on every re-Init would stack duplicate hooks.
+    if not sendHookInstalled then
+        hooksecurefunc(C_ChatInfo, "SendAddonMessage", function(_, message, _, _)
+            if not ourOwnSend then
+                -- Another addon sent a message; reduce our available budget.
+                throttleAvailable = math.max(0,
+                    throttleAvailable - (#message + MSG_OVERHEAD))
+            end
+        end)
+        sendHookInstalled = true
+    end
 
     commFrame.cleanupTicker = commFrame.cleanupTicker or C_Timer.NewTicker(CLEANUP_INTERVAL, function()
         CleanupStalePending()
@@ -583,6 +595,52 @@ end
 --- Initialize the comm system (called automatically on first use)
 function CommMixin:Init()
     InitializeCommFrame()
+end
+
+--- Shut down the comm system and release background resources.
+-- Intended for test harnesses and debug reloads. Production addons can
+-- leave this unused — WoW tears down Lua state on /reload. After Shutdown
+-- the module is in a clean-initializable state: a subsequent Init() or
+-- send/register call will rebuild commFrame, start a fresh queue, and
+-- re-register for events.
+--
+-- Not reset:
+--   * The secure hook on C_ChatInfo.SendAddonMessage (hooksecurefunc has no
+--     uninstall API). InitializeCommFrame guards re-install with a flag.
+--   * WoW-client prefix registrations from C_ChatInfo.RegisterAddonMessagePrefix
+--     (session-scoped; re-registration is a safe no-op).
+function CommMixin:Shutdown()
+    if not commFrame then return end
+
+    if commFrame.cleanupTicker then
+        commFrame.cleanupTicker:Cancel()
+        commFrame.cleanupTicker = nil
+    end
+    commFrame:UnregisterAllEvents()
+    commFrame:SetScript("OnEvent", nil)
+    commFrame:SetScript("OnUpdate", nil)
+    commFrame:Hide()
+    -- Nil the module-level handle so InitializeCommFrame rebuilds rather
+    -- than no-ops on `if commFrame then return end`.
+    commFrame = nil
+
+    -- Release all queued and in-flight state so a restart begins from a
+    -- clean baseline. Without this a Shutdown-then-Init cycle would leak
+    -- stale messages onto the wire and reuse partial multi-part buffers.
+    queues.ALERT:Reset()
+    queues.NORMAL:Reset()
+    queues.BULK:Reset()
+    totalQueued = 0
+    wipe(pendingMessages)
+    wipe(registeredPrefixes)
+
+    throttleAvailable    = THROTTLE_BURST
+    lastThrottleUpdate   = 0
+    loginRampActive      = false
+    loginRampEnd         = 0
+    throttlePauseUntil   = 0
+    onUpdateAccumulator  = 0
+    ourOwnSend           = false
 end
 
 --- Register a prefix for receiving addon messages
@@ -694,9 +752,16 @@ function CommMixin:SendCommMessageInstant(prefix, text, distribution, target)
     if #text > MAX_MESSAGE_SIZE - 1 then
         error("SendCommMessageInstant: message too long for instant send", 2)
     end
+    -- Wrap the C_ChatInfo call in pcall so an unexpected error doesn't leave
+    -- `ourOwnSend` stuck as `true` — that would cause the hooksecurefunc
+    -- bypass-tracker to ignore every subsequent bypass send for the rest of
+    -- the session, silently poisoning the throttle budget measurement.
     ourOwnSend = true
-    C_ChatInfo.SendAddonMessage(prefix, CTRL_SINGLE .. text, distribution, target)
+    local ok, err = pcall(C_ChatInfo.SendAddonMessage, prefix, CTRL_SINGLE .. text, distribution, target)
     ourOwnSend = false
+    if not ok then
+        error(err, 2)
+    end
 end
 
 --- Get the total number of queued messages across all priority queues
