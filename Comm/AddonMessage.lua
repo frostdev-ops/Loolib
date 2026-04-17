@@ -161,7 +161,12 @@ end
 -- Registered prefixes and their callbacks: prefix -> {callback, owner}
 local registeredPrefixes = {}
 
--- Pending multi-part messages: sender -> { prefix -> {id, parts, startTime} }
+-- Pending multi-part messages: senderKey -> { prefix -> {id, parts, startTime, origSender} }
+-- senderKey is string.lower(sender). The WoW chat server does not guarantee
+-- stable casing of the sender string across a multi-part stream (e.g.,
+-- "Name-Realm" on one packet and "Name-realm" on another), so keying by the
+-- raw sender would split one physical stream across two buckets and lose
+-- parts. origSender preserves the first-seen casing for diagnostic logs.
 local pendingMessages = {}
 
 -- Priority queues (FIFO ring buffers)
@@ -202,6 +207,31 @@ local function GenerateMessageID()
     end
     -- 4 hex chars: 65K IDs, same header size as before
     return string.format("%04X", messageIDCounter)
+end
+
+-- Normalize a CHAT_MSG_ADDON sender string to a stable reassembly key.
+-- The chat server can deliver the same physical sender with inconsistent
+-- realm-part casing across a multi-part stream — e.g., "Name-Realm" and
+-- "Name-realm" for consecutive parts of one broadcast. Keying the
+-- pendingMessages buffer by the raw sender would split such a stream
+-- across two buckets and silently drop the tail.
+--
+-- Strategy: split on the first "-" and lowercase each segment. WoW realm
+-- slugs are always ASCII (they appear in HTTP URLs), so string.lower is
+-- lossless on them. Character name casing is stable from Blizzard's
+-- name service, but we lowercase the name segment as well for defense
+-- in depth; string.lower is a safe no-op on non-ASCII bytes, so Cyrillic /
+-- Hangul / Han characters pass through unchanged. Edge case: on a
+-- non-English realm where the name portion contains mixed-case Latin-1
+-- (ä, Ä), casing drift on the name won't collapse — accepted as a rare
+-- and low-impact limitation.
+local function NormalizeSenderKey(sender)
+    if type(sender) ~= "string" or sender == "" then return "" end
+    local name, realm = sender:match("^([^-]+)-(.+)$")
+    if name and realm then
+        return name:lower() .. "-" .. realm:lower()
+    end
+    return sender:lower()
 end
 
 local function GetEffectiveThrottleRate()
@@ -278,36 +308,71 @@ local function AssembleMessage(sender, prefix, ctrlByte, msgID, content)
         return content, true
     end
 
-    -- Initialize storage for this sender/prefix
-    if not pendingMessages[sender] then
-        pendingMessages[sender] = {}
+    -- Key the reassembly buffer by the normalized sender so server-side
+    -- casing drift across consecutive parts cannot split one stream across
+    -- two buckets. The original sender is preserved on the bucket for logs
+    -- and passed through unchanged to consumer callbacks.
+    local senderKey = NormalizeSenderKey(sender)
+
+    if not pendingMessages[senderKey] then
+        pendingMessages[senderKey] = {}
     end
-    if not pendingMessages[sender][prefix] then
-        pendingMessages[sender][prefix] = {}
+    if not pendingMessages[senderKey][prefix] then
+        pendingMessages[senderKey][prefix] = {}
     end
 
-    local pending = pendingMessages[sender][prefix]
+    local pending = pendingMessages[senderKey][prefix]
 
     if ctrlByte == CTRL_FIRST then
-        -- Start new multi-part message
-        pending.id        = msgID
-        pending.parts     = { content }
-        pending.startTime = GetTime()
-        pending.complete  = false
+        -- A new FIRST arriving while a prior partial is still in flight
+        -- for this sender+prefix means we lost the tail of that prior
+        -- stream (dropped LAST, reorder, or SplitMessage race). Log the
+        -- overlap so the failure is greppable in live-raid diagnostics,
+        -- then overwrite with the new stream.
+        if pending.id then
+            Loolib:Debug("AddonMessage: [REASM_OVERLAP] discarded incomplete prior stream from",
+                sender, "prefix=" .. prefix,
+                "old_id=" .. tostring(pending.id),
+                "new_id=" .. msgID,
+                "prior_parts=" .. tostring(pending.parts and #pending.parts or 0))
+        end
+        pending.id         = msgID
+        pending.parts      = { content }
+        pending.startTime  = GetTime()
+        pending.origSender = sender
         return nil, false
     end
 
-    -- Mismatched ID: the previous partial was interleaved/corrupted — discard
+    -- CTRL_MIDDLE or CTRL_LAST reaches here. Require a matching prior FIRST.
+
+    if not pending.id then
+        -- Orphan part: no FIRST was seen for this sender+prefix, or a
+        -- prior stream was purged/cleared. Adopting this part's id would
+        -- lead to truncated reassembly on the next LAST. Reject, log,
+        -- and delete the empty bucket so an orphan-LAST flood cannot
+        -- leak storage.
+        Loolib:Debug("AddonMessage: [REASM_ORPHAN] dropped part without prior FIRST from",
+            sender, "prefix=" .. prefix,
+            "ctrl=" .. tostring(ctrlByte and ctrlByte:byte() or "?"),
+            "msgID=" .. msgID)
+        pendingMessages[senderKey][prefix] = nil
+        return nil, false
+    end
+
     if pending.id ~= msgID then
-        if pending.id then
-            Loolib:Debug("AddonMessage: discarded partial message from",
-                sender, "prefix=" .. prefix,
-                "old_id=" .. tostring(pending.id), "new_id=" .. msgID)
-        end
-        pending.id        = msgID
-        pending.parts     = {}
-        pending.startTime = GetTime()
-        pending.complete  = false
+        -- Mid-stream id divergence. The prior stream lost its LAST or two
+        -- streams are overlapping on the same sender+prefix (very rare —
+        -- SplitMessage is serial per SendCommMessage). Drop the prior
+        -- partial AND this non-FIRST part. Do NOT adopt the new id from
+        -- a MIDDLE/LAST; without a FIRST we have no starting content and
+        -- any subsequent LAST tagged with this id would produce the exact
+        -- silent-truncation bug this fix targets. Wait for a real FIRST.
+        Loolib:Debug("AddonMessage: [REASM_ID_MISMATCH] discarded partial from",
+            sender, "prefix=" .. prefix,
+            "old_id=" .. tostring(pending.id),
+            "new_id=" .. msgID,
+            "prior_parts=" .. tostring(#pending.parts))
+        pendingMessages[senderKey][prefix] = nil
         return nil, false
     end
 
@@ -315,9 +380,7 @@ local function AssembleMessage(sender, prefix, ctrlByte, msgID, content)
 
     if ctrlByte == CTRL_LAST then
         local fullMessage = table.concat(pending.parts)
-        pending.id        = nil
-        pending.parts     = {}
-        pending.complete  = false
+        pendingMessages[senderKey][prefix] = nil
         return fullMessage, true
     end
 
@@ -329,17 +392,18 @@ local function CleanupStalePending(maxAge)
     local now    = GetTime()
     local cutoff = now - maxAge
 
-    for sender, prefixTable in pairs(pendingMessages) do
+    for senderKey, prefixTable in pairs(pendingMessages) do
         for prefix, pending in pairs(prefixTable) do
             if pending.startTime and pending.startTime < cutoff then
-                Loolib:Debug("AddonMessage: purging stale partial message from",
-                    sender, "prefix=" .. prefix,
-                    string.format("age=%.1fs", now - pending.startTime))
+                Loolib:Debug("AddonMessage: [REASM_STALE] purging partial message from",
+                    pending.origSender or senderKey, "prefix=" .. prefix,
+                    string.format("age=%.1fs", now - pending.startTime),
+                    "parts=" .. tostring(pending.parts and #pending.parts or 0))
                 prefixTable[prefix] = nil
             end
         end
         if not next(prefixTable) then
-            pendingMessages[sender] = nil
+            pendingMessages[senderKey] = nil
         end
     end
 end
@@ -874,3 +938,26 @@ Loolib.Comm.PRIORITY_BULK = PRIORITY_BULK
 
 Loolib:RegisterModule("Comm", Comm)
 Loolib:RegisterModule("AddonMessage", Comm)
+
+--[[--------------------------------------------------------------------
+    Private Testing Hooks
+
+    Not part of the public API. Used by
+    Loolib/_examples/tests/AddonMessageReassemblyTest.lua to exercise
+    the multi-part reassembler in isolation. Do not rely on this from
+    addon code — the shape can change without notice.
+----------------------------------------------------------------------]]
+
+Loolib.Comm._testing = {
+    AssembleMessage        = AssembleMessage,
+    CleanupStalePending    = CleanupStalePending,
+    NormalizeSenderKey     = NormalizeSenderKey,
+    SplitMessage           = SplitMessage,
+    GetPendingMessages     = function() return pendingMessages end,
+    ResetPendingMessages   = function() wipe(pendingMessages) end,
+    ResetMessageIDCounter  = function() messageIDCounter = 0 end,
+    CTRL_SINGLE            = CTRL_SINGLE,
+    CTRL_FIRST             = CTRL_FIRST,
+    CTRL_MIDDLE            = CTRL_MIDDLE,
+    CTRL_LAST              = CTRL_LAST,
+}

@@ -872,14 +872,19 @@ Multi-part message (>254 bytes):
 
 **Parameters:**
 ```
-THROTTLE_RATE = 2000        // Base: 2000 bytes/sec
-THROTTLE_BURST = 4000       // Burst: 4000 bytes
-THROTTLE_BULK_DIVISOR = 4   // BULK penalty
+THROTTLE_RATE         = 800     // Base: 800 bytes/sec (ChatThrottleLib-proven safe rate)
+THROTTLE_BURST        = 4000    // Burst: 4000 bytes
+THROTTLE_BULK_DIVISOR = 4       // BULK penalty
+LOGIN_THROTTLE_RATE   = 80      // 10% rate during login ramp (5s)
+FPS_LOW_THRESHOLD     = 20      // Halve replenishment below 20 FPS
 ```
 
 **Replenishment:**
 ```lua
-available = min(BURST, available + (elapsed * RATE))
+available = min(BURST, available + (elapsed * effectiveRate))
+-- effectiveRate = LOGIN_THROTTLE_RATE during login ramp,
+--                 THROTTLE_RATE * 0.5 when FPS < 20,
+--                 THROTTLE_RATE otherwise.
 ```
 
 **Consumption:**
@@ -896,13 +901,10 @@ consumed = messageSize * 4  // 4x penalty
 T=0.0s:  Send 1000 bytes (NORMAL)
          Available: 4000 - 1000 = 3000
 
-T=0.5s:  Replenish: 3000 + (0.5 * 2000) = 4000 (capped at BURST)
+T=1.25s: Replenish: 3000 + (1.25 * 800) = 4000 (capped at BURST)
 
-T=0.5s:  Send 2000 bytes (BULK, effectively 8000)
-         Available: 4000 - 8000 = -4000 (queued, wait for replenish)
-
-T=4.5s:  Replenish: -4000 + (4.0 * 2000) = 4000
-         BULK message sent
+T=1.25s: Send 500 bytes (BULK, effectively 2000)
+         Available: 4000 - 2000 = 2000
 ```
 
 ### Queue Processing
@@ -937,23 +939,41 @@ PRIORITY_ORDER = {
 
 **State Tracking:**
 ```lua
-pendingMessages[sender][prefix] = {
-    id = "A3F1",           -- Current message ID
-    parts = {"chunk1", "chunk2"},  -- Accumulated parts
-    complete = false
+pendingMessages[senderKey][prefix] = {
+    id         = "A3F1",              -- Current message ID (4-char hex)
+    parts      = {"chunk1", "chunk2"}, -- Accumulated parts, in arrival order
+    startTime  = 12345.678,            -- GetTime() of first part, for stale-purge
+    origSender = "Felbane-Duskwood",   -- Original sender string for diagnostic logs
 }
 ```
 
+`senderKey` is `NormalizeSenderKey(sender)`, which lowercases the sender
+string (splitting "Name-Realm" and lowercasing each segment). This
+collapses the chat server's casing drift across a multi-part stream —
+e.g., part 1 arriving as `"Felbane-Duskwood"` and part 3 as
+`"Felbane-duskwood"` are bucketed together. The original sender string
+is preserved on `origSender` for logs and is passed unchanged to
+consumer callbacks.
+
+The bucket entry is **deleted** (not field-reset) on any of: successful
+LAST delivery, orphan-part rejection, id-mismatch rejection, or stale
+purge. There is no `complete` field.
+
 **Assembly Logic:**
-1. FIRST: Initialize new message, store first chunk
-2. MIDDLE: Verify ID matches, append chunk
-3. LAST: Verify ID matches, append chunk, concatenate all parts
-4. Call registered callback with complete message
+1. `CTRL_SINGLE`: fast-path, return content immediately.
+2. `CTRL_FIRST`: create or overwrite the bucket with `{id, parts={content}, startTime, origSender}`. If a prior incomplete bucket exists for this sender+prefix, emit a `[REASM_OVERLAP]` debug log before overwriting.
+3. `CTRL_MIDDLE` / `CTRL_LAST` with no prior FIRST (orphan): emit `[REASM_ORPHAN]` and delete the empty bucket. Do not adopt the id.
+4. `CTRL_MIDDLE` / `CTRL_LAST` with mismatching id: emit `[REASM_ID_MISMATCH]` and delete the bucket. Do not adopt the new id from a non-FIRST part (adopting a non-FIRST id was the root cause of silent truncation in v2.1.2 and earlier).
+5. `CTRL_MIDDLE` with matching id: append content, return `nil, false`.
+6. `CTRL_LAST` with matching id: append content, `table.concat(parts)`, delete bucket, return `(fullMessage, true)`.
 
 **Error Handling:**
-- ID mismatch: Discard previous parts, start fresh
-- Missing parts: Keep partial message until timeout
-- Out-of-order: Not handled (assumes in-order delivery)
+- `[REASM_OVERLAP]`: new FIRST arrived while prior stream incomplete. Prior discarded, new accepted.
+- `[REASM_ORPHAN]`: MIDDLE/LAST with no prior FIRST for this sender+prefix. Dropped, no delivery.
+- `[REASM_ID_MISMATCH]`: MIDDLE/LAST tagged with a different msgID than the bucket's current id. Dropped, no delivery.
+- `[REASM_STALE]`: cleanup sweep removed a bucket whose `startTime` exceeded `PENDING_MAX_AGE` (60s default).
+- Missing-middle with matching id: **not detected at Loolib layer** — the wire format has no per-part sequence number or total-part count. A dropped MIDDLE followed by a matching-id LAST produces a concatenation of `(FIRST, LAST)` that downstream must validate via its own integrity check (e.g., Adler-32 over the inner payload). Full detection requires a wire-format bump planned for v2.2.0.
+- All log tags are machine-greppable for live-raid triage when `Loolib.debug = true`.
 
 ### Performance Characteristics
 
