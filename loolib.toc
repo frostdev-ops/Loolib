@@ -23,6 +23,7 @@ Core\Constants.lua
 Core\Timer.lua
 Core\Addon.lua
 Core\Compat.lua
+Core\Fonts.lua
 Compat\GlobalBridge.lua
 
 # ============================================================
@@ -88,6 +89,14 @@ UI\Core\FrameUtil.lua
 UI\Core\RegionUtil.lua
 UI\Core\StyleUtil.lua
 UI\Core\WindowUtil.lua
+UI\Core\PixelUtil.lua
+
+# ============================================================
+# UI Animation - Tween engine with Penner easing
+# ============================================================
+UI\Animation\Easing.lua
+UI\Animation\AnimationUtil.lua
+UI\Animation\Presets.lua
 
 # ============================================================
 # Utils - Utility modules

@@ -108,6 +108,25 @@ local function IsValidHexColor(hex)
     return #stripped == 6 and stripped:match("^%x+$") ~= nil
 end
 
+-- INTERNAL: Validate a gradient spec. Returns the sanitized gradient or nil.
+-- Expected shape: { direction = "HORIZONTAL"|"VERTICAL", from = {r,g,b[,a]}, to = {r,g,b[,a]} }
+local function NormalizeGradient(gradient)
+    if type(gradient) ~= "table" then return nil end
+    local from, to = gradient.from, gradient.to
+    if type(from) ~= "table" or type(to) ~= "table" then return nil end
+    if type(from[1]) ~= "number" or type(from[2]) ~= "number" or type(from[3]) ~= "number" then return nil end
+    if type(to[1]) ~= "number" or type(to[2]) ~= "number" or type(to[3]) ~= "number" then return nil end
+    local direction = gradient.direction
+    if direction ~= "HORIZONTAL" and direction ~= "VERTICAL" then
+        direction = "HORIZONTAL"
+    end
+    return {
+        direction = direction,
+        from = { from[1], from[2], from[3], from[4] or 1 },
+        to = { to[1], to[2], to[3], to[4] or 1 },
+    }
+end
+
 -- INTERNAL: Validate a color table has the expected {r, g, b, a} structure
 -- @param color table - The color to validate
 -- @return boolean
@@ -544,6 +563,45 @@ function ThemeManagerMixin:GetBackdrop(backdropName, fallback)
     return backdrop
 end
 
+--- Get a gradient spec from the active theme.
+-- Returns a normalized { direction, from, to } table or `fallback`.
+-- @param gradientName string
+-- @param fallback table|nil
+-- @return table|nil
+function ThemeManagerMixin:GetGradient(gradientName, fallback)
+    local raw = self:GetValue("gradients", gradientName, nil)
+    local normalized = NormalizeGradient(raw)
+    if normalized then
+        return normalized
+    end
+    return NormalizeGradient(fallback)
+end
+
+--- Apply a theme gradient to a texture region via TextureBase:SetGradient.
+-- Caller is responsible for ensuring the texture has a solid white backing
+-- (e.g. CreateTexture + SetColorTexture(1,1,1,1) or SetTexture to a 1x1 white).
+-- @param textureRegion Texture
+-- @param gradientName string
+-- @param fallback table|nil
+function ThemeManagerMixin:ApplyGradient(textureRegion, gradientName, fallback)
+    if type(textureRegion) ~= "table" or type(textureRegion.SetGradient) ~= "function" then
+        return
+    end
+    local grad = self:GetGradient(gradientName, fallback)
+    if not grad then return end
+
+    local CreateColor = _G.CreateColor
+    if type(CreateColor) ~= "function" then return end
+
+    local a = grad.from
+    local b = grad.to
+    textureRegion:SetGradient(
+        grad.direction,
+        CreateColor(a[1], a[2], a[3], a[4] or 1),
+        CreateColor(b[1], b[2], b[3], b[4] or 1)
+    )
+end
+
 --- Get a spacing value from the active theme
 -- @param spacingName string - Spacing name
 -- @param fallback number - Fallback spacing value (default: 8)
@@ -883,6 +941,8 @@ ThemeManagerModule.GetMedia = function(...) return ThemeManager:GetMedia(...) en
 ThemeManagerModule.GetMediaNames = function(...) return ThemeManager:GetMediaNames(...) end
 ThemeManagerModule.GetTexture = function(...) return ThemeManager:GetTexture(...) end
 ThemeManagerModule.GetBackdrop = function(...) return ThemeManager:GetBackdrop(...) end
+ThemeManagerModule.GetGradient = function(...) return ThemeManager:GetGradient(...) end
+ThemeManagerModule.ApplyGradient = function(...) return ThemeManager:ApplyGradient(...) end
 ThemeManagerModule.GetSpacing = function(...) return ThemeManager:GetSpacing(...) end
 ThemeManagerModule.GetSpacingSet = function(...) return ThemeManager:GetSpacingSet(...) end
 ThemeManagerModule.GetComponentConfig = function(...) return ThemeManager:GetComponentConfig(...) end

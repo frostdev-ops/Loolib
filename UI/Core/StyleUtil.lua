@@ -228,6 +228,42 @@ function StyleUtil.ApplyBackdrop(frame, options)
     )
 end
 
+--- Apply a themed gradient to a StatusBar texture.
+-- Configures the statusbar with a 1x1 white backing and applies the gradient
+-- via ThemeManager:ApplyGradient. The bar's SetStatusBarColor is set to white
+-- so the gradient shows through unmultiplied.
+-- @param statusBar StatusBar
+-- @param gradientName string
+-- @param fallback table|nil
+function StyleUtil.ApplyGradientBar(statusBar, gradientName, fallback)
+    if type(statusBar) ~= "table" then return end
+
+    if type(statusBar.SetStatusBarTexture) == "function" then
+        statusBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    end
+    if type(statusBar.SetStatusBarColor) == "function" then
+        statusBar:SetStatusBarColor(1, 1, 1, 1)
+    end
+
+    local region = type(statusBar.GetStatusBarTexture) == "function" and statusBar:GetStatusBarTexture() or nil
+    if region then
+        ThemeManager:ApplyGradient(region, gradientName, fallback)
+    end
+end
+
+--- Apply a themed gradient to any texture region (not a StatusBar).
+-- Ensures the texture is white-backed so the gradient shows through.
+-- @param textureRegion Texture
+-- @param gradientName string
+-- @param fallback table|nil
+function StyleUtil.ApplyGradientTexture(textureRegion, gradientName, fallback)
+    if type(textureRegion) ~= "table" then return end
+    if type(textureRegion.SetColorTexture) == "function" then
+        textureRegion:SetColorTexture(1, 1, 1, 1)
+    end
+    ThemeManager:ApplyGradient(textureRegion, gradientName, fallback)
+end
+
 --- Create a thin divider texture anchored to a parent.
 -- @param parent Frame
 -- @param options table|nil

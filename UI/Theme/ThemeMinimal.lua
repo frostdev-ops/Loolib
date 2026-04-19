@@ -339,6 +339,20 @@ local ThemeMinimal = {
         slideDuration = 0.2,
         scaleDuration = 0.1,
     },
+
+    --[[----------------------------------------------------------------
+        Gradients - Flat, low-saturation variants
+    ------------------------------------------------------------------]]
+    gradients = {
+        accentPanel   = { direction = "VERTICAL",   from = {0.12, 0.12, 0.14, 0.95}, to = {0.09, 0.09, 0.1, 0.95} },
+        accentHeader  = { direction = "HORIZONTAL", from = {0.22, 0.22, 0.24, 0.9},  to = {0.28, 0.28, 0.3, 0.9} },
+        healthFG      = { direction = "HORIZONTAL", from = {0.25, 0.55, 0.25, 1},    to = {0.45, 0.75, 0.45, 1} },
+        healthBG      = { direction = "HORIZONTAL", from = {0.1, 0.18, 0.1, 0.85},   to = {0.15, 0.24, 0.15, 0.85} },
+        manaFG        = { direction = "HORIZONTAL", from = {0.25, 0.35, 0.55, 1},    to = {0.4, 0.5, 0.7, 1} },
+        manaBG        = { direction = "HORIZONTAL", from = {0.1, 0.12, 0.2, 0.85},   to = {0.14, 0.18, 0.28, 0.85} },
+        warningFG     = { direction = "HORIZONTAL", from = {0.55, 0.25, 0.25, 1},    to = {0.7, 0.4, 0.25, 1} },
+        goldAccent    = { direction = "VERTICAL",   from = {0.55, 0.45, 0.3, 0.9},   to = {0.4, 0.32, 0.2, 0.9} },
+    },
 }
 
 --[[--------------------------------------------------------------------

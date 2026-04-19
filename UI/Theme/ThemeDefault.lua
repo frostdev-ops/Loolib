@@ -368,6 +368,22 @@ local ThemeDefault = {
         slideDuration = 0.3,
         scaleDuration = 0.15,
     },
+
+    --[[----------------------------------------------------------------
+        Gradients
+        direction: "HORIZONTAL" or "VERTICAL"
+        from/to:   {r, g, b, a}
+    ------------------------------------------------------------------]]
+    gradients = {
+        accentPanel   = { direction = "VERTICAL",   from = {0.08, 0.08, 0.10, 0.95}, to = {0.04, 0.04, 0.05, 0.95} },
+        accentHeader  = { direction = "HORIZONTAL", from = {0.0, 0.34, 0.77, 0.9},   to = {0.0, 0.44, 0.87, 0.9} },
+        healthFG      = { direction = "HORIZONTAL", from = {0.1, 0.7, 0.1, 1},       to = {0.6, 1.0, 0.4, 1} },
+        healthBG      = { direction = "HORIZONTAL", from = {0.03, 0.18, 0.03, 0.85}, to = {0.1, 0.28, 0.08, 0.85} },
+        manaFG        = { direction = "HORIZONTAL", from = {0.1, 0.3, 0.8, 1},       to = {0.3, 0.55, 1.0, 1} },
+        manaBG        = { direction = "HORIZONTAL", from = {0.03, 0.05, 0.2, 0.85},  to = {0.08, 0.15, 0.35, 0.85} },
+        warningFG     = { direction = "HORIZONTAL", from = {0.8, 0.1, 0.1, 1},       to = {1.0, 0.4, 0.1, 1} },
+        goldAccent    = { direction = "VERTICAL",   from = {1.0, 0.7, 0.2, 0.9},     to = {0.6, 0.35, 0.05, 0.9} },
+    },
 }
 
 --[[--------------------------------------------------------------------

@@ -286,6 +286,20 @@ local ThemeDark = {
         slideDuration = 0.35,
         scaleDuration = 0.2,
     },
+
+    --[[----------------------------------------------------------------
+        Gradients - Darker, lower-contrast variants
+    ------------------------------------------------------------------]]
+    gradients = {
+        accentPanel   = { direction = "VERTICAL",   from = {0.05, 0.05, 0.07, 0.95}, to = {0.02, 0.02, 0.03, 0.95} },
+        accentHeader  = { direction = "HORIZONTAL", from = {0.0, 0.18, 0.45, 0.9},   to = {0.0, 0.26, 0.55, 0.9} },
+        healthFG      = { direction = "HORIZONTAL", from = {0.05, 0.5, 0.1, 1},      to = {0.4, 0.8, 0.3, 1} },
+        healthBG      = { direction = "HORIZONTAL", from = {0.02, 0.12, 0.03, 0.85}, to = {0.06, 0.2, 0.05, 0.85} },
+        manaFG        = { direction = "HORIZONTAL", from = {0.05, 0.2, 0.55, 1},     to = {0.2, 0.4, 0.75, 1} },
+        manaBG        = { direction = "HORIZONTAL", from = {0.02, 0.04, 0.15, 0.85}, to = {0.05, 0.1, 0.25, 0.85} },
+        warningFG     = { direction = "HORIZONTAL", from = {0.6, 0.08, 0.08, 1},     to = {0.8, 0.3, 0.08, 1} },
+        goldAccent    = { direction = "VERTICAL",   from = {0.7, 0.5, 0.15, 0.9},    to = {0.4, 0.25, 0.05, 0.9} },
+    },
 }
 
 --[[--------------------------------------------------------------------

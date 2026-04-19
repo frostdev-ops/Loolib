@@ -210,6 +210,49 @@ Defined in `ThemeDefault.lua` and `ThemeMinimal.lua`, accessible via `Loolib.Bac
 | `Minimal` | ThemeMinimal | WHITE8x8, 1px edge |
 | `MinimalThick` | ThemeMinimal | WHITE8x8, 2px edge |
 
+## Gradients
+
+Themes expose a `gradients` subtable alongside `colors`. Each entry defines a two-stop linear gradient:
+
+```lua
+gradients = {
+    healthFG = { direction = "HORIZONTAL", from = {0.1, 0.7, 0.1, 1}, to = {0.6, 1.0, 0.4, 1} },
+    ...
+}
+```
+
+### ThemeManager:GetGradient(name, fallback)
+
+Returns a normalized `{ direction, from, to }` table (with `a` defaulting to `1` for each stop), or `fallback` if missing. Invalid specs — wrong types, missing keys, unknown direction — fall through to `fallback`. Unknown directions are coerced to `"HORIZONTAL"`.
+
+### ThemeManager:ApplyGradient(texture, name, fallback)
+
+Call `TextureBase:SetGradient` on `texture` using the named gradient. The caller is responsible for ensuring the texture has a solid white backing (`SetColorTexture(1,1,1,1)` or a white texture file) so the gradient shows through unmultiplied. For StatusBars, prefer `StyleUtil.ApplyGradientBar` which handles this automatically.
+
+```lua
+local StyleUtil = LibStub("Loolib").StyleUtil
+local bar = CreateFrame("StatusBar", nil, parent)
+bar:SetSize(200, 20)
+bar:SetMinMaxValues(0, 100)
+bar:SetValue(75)
+StyleUtil.ApplyGradientBar(bar, "healthFG")
+```
+
+Gradient definitions are re-applied automatically on theme switch via the existing theme-change callback mechanism — register with `RegisterThemeCallback` if your widget needs to re-call `ApplyGradient` on tint change.
+
+### Built-in gradient keys
+
+The Default / Dark / Minimal themes all define these keys; consumers can rely on them existing regardless of the active theme:
+
+| Key | Use |
+|---|---|
+| `accentPanel` | Panel body background, vertical. |
+| `accentHeader` | Header strip, horizontal. |
+| `healthFG` / `healthBG` | Health bar foreground / background. |
+| `manaFG` / `manaBG` | Mana/resource bar foreground / background. |
+| `warningFG` | Warning/danger bar. |
+| `goldAccent` | Gold highlight vertical gradient. |
+
 ## Globals Exported
 
 | Global | Type | Description |
