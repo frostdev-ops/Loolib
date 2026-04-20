@@ -203,7 +203,12 @@ local function ensureUpdater()
     updater:SetScript("OnUpdate", function(_, elapsed)
         for i = #active, 1, -1 do
             local anim = active[i]
-            if anim._stopped then
+            -- Defensive: if an onFinished callback re-entered scheduleAnim
+            -- / stopAnim on an anim lower in the list, the array can end
+            -- up with a nil slot at the current index on the next OnUpdate.
+            -- Treat nil as "already stopped" and compact it out instead of
+            -- indexing into it (which throws).
+            if not anim or anim._stopped then
                 tremove(active, i)
             else
                 local tickElapsed = elapsed
