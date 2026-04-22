@@ -79,6 +79,15 @@ local LOGIN_RAMP_DURATION  = 5      -- Seconds at reduced rate after PLAYER_ENTE
 local FPS_LOW_THRESHOLD    = 20     -- FPS below this halves replenishment
 local THROTTLE_PAUSE_DURATION = 0.35 -- Pause after AddonMessageThrottle result (seconds)
 
+-- Message-count budget (aligned with WoW's addon-channel throttle).
+-- WoW's SendAddonMessage channel allows ~10 burst messages then ~1/sec steady.
+-- We leave 2-token headroom for bypass traffic from DBM/WA/BigWigs sharing the
+-- channel. The byte budget above is not sufficient on its own — a burst of
+-- small messages at 50-100 bytes can send 30+ in one tick under byte-rate
+-- alone, which WoW will then throttle with AddOnMessageThrottle errors.
+local MSG_BUDGET_BURST     = 8       -- Burst capacity (messages)
+local MSG_BUDGET_RATE      = 1.0     -- Refill rate (messages / second)
+
 -- Queue limits
 local MAX_QUEUE_SIZE = 500          -- Drop BULK when exceeded; warn for NORMAL
 
@@ -186,6 +195,17 @@ local loginRampActive    = false
 local loginRampEnd       = 0
 local throttlePauseUntil = 0    -- GetTime() epoch to resume after throttle error
 
+-- Message-count token bucket (separate from byte budget)
+local msgTokens          = MSG_BUDGET_BURST
+local lastMsgTokenUpdate = 0
+local msgCoalesced       = 0   -- Diag counter: how many enqueues were collapsed into prior queued items
+
+-- Outbound coalesce index: prefix|key -> queued item. Used to mark earlier
+-- queued copies of idempotent state (MLDB, council roster, heartbeat, etc.)
+-- as superseded when a newer copy is enqueued. Drain skips superseded items.
+-- Only single-part messages are coalesced to avoid tearing multi-part streams.
+local coalesceIndex = {}
+
 -- Flag: true while we are sending via ProcessSendQueue (for bypass tracking)
 local ourOwnSend = false
 
@@ -266,6 +286,18 @@ end
 
 local function ConsumeThrottle(amount)
     throttleAvailable = throttleAvailable - amount
+end
+
+local function GetMsgTokens()
+    local now = GetTime()
+    local elapsed = now - lastMsgTokenUpdate
+    lastMsgTokenUpdate = now
+    msgTokens = math.min(MSG_BUDGET_BURST, msgTokens + elapsed * MSG_BUDGET_RATE)
+    return msgTokens
+end
+
+local function ConsumeMsgToken()
+    msgTokens = msgTokens - 1
 end
 
 local function SplitMessage(text)
@@ -461,19 +493,37 @@ local function ProcessSendQueue()
     end
 
     local allowance = GetThrottleAllowance()
+    GetMsgTokens()  -- refill message-count bucket based on elapsed time
 
     -- tryDrain: drain messages from a queue respecting budget constraints.
-    -- ignoreBudget=true (ALERT): send regardless of allowance.
-    -- isBulk=true (BULK): each message costs 4x against budget.
+    -- ignoreBudget=true (ALERT): send regardless of byte AND message-count budget.
+    -- isBulk=true (BULK): each message costs 4x against the byte budget.
     local function tryDrain(queue, isBulk, ignoreBudget, maxMessages)
         local drained = 0
         while queue:Size() > 0 do
-            local item      = queue:Peek()
+            local item = queue:Peek()
+
+            -- Skip superseded (coalesced) items silently. A newer message for
+            -- the same (prefix, coalesceKey) replaced this one while it was
+            -- still queued. Pop and continue; don't consume budget, don't fire
+            -- the callback — the caller's intent is fulfilled by the newer item.
+            if item.coalesced then
+                queue:Pop()
+                totalQueued = totalQueued - 1
+                -- Continue to next item; no budget check needed
+            else
+
             local msgLen    = #item.text + MSG_OVERHEAD
             local effectLen = isBulk and (msgLen * THROTTLE_BULK_DIVISOR) or msgLen
 
-            -- Stop draining if budget exhausted (unless ignoreBudget)
-            if not ignoreBudget and effectLen > allowance then return end
+            -- Stop draining if budget exhausted (unless ignoreBudget).
+            -- Both the byte budget AND the message-count budget must permit it;
+            -- WoW's channel enforces a per-message-count throttle that the byte
+            -- budget alone does not model (small messages would burst-drain).
+            if not ignoreBudget then
+                if effectLen > allowance then return end
+                if msgTokens < 1 then return end
+            end
 
             queue:Pop()
             totalQueued = totalQueued - 1
@@ -505,7 +555,12 @@ local function ProcessSendQueue()
                 -- Drop without consuming throttle (no wire bytes sent) and
                 -- signal the caller with bytesSent=0 so any caller tracking
                 -- delivery for accounting/retry purposes can distinguish a
-                -- drop from a successful send.
+                -- drop from a successful send. Also drop the coalesce-index
+                -- entry so a future send with the same key is treated as a
+                -- fresh enqueue, not a supersede of a now-dead item.
+                if item.coalesceKey and coalesceIndex[item.coalesceKey] == item then
+                    coalesceIndex[item.coalesceKey] = nil
+                end
                 if item.callback then
                     pcall(item.callback, item.arg, 0)
                 end
@@ -566,6 +621,15 @@ local function ProcessSendQueue()
 
             ConsumeThrottle(effectLen)
             allowance = allowance - effectLen
+            ConsumeMsgToken()
+
+            -- Mark item as sent and drop its coalesce-index entry so a later
+            -- enqueue with the same key is treated as a fresh send, not a
+            -- supersede of an already-transmitted message.
+            item.sent = true
+            if item.coalesceKey and coalesceIndex[item.coalesceKey] == item then
+                coalesceIndex[item.coalesceKey] = nil
+            end
 
             if item.callback then
                 pcall(item.callback, item.arg, #item.text)
@@ -576,6 +640,7 @@ local function ProcessSendQueue()
                 return
             end
             end -- end else (valid distribution branch)
+            end -- end else (non-coalesced branch)
         end
     end
 
@@ -636,9 +701,18 @@ local function InitializeCommFrame()
     if not sendHookInstalled then
         hooksecurefunc(C_ChatInfo, "SendAddonMessage", function(_, message, _, _)
             if not ourOwnSend then
-                -- Another addon sent a message; reduce our available budget.
+                -- Another addon sent a message; reduce our available byte
+                -- budget. Floored at 0 intentionally: bytes are spent on the
+                -- wire, we never expect them back.
                 throttleAvailable = math.max(0,
                     throttleAvailable - (#message + MSG_OVERHEAD))
+                -- Message-count consumption: do NOT floor at 0. ConsumeMsgToken
+                -- (our own sends) allows msgTokens to go negative to represent
+                -- a deficit the refill must pay off before the next send. The
+                -- bypass path must be symmetric — flooring here would erase
+                -- debt from our own drain, letting us mistakenly "spend" budget
+                -- that WoW's shared channel already used.
+                msgTokens = msgTokens - 1
             end
         end)
         sendHookInstalled = true
@@ -705,6 +779,10 @@ function CommMixin:Shutdown()
     throttlePauseUntil   = 0
     onUpdateAccumulator  = 0
     ourOwnSend           = false
+    msgTokens            = MSG_BUDGET_BURST
+    lastMsgTokenUpdate   = 0
+    msgCoalesced         = 0
+    wipe(coalesceIndex)
 end
 
 --- Register a prefix for receiving addon messages
@@ -750,8 +828,14 @@ end
 -- @param prio string|nil - "ALERT", "NORMAL" (default), or "BULK"
 -- @param callbackFn function|nil - Called after each part is sent: callback(arg, bytesSent)
 -- @param callbackArg any - Argument passed to callback
+-- @param coalesceKey string|nil - Optional key for idempotent-state coalescing.
+--   If an earlier send for (prefix, coalesceKey) is still queued and has not
+--   yet started transmitting, it is marked superseded and the drain will skip
+--   it. Use for whole-state messages where only the most recent value matters
+--   (heartbeats, council roster, MLDB, version broadcasts). Only single-part
+--   messages participate in coalescing; multi-part messages ignore the key.
 -- @return boolean - true if queued, false if dropped due to queue full
-function CommMixin:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg)
+function CommMixin:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg, coalesceKey)
     if type(prefix) ~= "string" then
         error("SendCommMessage: prefix must be a string", 2)
     end
@@ -791,8 +875,23 @@ function CommMixin:SendCommMessage(prefix, text, distribution, target, prio, cal
     end
 
     local messages = SplitMessage(text)
+
+    -- Coalesce: if caller supplied a coalesceKey and this send is a single
+    -- packet, mark any prior queued-but-unsent item with the same (prefix, key)
+    -- as superseded. The drain loop will skip superseded items. Multi-part
+    -- sends skip coalescing to avoid tearing a partially-transmitted stream.
+    local fullKey = nil
+    if coalesceKey and #messages == 1 then
+        fullKey = prefix .. "|" .. coalesceKey
+        local prior = coalesceIndex[fullKey]
+        if prior and not prior.sent and not prior.coalesced then
+            prior.coalesced = true
+            msgCoalesced = msgCoalesced + 1
+        end
+    end
+
     for _, msg in ipairs(messages) do
-        EnqueueItem({
+        local item = {
             prefix       = prefix,
             text         = msg,
             distribution = distribution,
@@ -800,7 +899,12 @@ function CommMixin:SendCommMessage(prefix, text, distribution, target, prio, cal
             prio         = prio,
             callback     = callbackFn,
             arg          = callbackArg,
-        })
+            coalesceKey  = fullKey,   -- nil for non-coalesced or multi-part
+        }
+        EnqueueItem(item)
+        if fullKey then
+            coalesceIndex[fullKey] = item
+        end
     end
 
     return true
@@ -840,6 +944,7 @@ function CommMixin:ClearSendQueue()
     queues.NORMAL:Reset()
     queues.BULK:Reset()
     totalQueued = 0
+    wipe(coalesceIndex)
     if commFrame then commFrame:Hide() end
 end
 
@@ -867,6 +972,18 @@ function CommMixin:ClearSendQueueForPrefix(prefix)
                   + clearQueue(queues.NORMAL)
                   + clearQueue(queues.BULK)
     totalQueued = totalQueued - removed
+
+    -- Strip coalesce-index entries belonging to this prefix. Keys are of the
+    -- form "<prefix>|<key>"; the removed items are gone from the queues, and
+    -- leaving their index entries behind would cause a later enqueue to try
+    -- to "supersede" an item that no longer exists.
+    local keyPrefix = prefix .. "|"
+    for k in pairs(coalesceIndex) do
+        if k:sub(1, #keyPrefix) == keyPrefix then
+            coalesceIndex[k] = nil
+        end
+    end
+
     if totalQueued == 0 and commFrame then commFrame:Hide() end
 end
 
@@ -875,6 +992,13 @@ end
 function CommMixin:GetThrottleState()
     GetThrottleAllowance()  -- Update available
     return throttleAvailable, THROTTLE_BURST
+end
+
+--- Get current message-count token-bucket state.
+-- @return number, number, number - Available tokens (float), burst capacity, coalesce counter
+function CommMixin:GetMsgBudgetState()
+    GetMsgTokens()  -- Refill before read
+    return msgTokens, MSG_BUDGET_BURST, msgCoalesced
 end
 
 --- Clean up stale incomplete multi-part messages
