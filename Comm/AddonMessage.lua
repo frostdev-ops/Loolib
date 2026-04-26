@@ -170,6 +170,13 @@ end
 -- Registered prefixes and their callbacks: prefix -> {callback, owner}
 local registeredPrefixes = {}
 
+-- Per-prefix WHISPER target validators: prefix -> function(target) -> boolean.
+-- Consulted at send-time inside tryDrain to drop WHISPERs whose target is no
+-- longer reachable (e.g. left the group between enqueue and drain). The Loolib
+-- layer has no notion of group identity normalization, so it delegates the
+-- decision to the registering addon. A missing validator means "always send".
+local targetValidators = {}
+
 -- Pending multi-part messages: senderKey -> { prefix -> {id, parts, startTime, origSender} }
 -- senderKey is string.lower(sender). The WoW chat server does not guarantee
 -- stable casing of the sender string across a multi-part stream (e.g.,
@@ -549,6 +556,19 @@ local function ProcessSendQueue()
             elseif (dist == "WHISPER" or dist == "CHANNEL")
                 and (not item.target or item.target == "") then
                 distInvalid = true
+            elseif dist == "WHISPER" then
+                -- Stale-target gate: targets validated at enqueue can become
+                -- unreachable while the message sits in the throttle queue
+                -- (group disband, member leaves, zone change). C_ChatInfo
+                -- returns GeneralError(9) in those cases — drop silently
+                -- rather than logging a non-actionable error.
+                local validate = targetValidators[item.prefix]
+                if validate then
+                    local ok, valid = pcall(validate, item.target)
+                    if ok and valid == false then
+                        distInvalid = true
+                    end
+                end
             end
 
             if distInvalid then
@@ -771,6 +791,7 @@ function CommMixin:Shutdown()
     totalQueued = 0
     wipe(pendingMessages)
     wipe(registeredPrefixes)
+    wipe(targetValidators)
 
     throttleAvailable    = THROTTLE_BURST
     lastThrottleUpdate   = 0
@@ -811,6 +832,7 @@ end
 -- @param prefix string
 function CommMixin:UnregisterComm(prefix)
     registeredPrefixes[prefix] = nil
+    targetValidators[prefix] = nil
 end
 
 --- Check if a prefix is registered
@@ -818,6 +840,24 @@ end
 -- @return boolean
 function CommMixin:IsCommRegistered(prefix)
     return registeredPrefixes[prefix] ~= nil
+end
+
+--- Set a WHISPER-target validator for a prefix.
+-- The validator is invoked at send-time (inside the throttle drain) for every
+-- WHISPER on this prefix. Returning false drops the message silently — use
+-- this to suppress errors when the target was valid at enqueue but has since
+-- left the group, gone offline, or otherwise become unreachable.
+-- Pass nil to clear.
+-- @param prefix string
+-- @param validator function|nil - function(target) -> boolean
+function CommMixin:SetTargetValidator(prefix, validator)
+    if type(prefix) ~= "string" then
+        error("SetTargetValidator: prefix must be a string", 2)
+    end
+    if validator ~= nil and type(validator) ~= "function" then
+        error("SetTargetValidator: validator must be a function or nil", 2)
+    end
+    targetValidators[prefix] = validator
 end
 
 --- Send an addon message (queued, throttled, split if needed)
