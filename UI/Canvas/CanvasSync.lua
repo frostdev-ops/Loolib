@@ -837,9 +837,10 @@ end
 -- @param msg string - Compressed message
 -- @param sender string - Sender name
 function LoolibCanvasSyncMixin:_OnMessageReceived(msg, sender)
-    -- Ignore messages from self
-    local playerName = UnitName("player")
-    if sender == playerName then
+    -- Ignore messages from self. UnitName("player") can return a secret-tagged
+    -- value under encounter taint; use SafeUnitName to keep the equality safe.
+    local playerName = Loolib.SecretUtil and Loolib.SecretUtil.SafeUnitName("player") or UnitName("player")
+    if playerName and sender == playerName then
         return
     end
 

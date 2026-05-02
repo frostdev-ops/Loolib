@@ -339,7 +339,9 @@ function FunctionUtil.ThrottleWithTrailing(func, interval)
         lastArgs = { n = select("#", ...), ... }
 
         if not trailingTimer then
-            local remaining = interval - (now - lastCall)
+            -- Clamp to 0 in case floating-point drift produces a slightly
+            -- negative remainder right at the cooldown boundary.
+            local remaining = math.max(interval - (now - lastCall), 0)
             trailingTimer = C_Timer.NewTimer(remaining, function()
                 trailingTimer = nil
                 lastCall = GetTime()
