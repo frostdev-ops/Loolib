@@ -4,7 +4,7 @@
 ----------------------------------------------------------------------]]
 
 local LOOLIB_MAJOR = "Loolib"
-local LOOLIB_MINOR = 4
+local LOOLIB_MINOR = 5
 
 local Loolib, _oldVersion = LibStub:NewLibrary(LOOLIB_MAJOR, LOOLIB_MINOR)
 if not Loolib then return end

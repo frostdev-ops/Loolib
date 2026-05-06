@@ -202,10 +202,19 @@ local loginRampActive    = false
 local loginRampEnd       = 0
 local throttlePauseUntil = 0    -- GetTime() epoch to resume after throttle error
 
--- Message-count token bucket (separate from byte budget)
+-- Message-count token bucket (separate from byte budget). Tracks ONLY our
+-- own send rate against WoW's per-message channel throttle. Other addons'
+-- traffic is tracked separately in `channelOtherTraffic` so a chatty BigWigs
+-- / WeakAuras can't poison our bucket and wedge our critical session sends.
 local msgTokens          = MSG_BUDGET_BURST
 local lastMsgTokenUpdate = 0
 local msgCoalesced       = 0   -- Diag counter: how many enqueues were collapsed into prior queued items
+
+-- Other-addon traffic counter (informational + adaptive pacing for NORMAL/BULK).
+-- Decays at MSG_BUDGET_RATE per second. Used only as a soft input to backpressure;
+-- never gates ALERT, never decrements msgTokens.
+local channelOtherTraffic = 0
+local lastChannelDecay    = 0
 
 -- Outbound coalesce index: prefix|key -> queued item. Used to mark earlier
 -- queued copies of idempotent state (MLDB, council roster, heartbeat, etc.)
@@ -306,6 +315,18 @@ local function GetMsgTokens()
     lastMsgTokenUpdate = now
     msgTokens = math.min(MSG_BUDGET_BURST, msgTokens + elapsed * MSG_BUDGET_RATE)
     return msgTokens
+end
+
+-- Decay channelOtherTraffic at MSG_BUDGET_RATE per second so the counter
+-- reflects recent activity rather than session-cumulative load. Used as an
+-- informational signal for diagnostics and adaptive backpressure on
+-- NORMAL/BULK only — never gates ALERT.
+local function DecayChannelTraffic()
+    local now = GetTime()
+    local elapsed = now - lastChannelDecay
+    lastChannelDecay = now
+    channelOtherTraffic = math.max(0, channelOtherTraffic - elapsed * MSG_BUDGET_RATE)
+    return channelOtherTraffic
 end
 
 local function ConsumeMsgToken()
@@ -508,10 +529,12 @@ local function ProcessSendQueue()
     GetMsgTokens()  -- refill message-count bucket based on elapsed time
 
     -- tryDrain: drain messages from a queue respecting budget constraints.
-    -- ignoreBudget=true (ALERT): bypass the byte budget but STILL respect the
-    --   message-token bucket. Earlier behavior also ignored msgTokens, which
-    --   let an ALERT burst exceed WoW's per-message channel throttle and
-    --   trigger AddonMessageThrottle re-queue storms under broadcast load.
+    -- ignoreBudget=true (ALERT): bypass BOTH the byte budget AND the
+    --   message-token bucket. Critical session traffic (votes, awards,
+    --   responses) must flow even when the channel is saturated.
+    --   Backpressure is provided by WoW's AddonMessageThrottle response on
+    --   a real send — that pauses the entire queue for THROTTLE_PAUSE_DURATION.
+    --   ALERT_MAX_PER_TICK provides per-tick smoothing.
     -- isBulk=true (BULK): each message costs 4x against the byte budget.
     local function tryDrain(queue, isBulk, ignoreBudget, maxMessages)
         local drained = 0
@@ -531,16 +554,12 @@ local function ProcessSendQueue()
             local msgLen    = #item.text + MSG_OVERHEAD
             local effectLen = isBulk and (msgLen * THROTTLE_BULK_DIVISOR) or msgLen
 
-            -- Stop draining if budget exhausted.
-            -- Both the byte budget AND the message-count budget must permit it;
-            -- WoW's channel enforces a per-message-count throttle that the byte
-            -- budget alone does not model (small messages would burst-drain).
-            -- ALERT bypasses the byte-budget half but still has to honor the
-            -- message-token bucket so we don't outrun WoW's hard per-message
-            -- throttle and pay it back as AddonMessageThrottle re-queues.
-            if ignoreBudget then
-                if msgTokens < 1 then return end
-            else
+            -- Stop draining if budget exhausted (NORMAL/BULK only — ALERT
+            -- bypasses both budgets above by virtue of ignoreBudget=true).
+            -- Both the byte budget AND the message-count budget must permit
+            -- a NORMAL/BULK send; WoW's channel enforces a per-message-count
+            -- throttle that the byte budget alone does not model.
+            if not ignoreBudget then
                 if effectLen > allowance then return end
                 if msgTokens < 1 then return end
             end
@@ -761,25 +780,21 @@ local function InitializeCommFrame()
     commFrame:RegisterEvent("CHAT_MSG_ADDON")
     commFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-    -- Track bypass traffic from other addons; subtract from our budget so we
-    -- don't over-send when other addons are also using the channel. Install
-    -- exactly once per Lua state — hooksecurefunc has no uninstall API, so
-    -- doing this on every re-Init would stack duplicate hooks.
+    -- Track bypass traffic from other addons. We subtract their bytes from
+    -- our byte budget (real wire bytes the channel has already eaten) but
+    -- DO NOT touch msgTokens — that bucket is reserved for our own send
+    -- rate. Mixing the two caused chatty raid addons (BigWigs / WeakAuras /
+    -- DBM) to drive msgTokens deep negative, which then wedged our ALERT
+    -- session traffic (votes, awards) for tens of seconds at a time. The
+    -- per-message channel throttle is enforced server-side by WoW; if we
+    -- get close, AddonMessageThrottle on a real send pauses our queue —
+    -- that's the correct backpressure, not a poisoned shared bucket.
     if not sendHookInstalled then
         hooksecurefunc(C_ChatInfo, "SendAddonMessage", function(_, message, _, _)
             if not ourOwnSend then
-                -- Another addon sent a message; reduce our available byte
-                -- budget. Floored at 0 intentionally: bytes are spent on the
-                -- wire, we never expect them back.
                 throttleAvailable = math.max(0,
                     throttleAvailable - (#message + MSG_OVERHEAD))
-                -- Message-count consumption: do NOT floor at 0. ConsumeMsgToken
-                -- (our own sends) allows msgTokens to go negative to represent
-                -- a deficit the refill must pay off before the next send. The
-                -- bypass path must be symmetric — flooring here would erase
-                -- debt from our own drain, letting us mistakenly "spend" budget
-                -- that WoW's shared channel already used.
-                msgTokens = msgTokens - 1
+                channelOtherTraffic = channelOtherTraffic + 1
             end
         end)
         sendHookInstalled = true
@@ -1086,6 +1101,21 @@ end
 function CommMixin:GetMsgBudgetState()
     GetMsgTokens()  -- Refill before read
     return msgTokens, MSG_BUDGET_BURST, msgCoalesced
+end
+
+--- Get the recent other-addon channel traffic counter (informational).
+-- Decays at MSG_BUDGET_RATE per second. Useful for /lt diag to surface
+-- when queue depth growth is driven by channel saturation from other
+-- addons (BigWigs, WeakAuras, DBM) rather than our own send rate.
+-- @return number recent other-addon sends visible on the channel
+function CommMixin:GetChannelOtherTraffic()
+    return DecayChannelTraffic()
+end
+
+--- Get per-priority queue sizes (informational).
+-- @return number alertSize, number normalSize, number bulkSize
+function CommMixin:GetQueueSizes()
+    return queues.ALERT:Size(), queues.NORMAL:Size(), queues.BULK:Size()
 end
 
 --- Clean up stale incomplete multi-part messages
