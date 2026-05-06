@@ -221,7 +221,12 @@ local commFrame = nil
 
 -- OnUpdate accumulators
 local onUpdateAccumulator = 0
-local ALERT_MAX_PER_TICK = 8
+-- ALERT priority bypasses the byte budget but still costs one message token.
+-- 0.08s tick × 3 ALERTs = ~37/sec ceiling, well under WoW's per-message
+-- channel throttle (~10 burst then 1/sec). Higher values caused
+-- AddonMessageThrottle re-queue storms on busy raids where many clients
+-- broadcast PLAYER_RESPONSE / VOTE_COMMIT at ALERT in the same window.
+local ALERT_MAX_PER_TICK = 3
 
 --[[--------------------------------------------------------------------
     Internal Helper Functions
@@ -503,7 +508,10 @@ local function ProcessSendQueue()
     GetMsgTokens()  -- refill message-count bucket based on elapsed time
 
     -- tryDrain: drain messages from a queue respecting budget constraints.
-    -- ignoreBudget=true (ALERT): send regardless of byte AND message-count budget.
+    -- ignoreBudget=true (ALERT): bypass the byte budget but STILL respect the
+    --   message-token bucket. Earlier behavior also ignored msgTokens, which
+    --   let an ALERT burst exceed WoW's per-message channel throttle and
+    --   trigger AddonMessageThrottle re-queue storms under broadcast load.
     -- isBulk=true (BULK): each message costs 4x against the byte budget.
     local function tryDrain(queue, isBulk, ignoreBudget, maxMessages)
         local drained = 0
@@ -523,11 +531,16 @@ local function ProcessSendQueue()
             local msgLen    = #item.text + MSG_OVERHEAD
             local effectLen = isBulk and (msgLen * THROTTLE_BULK_DIVISOR) or msgLen
 
-            -- Stop draining if budget exhausted (unless ignoreBudget).
+            -- Stop draining if budget exhausted.
             -- Both the byte budget AND the message-count budget must permit it;
             -- WoW's channel enforces a per-message-count throttle that the byte
             -- budget alone does not model (small messages would burst-drain).
-            if not ignoreBudget then
+            -- ALERT bypasses the byte-budget half but still has to honor the
+            -- message-token bucket so we don't outrun WoW's hard per-message
+            -- throttle and pay it back as AddonMessageThrottle re-queues.
+            if ignoreBudget then
+                if msgTokens < 1 then return end
+            else
                 if effectLen > allowance then return end
                 if msgTokens < 1 then return end
             end
@@ -628,14 +641,48 @@ local function ProcessSendQueue()
                     return
                 end
 
-                -- Non-recoverable error (InvalidPrefix, NotInGroup, etc.)
-                -- Log and discard — re-queuing won't help
+                -- Non-recoverable error. Re-queuing won't help — discard.
+                -- Split the log severity by whether the user can act on it:
+                --   * GeneralError(9), NotInGroup(5), NotInGuild(10) on a group
+                --     channel are almost always raid/party transition races —
+                --     IsInRaid()/IsInGuild() returned true at the pre-flight gate
+                --     a few ms ago but the server has begun teardown. There is
+                --     no client-side API that closes this gap, so logging at
+                --     Error level just spams the chat frame. Drop to Debug.
+                --   * TargetOffline(12) and GeneralError(9) on a WHISPER are the
+                --     same class of race: the whisper target left the group or
+                --     went offline between enqueue and drain. Also Debug.
+                --   * InvalidPrefix(1)/InvalidMessage(2)/InvalidChatType(4)/
+                --     InvalidChannel(7)/AddOnMessageSuppressed/etc. are real
+                --     misconfigurations the addon author needs to fix. Keep loud.
                 local resultName = RESULT_NAMES[result] or "Unknown"
-                Loolib:Error("AddonMessage: SendAddonMessage failed —",
-                    "prefix=" .. tostring(item.prefix),
-                    "dist=" .. tostring(item.distribution),
-                    "target=" .. tostring(item.target),
-                    "result=" .. tostring(result) .. " (" .. resultName .. ")")
+                local dist = item.distribution
+                local isGroupDist = (dist == "RAID"
+                    or dist == "PARTY"
+                    or dist == "INSTANCE_CHAT"
+                    or dist == "GUILD")
+                local isGeneralError = SendResult and result == SendResult.GeneralError
+                local isNotInGroup   = SendResult and result == SendResult.NotInGroup
+                local isNotInGuild   = SendResult and result == SendResult.NotInGuild
+                local isTargetOffline = SendResult and result == SendResult.TargetOffline
+                local isTransientGroup = isGroupDist
+                    and (isGeneralError or isNotInGroup or isNotInGuild)
+                local isTransientWhisper = (dist == "WHISPER")
+                    and (isTargetOffline or isGeneralError)
+
+                if isTransientGroup or isTransientWhisper then
+                    Loolib:Debug("AddonMessage: transient send drop —",
+                        "prefix=" .. tostring(item.prefix),
+                        "dist=" .. tostring(dist),
+                        "target=" .. tostring(item.target),
+                        "result=" .. tostring(result) .. " (" .. resultName .. ")")
+                else
+                    Loolib:Error("AddonMessage: SendAddonMessage failed —",
+                        "prefix=" .. tostring(item.prefix),
+                        "dist=" .. tostring(dist),
+                        "target=" .. tostring(item.target),
+                        "result=" .. tostring(result) .. " (" .. resultName .. ")")
+                end
                 -- fall through to consume and continue
             end
 
